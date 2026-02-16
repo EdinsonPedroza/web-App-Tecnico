@@ -38,13 +38,6 @@ export default function StudentCourses() {
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
   
   // Group courses by module
-  const getModuleNumber = (courseId) => {
-    const course = courses.find(c => c.id === courseId);
-    if (!course) return 0;
-    const subject = subjects.find(s => s.id === course.subject_id);
-    return subject?.module_number || 0;
-  };
-  
   const coursesByModule = courses.reduce((acc, course) => {
     const subject = subjects.find(s => s.id === course.subject_id);
     const moduleNum = subject?.module_number || 0;

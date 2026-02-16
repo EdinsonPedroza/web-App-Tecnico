@@ -705,8 +705,17 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             else:
                 grade_value = 3.0
         else:
-            # If rejected, keep existing average (don't add a new grade)
-            grade_value = 0.0
+            # If rejected, don't create/update a grade (keep existing average)
+            # Just update the recovery status if grade already exists
+            if existing:
+                await db.grades.update_one(
+                    {"id": existing["id"]},
+                    {"$set": {"recovery_status": req.recovery_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+                )
+                updated = await db.grades.find_one({"id": existing["id"]}, {"_id": 0})
+                return updated
+            # If no existing grade, don't create one for rejection
+            return {"message": "Recuperación rechazada, no se registra nota"}
     
     if existing:
         update_data = {
