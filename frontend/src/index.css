@@ -1,0 +1,217 @@
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Corporación Social Educando - Steel Blue Theme */
+    /* Primary: Steel blue from logo */
+    --primary: 207 52% 49%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Secondary: Light steel blue for subtle backgrounds */
+    --secondary: 210 40% 94%;
+    --secondary-foreground: 207 50% 20%;
+    
+    /* Background: Off-white with cool blue undertone */
+    --background: 210 33% 98%;
+    --foreground: 207 45% 15%;
+    
+    /* Card: Pure white */
+    --card: 0 0% 100%;
+    --card-foreground: 207 45% 15%;
+    
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 207 45% 15%;
+    
+    /* Muted: Very light blue-gray */
+    --muted: 210 25% 93%;
+    --muted-foreground: 207 15% 46%;
+    
+    /* Accent: Soft teal accent */
+    --accent: 210 35% 92%;
+    --accent-foreground: 207 50% 20%;
+    
+    /* Destructive */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    
+    /* Success */
+    --success: 160 55% 40%;
+    --success-foreground: 0 0% 100%;
+    
+    /* Warning */
+    --warning: 38 92% 50%;
+    --warning-foreground: 38 95% 15%;
+    
+    /* Info */
+    --info: 207 52% 49%;
+    --info-foreground: 0 0% 100%;
+    
+    /* Border & Input */
+    --border: 210 20% 88%;
+    --input: 210 20% 88%;
+    --ring: 207 52% 49%;
+    
+    /* Radius */
+    --radius: 0.625rem;
+    
+    /* Charts */
+    --chart-1: 207 52% 49%;
+    --chart-2: 160 55% 40%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 280 45% 55%;
+    --chart-5: 12 76% 61%;
+    
+    /* Custom tokens */
+    --primary-dark: 207 55% 30%;
+    --primary-light: 207 52% 65%;
+    --primary-glow: 207 60% 75%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(207 55% 30%), hsl(207 52% 49%));
+    --gradient-subtle: linear-gradient(180deg, hsl(210 33% 98%), hsl(210 40% 94%));
+    --gradient-card-hover: linear-gradient(135deg, hsl(210 40% 97%), hsl(210 35% 94%));
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 3px hsl(207 52% 49% / 0.06);
+    --shadow-md: 0 4px 12px hsl(207 52% 49% / 0.08);
+    --shadow-lg: 0 10px 30px hsl(207 52% 49% / 0.1);
+    --shadow-glow: 0 0 20px hsl(207 60% 75% / 0.3);
+    
+    /* Transitions */
+    --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    
+    /* Sidebar */
+    --sidebar-width: 260px;
+    --sidebar-bg: 207 55% 30%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-accent: 207 52% 40%;
+    --sidebar-muted: 207 40% 50%;
+  }
+
+  .dark {
+    --primary: 207 52% 60%;
+    --primary-foreground: 207 55% 10%;
+    --secondary: 207 30% 16%;
+    --secondary-foreground: 210 30% 90%;
+    --background: 207 35% 8%;
+    --foreground: 210 30% 95%;
+    --card: 207 30% 12%;
+    --card-foreground: 210 30% 95%;
+    --popover: 207 30% 12%;
+    --popover-foreground: 210 30% 95%;
+    --muted: 207 25% 18%;
+    --muted-foreground: 210 15% 60%;
+    --accent: 207 25% 18%;
+    --accent-foreground: 210 30% 95%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 207 20% 20%;
+    --input: 207 20% 20%;
+    --ring: 207 52% 60%;
+    --sidebar-bg: 207 40% 10%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-accent: 207 40% 20%;
+    --sidebar-muted: 207 25% 40%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Work Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+}
+
+@layer base {
+  [data-debug-wrapper="true"] {
+    display: contents !important;
+  }
+}
+
+/* Custom utility classes using design tokens */
+@layer utilities {
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  .gradient-subtle {
+    background: var(--gradient-subtle);
+  }
+  .shadow-elegant {
+    box-shadow: var(--shadow-lg);
+  }
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.5);
+}
+
+/* Animation keyframes */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.4s ease-out forwards;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
