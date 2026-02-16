@@ -156,10 +156,10 @@ async def create_initial_data():
     
     # Crear usuarios
     users = [
-        {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "phone": "3001234567", "active": True, "module": None, "grupo": None},
-        {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "phone": "3009876543", "active": True, "module": None, "grupo": None},
-        {"id": "user-est-1", "name": "Juan Martínez Ruiz", "email": None, "cedula": "1234567890", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "phone": "3101234567", "active": True, "module": 1, "grupo": "Enero 2025"},
-        {"id": "user-est-2", "name": "Ana Sofía Hernández", "email": None, "cedula": "0987654321", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "phone": "3207654321", "active": True, "module": 1, "grupo": "Enero 2025"},
+        {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "program_ids": [], "phone": "3001234567", "active": True, "module": None, "grupo": None},
+        {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "program_ids": [], "phone": "3009876543", "active": True, "module": None, "grupo": None},
+        {"id": "user-est-1", "name": "Juan Martínez Ruiz", "email": None, "cedula": "1234567890", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "phone": "3101234567", "active": True, "module": 1, "grupo": "Enero 2025"},
+        {"id": "user-est-2", "name": "Ana Sofía Hernández", "email": None, "cedula": "0987654321", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "phone": "3207654321", "active": True, "module": 1, "grupo": "Enero 2025"},
     ]
     for u in users:
         await db.users.update_one({"id": u["id"]}, {"$set": u}, upsert=True)
@@ -260,7 +260,8 @@ class UserCreate(BaseModel):
     cedula: Optional[str] = None
     password: str
     role: str
-    program_id: Optional[str] = None
+    program_id: Optional[str] = None  # For backward compatibility
+    program_ids: Optional[List[str]] = None  # Multiple programs support
     phone: Optional[str] = None
     module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
@@ -270,7 +271,8 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     cedula: Optional[str] = None
     phone: Optional[str] = None
-    program_id: Optional[str] = None
+    program_id: Optional[str] = None  # For backward compatibility
+    program_ids: Optional[List[str]] = None  # Multiple programs support
     active: Optional[bool] = None
     module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
@@ -312,6 +314,7 @@ class CourseCreate(BaseModel):
     student_ids: Optional[List[str]] = []
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    grupo: Optional[str] = None  # e.g., "ENERO-2026 - TECNICO EN SISTEMAS"
 
 class CourseUpdate(BaseModel):
     name: Optional[str] = None
@@ -320,6 +323,7 @@ class CourseUpdate(BaseModel):
     active: Optional[bool] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    grupo: Optional[str] = None  # e.g., "ENERO-2026 - TECNICO EN SISTEMAS"
 
 class ActivityCreate(BaseModel):
     course_id: str
@@ -436,7 +440,8 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "cedula": req.cedula,
         "password_hash": hash_password(req.password),
         "role": req.role,
-        "program_id": req.program_id,
+        "program_id": req.program_id,  # Keep for backward compatibility
+        "program_ids": req.program_ids if req.program_ids else ([req.program_id] if req.program_id else []),
         "phone": req.phone,
         "module": req.module,
         "grupo": req.grupo,
@@ -514,6 +519,23 @@ async def delete_program(program_id: str, user=Depends(get_current_user)):
     await db.programs.delete_one({"id": program_id})
     return {"message": "Programa eliminado"}
 
+@api_router.get("/student/programs")
+async def get_student_programs(user=Depends(get_current_user)):
+    """Get programs that a student is enrolled in"""
+    if user["role"] != "estudiante":
+        raise HTTPException(status_code=403, detail="Solo estudiantes")
+    
+    program_ids = user.get("program_ids", [])
+    if not program_ids and user.get("program_id"):
+        # Backward compatibility
+        program_ids = [user.get("program_id")]
+    
+    if not program_ids:
+        return []
+    
+    programs = await db.programs.find({"id": {"$in": program_ids}}, {"_id": 0}).to_list(100)
+    return programs
+
 # --- Subjects Routes ---
 @api_router.get("/subjects")
 async def get_subjects(program_id: Optional[str] = None):
@@ -590,6 +612,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         "student_ids": req.student_ids,
         "start_date": req.start_date,
         "end_date": req.end_date,
+        "grupo": req.grupo,
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -664,8 +687,13 @@ async def update_activity(activity_id: str, req: ActivityUpdate, user=Depends(ge
 async def delete_activity(activity_id: str, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    
+    # Cascade delete: remove related grades and submissions
+    await db.grades.delete_many({"activity_id": activity_id})
+    await db.submissions.delete_many({"activity_id": activity_id})
     await db.activities.delete_one({"id": activity_id})
-    return {"message": "Actividad eliminada"}
+    
+    return {"message": "Actividad eliminada con sus notas y entregas"}
 
 # --- Grades Routes ---
 @api_router.get("/grades")
