@@ -1,0 +1,44 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: educando_mongodb
+    restart: always
+    volumes:
+      - mongodb_data:/data/db
+
+  backend:
+    build: ./backend
+    container_name: educando_backend
+    restart: always
+    depends_on:
+      - mongodb
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+      - DB_NAME=educando_db
+    volumes:
+      - ./backend:/app          # 👈 Monta el código del backend en tiempo real
+      - uploads_data:/app/uploads
+    ports:
+      - "8001:8001"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev  # 👈 Usa un Dockerfile de desarrollo
+    container_name: educando_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src          # 👈 Monta el código fuente en tiempo real
+      - ./frontend/public:/app/public    # 👈 Monta archivos públicos
+    environment:
+      - WATCHPACK_POLLING=true           # 👈 Necesario para hot-reload en Docker
+      - CHOKIDAR_USEPOLLING=true         # 👈 Necesario para hot-reload en Docker
+      - REACT_APP_BACKEND_URL=http://localhost:8001
+
+volumes:
+  mongodb_data:
+  uploads_data:
