@@ -38,8 +38,10 @@ cd web-App-Tecnico
 
 ### 2. Iniciar el entorno de desarrollo
 ```bash
-docker-compose -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.dev.yml up --build
 ```
+
+> **Nota**: Si tienes Docker Compose v1, usa `docker-compose` (con guión) en lugar de `docker compose` (con espacio).
 
 Esto iniciará:
 - **Frontend** en http://localhost:3000 (con hot-reload)
@@ -62,17 +64,19 @@ Para el backend:
 
 ### 4. Detener el entorno
 ```bash
-# Presiona Ctrl+C en la terminal donde corre docker-compose
+# Presiona Ctrl+C en la terminal donde corre docker compose
 # O en otra terminal:
-docker-compose -f docker-compose.dev.yml down
+docker compose -f docker-compose.dev.yml down
 ```
+
+> **Nota**: Si tienes Docker Compose v1, usa `docker-compose` (con guión) en lugar de `docker compose` (con espacio).
 
 ## 🚢 Despliegue en Producción
 
 Para compilar y ejecutar la versión optimizada de producción:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 Esto iniciará:
@@ -82,7 +86,7 @@ Esto iniciará:
 
 Para detener:
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ## 📁 Estructura del Proyecto
@@ -108,14 +112,14 @@ web-App-Tecnico/
 
 ### Ver logs de un servicio específico
 ```bash
-docker-compose -f docker-compose.dev.yml logs -f frontend
-docker-compose -f docker-compose.dev.yml logs -f backend
+docker compose -f docker-compose.dev.yml logs -f frontend
+docker compose -f docker-compose.dev.yml logs -f backend
 ```
 
 ### Reconstruir un servicio específico
 ```bash
-docker-compose -f docker-compose.dev.yml up --build frontend
-docker-compose -f docker-compose.dev.yml up --build backend
+docker compose -f docker-compose.dev.yml up --build frontend
+docker compose -f docker-compose.dev.yml up --build backend
 ```
 
 ### Ejecutar comandos dentro de un contenedor
@@ -131,7 +135,7 @@ docker exec -it educando_backend pip install nueva-dependencia
 
 ### Limpiar volúmenes y contenedores
 ```bash
-docker-compose -f docker-compose.dev.yml down -v
+docker compose -f docker-compose.dev.yml down -v
 ```
 
 ## 🐛 Solución de Problemas
@@ -144,8 +148,8 @@ docker-compose -f docker-compose.dev.yml down -v
 1. Verifica que estés usando `docker-compose.dev.yml` y no `docker-compose.yml`
 2. Asegúrate de que los volúmenes estén montados correctamente:
    ```bash
-   docker-compose -f docker-compose.dev.yml down
-   docker-compose -f docker-compose.dev.yml up --build
+   docker compose -f docker-compose.dev.yml down
+   docker compose -f docker-compose.dev.yml up --build
    ```
 
 ### El backend no se actualiza al hacer cambios
@@ -154,7 +158,7 @@ docker-compose -f docker-compose.dev.yml down -v
 
 **Solución**: 
 1. Verifica que el backend esté usando `Dockerfile.dev` con el flag `--reload`
-2. Revisa los logs: `docker-compose -f docker-compose.dev.yml logs -f backend`
+2. Revisa los logs: `docker compose -f docker-compose.dev.yml logs -f backend`
 3. Si hay errores de sintaxis, corrígelos y uvicorn se reiniciará automáticamente
 
 ### Error: "Cannot connect to the Docker daemon"
@@ -166,7 +170,7 @@ docker-compose -f docker-compose.dev.yml down -v
 **Problema**: Los puertos 3000, 8001 u 80 ya están siendo usados.
 
 **Solución**: 
-1. Detén los contenedores: `docker-compose -f docker-compose.dev.yml down`
+1. Detén los contenedores: `docker compose -f docker-compose.dev.yml down`
 2. O cambia los puertos en `docker-compose.dev.yml`:
    ```yaml
    ports:
@@ -179,7 +183,7 @@ docker-compose -f docker-compose.dev.yml down -v
 
 **Solución**: Los datos persisten en el volumen `mongodb_data`. Para limpiar:
 ```bash
-docker-compose -f docker-compose.dev.yml down -v  # ⚠️ Esto borrará los datos
+docker compose -f docker-compose.dev.yml down -v  # ⚠️ Esto borrará los datos
 ```
 
 ## 📚 Documentación Adicional
@@ -192,7 +196,7 @@ docker-compose -f docker-compose.dev.yml down -v  # ⚠️ Esto borrará los dat
 
 - **Desarrollo**: Usa `docker-compose.dev.yml` para hot-reload
 - **Producción**: Usa `docker-compose.yml` para build optimizado
-- Los cambios en `package.json` o `requirements.txt` requieren reconstruir: `docker-compose -f docker-compose.dev.yml up --build`
+- Los cambios en `package.json` o `requirements.txt` requieren reconstruir: `docker compose -f docker-compose.dev.yml up --build`
 
 ---
 
