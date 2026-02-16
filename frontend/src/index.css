@@ -17,19 +17,19 @@
     
     /* Background: Off-white with cool blue undertone */
     --background: 210 33% 98%;
-    --foreground: 207 45% 15%;
+    --foreground: 207 45% 12%;
     
-    /* Card: Pure white */
+    /* Card: Pure white with darker text for better contrast */
     --card: 0 0% 100%;
-    --card-foreground: 207 45% 15%;
+    --card-foreground: 207 45% 12%;
     
     /* Popover */
     --popover: 0 0% 100%;
-    --popover-foreground: 207 45% 15%;
+    --popover-foreground: 207 45% 12%;
     
-    /* Muted: Very light blue-gray */
-    --muted: 210 25% 93%;
-    --muted-foreground: 207 15% 46%;
+    /* Muted: Slightly darker for better visibility */
+    --muted: 210 25% 90%;
+    --muted-foreground: 207 20% 40%;
     
     /* Accent: Soft teal accent */
     --accent: 210 35% 92%;
@@ -51,9 +51,9 @@
     --info: 207 52% 49%;
     --info-foreground: 0 0% 100%;
     
-    /* Border & Input */
-    --border: 210 20% 88%;
-    --input: 210 20% 88%;
+    /* Border & Input - Better visibility */
+    --border: 210 20% 82%;
+    --input: 210 20% 85%;
     --ring: 207 52% 49%;
     
     /* Radius */
@@ -214,4 +214,35 @@
 
 .animate-pulse-soft {
   animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Print styles for better PDF visibility */
+@media print {
+  :root {
+    --card: 0 0% 98%;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --card-foreground: 0 0% 0%;
+    --muted-foreground: 0 0% 25%;
+    --border: 0 0% 70%;
+  }
+  
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .shadow-card, .shadow-elegant {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+  
+  a {
+    color: #000 !important;
+    text-decoration: underline !important;
+  }
+  
+  .text-muted-foreground {
+    color: #333 !important;
+  }
 }

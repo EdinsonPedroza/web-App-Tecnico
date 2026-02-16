@@ -12,16 +12,19 @@ export default function StudentDashboard() {
   const [courses, setCourses] = useState([]);
   const [activities, setActivities] = useState([]);
   const [grades, setGrades] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const [cRes, gRes] = await Promise.all([
+      const [cRes, gRes, sRes] = await Promise.all([
         api.get(`/courses?student_id=${user.id}`),
-        api.get(`/grades?student_id=${user.id}`)
+        api.get(`/grades?student_id=${user.id}`),
+        api.get(`/submissions?student_id=${user.id}`)
       ]);
       setCourses(cRes.data);
       setGrades(gRes.data);
+      setSubmissions(sRes.data);
 
       const allActivities = [];
       for (const course of cRes.data) {
@@ -39,7 +42,17 @@ export default function StudentDashboard() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const avgGrade = grades.length > 0 ? (grades.reduce((s, g) => s + g.value, 0) / grades.length).toFixed(1) : '-';
-  const upcomingActivities = activities.filter(a => new Date(a.due_date) > new Date()).sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+  
+  // Filter out activities that have submissions
+  const hasSubmission = (actId) => submissions.find(s => s.activity_id === actId);
+  const now = new Date();
+  const pendingActivities = activities.filter(a => {
+    const dueDate = new Date(a.due_date);
+    const startDate = a.start_date ? new Date(a.start_date) : null;
+    // Activity is pending if: not submitted, due date hasn't passed, and start date has passed (or no start date)
+    return !hasSubmission(a.id) && dueDate > now && (!startDate || startDate <= now);
+  });
+  const upcomingActivities = pendingActivities.sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
   const overdueActivities = activities.filter(a => new Date(a.due_date) < new Date());
 
   return (
@@ -85,7 +98,7 @@ export default function StudentDashboard() {
                 <CardContent className="space-y-3">
                   {upcomingActivities.length === 0 ? (
                     <p className="text-sm text-muted-foreground py-4 text-center">No hay actividades pendientes</p>
-                  ) : upcomingActivities.slice(0, 5).map((act) => {
+                  ) : upcomingActivities.map((act) => {
                     const due = new Date(act.due_date);
                     const daysLeft = Math.ceil((due - new Date()) / (1000 * 60 * 60 * 24));
                     return (

@@ -18,7 +18,7 @@ export default function ProgramsPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', description: '', duration: '12 meses' });
+  const [form, setForm] = useState({ name: '', description: '', duration: '12 meses', module1_close_date: '', module2_close_date: '' });
   const [saving, setSaving] = useState(false);
 
   const fetchPrograms = useCallback(async () => {
@@ -36,13 +36,19 @@ export default function ProgramsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', description: '', duration: '12 meses' });
+    setForm({ name: '', description: '', duration: '12 meses', module1_close_date: '', module2_close_date: '' });
     setDialogOpen(true);
   };
 
   const openEdit = (prog) => {
     setEditing(prog);
-    setForm({ name: prog.name, description: prog.description || '', duration: prog.duration || '12 meses' });
+    setForm({ 
+      name: prog.name, 
+      description: prog.description || '', 
+      duration: prog.duration || '12 meses',
+      module1_close_date: prog.module1_close_date ? prog.module1_close_date.slice(0, 16) : '',
+      module2_close_date: prog.module2_close_date ? prog.module2_close_date.slice(0, 16) : ''
+    });
     setDialogOpen(true);
   };
 
@@ -50,11 +56,18 @@ export default function ProgramsPage() {
     if (!form.name.trim()) { toast.error('Nombre requerido'); return; }
     setSaving(true);
     try {
+      const saveData = {
+        name: form.name,
+        description: form.description,
+        duration: form.duration,
+        module1_close_date: form.module1_close_date || null,
+        module2_close_date: form.module2_close_date || null
+      };
       if (editing) {
-        await api.put(`/programs/${editing.id}`, form);
+        await api.put(`/programs/${editing.id}`, saveData);
         toast.success('Programa actualizado');
       } else {
-        await api.post('/programs', form);
+        await api.post('/programs', saveData);
         toast.success('Programa creado');
       }
       setDialogOpen(false);
@@ -113,6 +126,18 @@ export default function ProgramsPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground mb-3">{prog.description}</p>
+                  <div className="space-y-2 mb-3">
+                    {prog.module1_close_date && (
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium">Cierre Módulo 1:</span> {new Date(prog.module1_close_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </div>
+                    )}
+                    {prog.module2_close_date && (
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium">Cierre Módulo 2:</span> {new Date(prog.module2_close_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex gap-2 flex-wrap">
                     <Badge variant="secondary">{prog.duration}</Badge>
                     {prog.modules?.map((m, i) => (
@@ -144,6 +169,26 @@ export default function ProgramsPage() {
             <div className="space-y-2">
               <Label>Duración</Label>
               <Input value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="12 meses" />
+            </div>
+            <div className="space-y-2">
+              <Label>Fecha de Cierre Módulo 1</Label>
+              <Input 
+                type="datetime-local" 
+                value={form.module1_close_date} 
+                onChange={(e) => setForm({ ...form, module1_close_date: e.target.value })} 
+                placeholder="Fecha y hora de cierre" 
+              />
+              <p className="text-xs text-muted-foreground">Fecha límite para completar el Módulo 1</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Fecha de Cierre Módulo 2</Label>
+              <Input 
+                type="datetime-local" 
+                value={form.module2_close_date} 
+                onChange={(e) => setForm({ ...form, module2_close_date: e.target.value })} 
+                placeholder="Fecha y hora de cierre" 
+              />
+              <p className="text-xs text-muted-foreground">Fecha límite para completar el Módulo 2</p>
             </div>
           </div>
           <DialogFooter>
