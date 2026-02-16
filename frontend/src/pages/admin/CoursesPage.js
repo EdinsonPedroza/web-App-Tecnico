@@ -158,14 +158,14 @@ export default function CoursesPage() {
                   <Label>Programa</Label>
                   <Select value={form.program_id} onValueChange={(v) => setForm({ ...form, program_id: v, subject_id: '' })}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                    <SelectContent>{programs.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                    <SelectContent>{programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Materia</Label>
                   <Select value={form.subject_id} onValueChange={(v) => setForm({ ...form, subject_id: v })}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar materia" /></SelectTrigger>
-                    <SelectContent>{filteredSubjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                    <SelectContent>{filteredSubjects.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               </>
@@ -174,7 +174,7 @@ export default function CoursesPage() {
               <Label>Profesor</Label>
               <Select value={form.teacher_id} onValueChange={(v) => setForm({ ...form, teacher_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Asignar profesor" /></SelectTrigger>
-                <SelectContent>{teachers.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                <SelectContent>{teachers.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">

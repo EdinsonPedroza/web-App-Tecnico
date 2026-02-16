@@ -65,7 +65,7 @@ export default function StudentsPage() {
     const words = program.name.split(' ');
     return words.length > 3 ? words.slice(2, 5).join(' ') : program.name;
   };
-  const initials = (name) => name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  const initials = (name) => name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
   
   // Format: MOD1-ENERO-2026 (with program short name prefix)
   const formatCourseInfo = (student) => {
@@ -197,7 +197,7 @@ export default function StudentsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">Todos los técnicos</SelectItem>
-                {programs.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterModule} onValueChange={setFilterModule}>
@@ -313,7 +313,7 @@ export default function StudentsPage() {
               <Select value={form.program_id} onValueChange={(v) => setForm({ ...form, program_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Seleccionar programa" /></SelectTrigger>
                 <SelectContent>
-                  {programs.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
