@@ -28,12 +28,12 @@
     --popover-foreground: 207 55% 10%;
     
     /* Muted: Darker for better visibility */
-    --muted: 210 28% 85%;
-    --muted-foreground: 207 25% 35%;
+    --muted: 210 28% 80%;
+    --muted-foreground: 207 25% 30%;
     
     /* Accent: Soft teal accent - Enhanced */
-    --accent: 210 40% 88%;
-    --accent-foreground: 207 60% 18%;
+    --accent: 210 40% 85%;
+    --accent-foreground: 207 60% 15%;
     
     /* Destructive - Enhanced contrast */
     --destructive: 0 82% 48%;
@@ -52,8 +52,8 @@
     --info-foreground: 0 0% 100%;
     
     /* Border & Input - Better visibility */
-    --border: 210 25% 75%;
-    --input: 210 25% 80%;
+    --border: 210 25% 70%;
+    --input: 210 25% 75%;
     --ring: 207 65% 42%;
     
     /* Radius */
@@ -128,7 +128,7 @@
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 16px; /* Increased from default 14px */
+    font-size: 18px; /* Increased from 16px for better readability */
     line-height: 1.6;
   }
   h1, h2, h3, h4, h5, h6 {
@@ -136,15 +136,15 @@
     font-weight: 600;
   }
   h1 {
-    font-size: 2rem; /* 32px */
+    font-size: 2.5rem; /* 40px - Increased from 32px */
     line-height: 1.3;
   }
   h2 {
-    font-size: 1.75rem; /* 28px */
+    font-size: 2rem; /* 32px - Increased from 28px */
     line-height: 1.3;
   }
   h3 {
-    font-size: 1.5rem; /* 24px */
+    font-size: 1.75rem; /* 28px - Increased from 24px */
     line-height: 1.4;
   }
 }
