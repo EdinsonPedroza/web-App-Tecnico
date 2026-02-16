@@ -48,45 +48,168 @@ async def create_initial_data():
     
     print("Creando datos iniciales...")
     
-    # Crear programas
+    # Crear programas con sus módulos y materias
     programs = [
-        {"id": "prog-admin", "name": "Técnico en Asistencia Administrativa", "description": "Formación técnica en gestión administrativa", "duration": "12 meses", "modules": [], "active": True},
-        {"id": "prog-infancia", "name": "Técnico en Atención a la Primera Infancia", "description": "Formación en desarrollo infantil", "duration": "12 meses", "modules": [], "active": True},
-        {"id": "prog-sst", "name": "Técnico en Seguridad y Salud en el Trabajo", "description": "Formación en prevención de riesgos", "duration": "12 meses", "modules": [], "active": True},
+        {
+            "id": "prog-admin", 
+            "name": "Técnico en Asistencia Administrativa", 
+            "description": "Formación técnica en gestión administrativa", 
+            "duration": "12 meses",
+            "modules": [
+                {"number": 1, "name": "MÓDULO 1", "subjects": [
+                    "Fundamentos de Administración",
+                    "Herramientas Ofimáticas",
+                    "Gestión Documental y Archivo",
+                    "Atención al Cliente y Comunicación Organizacional",
+                    "Legislación Laboral y Ética Profesional"
+                ]},
+                {"number": 2, "name": "MÓDULO 2", "subjects": [
+                    "Contabilidad Básica",
+                    "Nómina y Seguridad Social Aplicada",
+                    "Control de Inventarios y Logística",
+                    "Inglés Técnico / Competencias Ciudadanas",
+                    "Proyecto Integrador Virtual"
+                ]}
+            ],
+            "module1_close_date": None,
+            "module2_close_date": None,
+            "active": True
+        },
+        {
+            "id": "prog-infancia", 
+            "name": "Técnico en Atención a la Primera Infancia", 
+            "description": "Formación en desarrollo infantil", 
+            "duration": "12 meses",
+            "modules": [
+                {"number": 1, "name": "MÓDULO 1", "subjects": [
+                    "Inglés I",
+                    "Proyecto de vida",
+                    "Construcción social de la infancia",
+                    "Perspectiva del desarrollo infantil",
+                    "Salud y nutrición",
+                    "Lenguaje y educación infantil",
+                    "Juego y otras formas de comunicación",
+                    "Educación y pedagogía"
+                ]},
+                {"number": 2, "name": "MÓDULO 2", "subjects": [
+                    "Inglés II",
+                    "Construcción del mundo Matemático",
+                    "Dificultades en el aprendizaje",
+                    "Estrategias del aula",
+                    "Trabajo de grado",
+                    "Investigación",
+                    "Práctica - Informe"
+                ]}
+            ],
+            "module1_close_date": None,
+            "module2_close_date": None,
+            "active": True
+        },
+        {
+            "id": "prog-sst", 
+            "name": "Técnico en Seguridad y Salud en el Trabajo", 
+            "description": "Formación en prevención de riesgos", 
+            "duration": "12 meses",
+            "modules": [
+                {"number": 1, "name": "MÓDULO 1", "subjects": [
+                    "Fundamentos en Seguridad y Salud en el Trabajo",
+                    "Administración en salud",
+                    "Condiciones de seguridad",
+                    "Matemáticas",
+                    "Psicología del Trabajo"
+                ]},
+                {"number": 2, "name": "MÓDULO 2", "subjects": [
+                    "Comunicación oral y escrita",
+                    "Sistema de gestión de seguridad y salud del trabajo",
+                    "Anatomía y fisiología",
+                    "Medicina preventiva del trabajo",
+                    "Ética profesional",
+                    "Gestión ambiental",
+                    "Proyecto de grado"
+                ]}
+            ],
+            "module1_close_date": None,
+            "module2_close_date": None,
+            "active": True
+        },
     ]
     for p in programs:
         await db.programs.update_one({"id": p["id"]}, {"$set": p}, upsert=True)
     
+    # Crear materias basadas en los módulos de los programas
+    for prog in programs:
+        for module in prog["modules"]:
+            for subj_name in module["subjects"]:
+                subject = {
+                    "id": str(uuid.uuid4()),
+                    "name": subj_name,
+                    "program_id": prog["id"],
+                    "module_number": module["number"],
+                    "description": "",
+                    "active": True
+                }
+                await db.subjects.update_one(
+                    {"name": subj_name, "program_id": prog["id"], "module_number": module["number"]},
+                    {"$set": subject},
+                    upsert=True
+                )
+    
     # Crear usuarios
     users = [
-        {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "phone": "3001234567", "active": True},
-        {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "phone": "3009876543", "active": True},
-        {"id": "user-est-1", "name": "Juan Martínez Ruiz", "email": None, "cedula": "1234567890", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "phone": "3101234567", "active": True},
-        {"id": "user-est-2", "name": "Ana Sofía Hernández", "email": None, "cedula": "0987654321", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "phone": "3207654321", "active": True},
+        {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "phone": "3001234567", "active": True, "module": None, "grupo": None},
+        {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "phone": "3009876543", "active": True, "module": None, "grupo": None},
+        {"id": "user-est-1", "name": "Juan Martínez Ruiz", "email": None, "cedula": "1234567890", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "phone": "3101234567", "active": True, "module": 1, "grupo": "Enero 2025"},
+        {"id": "user-est-2", "name": "Ana Sofía Hernández", "email": None, "cedula": "0987654321", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "phone": "3207654321", "active": True, "module": 1, "grupo": "Enero 2025"},
     ]
     for u in users:
         await db.users.update_one({"id": u["id"]}, {"$set": u}, upsert=True)
     
-    # Crear materias
-    subjects = [
-        {"id": "subj-1", "name": "Fundamentos de Administración", "program_id": "prog-admin", "module_number": 1, "description": "Bases de la gestión administrativa", "active": True},
-        {"id": "subj-2", "name": "Herramientas Ofimáticas", "program_id": "prog-admin", "module_number": 1, "description": "Excel, Word, PowerPoint", "active": True},
-    ]
-    for s in subjects:
-        await db.subjects.update_one({"id": s["id"]}, {"$set": s}, upsert=True)
-    
-    # Crear curso
-    course = {"id": "course-1", "name": "Fundamentos de Administración - Grupo A 2025", "program_id": "prog-admin", "subject_id": "subj-1", "teacher_id": "user-prof-1", "year": 2025, "student_ids": ["user-est-1", "user-est-2"], "active": True}
-    await db.courses.update_one({"id": course["id"]}, {"$set": course}, upsert=True)
-    
-    # Crear actividades
-    now = datetime.now(timezone.utc)
-    activities = [
-        {"id": "act-1", "course_id": "course-1", "title": "Ensayo sobre principios administrativos", "description": "Elaborar un ensayo de 2 páginas sobre los principios fundamentales de la administración", "activity_number": 1, "start_date": now.isoformat(), "due_date": (now + timedelta(days=14)).isoformat(), "files": [], "active": True},
-        {"id": "act-2", "course_id": "course-1", "title": "Taller de organización empresarial", "description": "Realizar el taller práctico sobre estructura organizacional", "activity_number": 2, "start_date": now.isoformat(), "due_date": (now + timedelta(days=7)).isoformat(), "files": [], "active": True},
-    ]
-    for a in activities:
-        await db.activities.update_one({"id": a["id"]}, {"$set": a}, upsert=True)
+    # Crear curso de ejemplo
+    admin_subjects = await db.subjects.find({"program_id": "prog-admin", "module_number": 1}, {"_id": 0}).to_list(10)
+    if admin_subjects:
+        first_subject = admin_subjects[0]
+        course = {
+            "id": "course-1", 
+            "name": f"{first_subject['name']} - Enero 2025", 
+            "program_id": "prog-admin", 
+            "subject_id": first_subject["id"], 
+            "teacher_id": "user-prof-1", 
+            "year": 2025, 
+            "student_ids": ["user-est-1", "user-est-2"], 
+            "active": True
+        }
+        await db.courses.update_one({"id": course["id"]}, {"$set": course}, upsert=True)
+        
+        # Crear actividades
+        now = datetime.now(timezone.utc)
+        activities = [
+            {
+                "id": "act-1", 
+                "course_id": "course-1", 
+                "title": "Ensayo sobre principios administrativos", 
+                "description": "Elaborar un ensayo de 2 páginas sobre los principios fundamentales de la administración", 
+                "activity_number": 1, 
+                "start_date": now.isoformat(), 
+                "due_date": (now + timedelta(days=14)).isoformat(), 
+                "files": [], 
+                "is_recovery": False,
+                "active": True
+            },
+            {
+                "id": "act-2", 
+                "course_id": "course-1", 
+                "title": "Taller de organización empresarial", 
+                "description": "Realizar el taller práctico sobre estructura organizacional", 
+                "activity_number": 2, 
+                "start_date": now.isoformat(), 
+                "due_date": (now + timedelta(days=7)).isoformat(), 
+                "files": [], 
+                "is_recovery": False,
+                "active": True
+            },
+        ]
+        for a in activities:
+            await db.activities.update_one({"id": a["id"]}, {"$set": a}, upsert=True)
     
     print("Datos iniciales creados exitosamente")
     print("Credenciales:")
@@ -164,6 +287,8 @@ class ProgramUpdate(BaseModel):
     duration: Optional[str] = None
     modules: Optional[list] = None
     active: Optional[bool] = None
+    module1_close_date: Optional[str] = None
+    module2_close_date: Optional[str] = None
 
 class SubjectCreate(BaseModel):
     name: str
@@ -199,6 +324,7 @@ class ActivityCreate(BaseModel):
     start_date: Optional[str] = None
     due_date: str
     files: Optional[list] = []
+    is_recovery: Optional[bool] = False
 
 class ActivityUpdate(BaseModel):
     title: Optional[str] = None
@@ -207,17 +333,20 @@ class ActivityUpdate(BaseModel):
     due_date: Optional[str] = None
     files: Optional[list] = None
     active: Optional[bool] = None
+    is_recovery: Optional[bool] = None
 
 class GradeCreate(BaseModel):
     student_id: str
     course_id: str
     activity_id: Optional[str] = None
-    value: float
+    value: Optional[float] = None
     comments: Optional[str] = ""
+    recovery_status: Optional[str] = None  # 'approved', 'rejected', or None
 
 class GradeUpdate(BaseModel):
     value: Optional[float] = None
     comments: Optional[str] = None
+    recovery_status: Optional[str] = None  # 'approved', 'rejected', or None
 
 class ClassVideoCreate(BaseModel):
     course_id: str
@@ -229,6 +358,14 @@ class SubmissionCreate(BaseModel):
     activity_id: str
     content: Optional[str] = ""
     files: Optional[list] = []
+
+class RecoveryEnableRequest(BaseModel):
+    student_id: str
+    course_id: str
+
+class ModuleCloseDateUpdate(BaseModel):
+    module1_close_date: Optional[str] = None
+    module2_close_date: Optional[str] = None
 
 # --- Auth Routes ---
 @api_router.post("/auth/login")
@@ -497,6 +634,7 @@ async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
         "start_date": req.start_date,
         "due_date": req.due_date,
         "files": req.files,
+        "is_recovery": req.is_recovery or False,
         "active": True,
         "created_by": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -545,10 +683,45 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
         "activity_id": req.activity_id
     })
     
+    # If this is a recovery grading, calculate the grade based on approval
+    grade_value = req.value
+    if req.recovery_status:
+        if req.recovery_status == "approved":
+            # Calculate what grade is needed to get exactly 3.0 average
+            other_grades = await db.grades.find({
+                "student_id": req.student_id,
+                "course_id": req.course_id,
+                "activity_id": {"$ne": req.activity_id}
+            }, {"_id": 0}).to_list(100)
+            
+            if other_grades:
+                total = sum(g["value"] for g in other_grades)
+                count = len(other_grades)
+                # To get average of 3.0: (total + x) / (count + 1) = 3.0
+                # x = 3.0 * (count + 1) - total
+                grade_value = 3.0 * (count + 1) - total
+                # Ensure it's between 0 and 5
+                grade_value = max(0.0, min(5.0, grade_value))
+            else:
+                grade_value = 3.0
+        else:
+            # If rejected, keep existing average (don't add a new grade)
+            grade_value = 0.0
+    
     if existing:
+        update_data = {
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        if grade_value is not None:
+            update_data["value"] = grade_value
+        if req.comments:
+            update_data["comments"] = req.comments
+        if req.recovery_status:
+            update_data["recovery_status"] = req.recovery_status
+            
         await db.grades.update_one(
             {"id": existing["id"]},
-            {"$set": {"value": req.value, "comments": req.comments, "updated_at": datetime.now(timezone.utc).isoformat()}}
+            {"$set": update_data}
         )
         updated = await db.grades.find_one({"id": existing["id"]}, {"_id": 0})
         return updated
@@ -558,8 +731,9 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
         "student_id": req.student_id,
         "course_id": req.course_id,
         "activity_id": req.activity_id,
-        "value": req.value,
+        "value": grade_value if grade_value is not None else 0.0,
         "comments": req.comments,
+        "recovery_status": req.recovery_status,
         "graded_by": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat()
@@ -714,6 +888,73 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
     del submission["_id"]
     return submission
 
+# --- Recovery Management Routes ---
+@api_router.post("/recovery/enable")
+async def enable_recovery(req: RecoveryEnableRequest, user=Depends(get_current_user)):
+    """Admin enables recovery for a specific student in a course"""
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede habilitar recuperaciones")
+    
+    # Create or update recovery enablement record
+    recovery = {
+        "id": str(uuid.uuid4()),
+        "student_id": req.student_id,
+        "course_id": req.course_id,
+        "enabled": True,
+        "enabled_by": user["id"],
+        "enabled_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    existing = await db.recovery_enabled.find_one({
+        "student_id": req.student_id,
+        "course_id": req.course_id
+    })
+    
+    if existing:
+        await db.recovery_enabled.update_one(
+            {"id": existing["id"]},
+            {"$set": {"enabled": True, "enabled_by": user["id"], "enabled_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        return {"message": "Recuperación actualizada"}
+    
+    await db.recovery_enabled.insert_one(recovery)
+    return {"message": "Recuperación habilitada para el estudiante"}
+
+@api_router.get("/recovery/enabled")
+async def get_recovery_enabled(student_id: Optional[str] = None, course_id: Optional[str] = None, user=Depends(get_current_user)):
+    """Get list of students with recovery enabled"""
+    query = {}
+    if student_id:
+        query["student_id"] = student_id
+    if course_id:
+        query["course_id"] = course_id
+    
+    enabled = await db.recovery_enabled.find(query, {"_id": 0}).to_list(500)
+    return enabled
+
+@api_router.put("/users/{user_id}/promote")
+async def promote_student(user_id: str, user=Depends(get_current_user)):
+    """Admin promotes a student to the next module"""
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede promover estudiantes")
+    
+    student = await db.users.find_one({"id": user_id, "role": "estudiante"}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+    
+    current_module = student.get("module", 1)
+    if current_module >= 2:
+        raise HTTPException(status_code=400, detail="El estudiante ya está en el módulo final")
+    
+    # Promote to next module
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"module": current_module + 1}}
+    )
+    
+    updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    return updated
+
 # --- Seed Data Route ---
 @api_router.post("/seed")
 async def seed_data():
@@ -730,17 +971,23 @@ async def seed_data():
             "description": "Formación técnica en gestión administrativa, contabilidad, ofimática y gestión documental.",
             "duration": "12 meses (2 módulos de 6 meses)",
             "modules": [
-                {"number": 1, "name": "Módulo 1 - Teórico Práctico", "subjects": [
-                    "Fundamentos de Administración", "Herramientas Ofimáticas",
-                    "Gestión Documental y Archivo", "Atención al Cliente y Comunicación Organizacional",
+                {"number": 1, "name": "MÓDULO 1", "subjects": [
+                    "Fundamentos de Administración",
+                    "Herramientas Ofimáticas",
+                    "Gestión Documental y Archivo",
+                    "Atención al Cliente y Comunicación Organizacional",
                     "Legislación Laboral y Ética Profesional"
                 ]},
-                {"number": 2, "name": "Módulo 2 - Teórico Práctico", "subjects": [
-                    "Contabilidad Básica", "Nómina y Seguridad Social Aplicada",
-                    "Control de Inventarios y Logística", "Inglés Técnico / Competencias Ciudadanas",
+                {"number": 2, "name": "MÓDULO 2", "subjects": [
+                    "Contabilidad Básica",
+                    "Nómina y Seguridad Social Aplicada",
+                    "Control de Inventarios y Logística",
+                    "Inglés Técnico / Competencias Ciudadanas",
                     "Proyecto Integrador Virtual"
                 ]}
             ],
+            "module1_close_date": None,
+            "module2_close_date": None,
             "active": True,
             "created_at": datetime.now(timezone.utc).isoformat()
         },
@@ -750,18 +997,28 @@ async def seed_data():
             "description": "Formación para el cuidado y educación de niños en primera infancia.",
             "duration": "12 meses (2 módulos de 6 meses)",
             "modules": [
-                {"number": 1, "name": "Módulo 1", "subjects": [
-                    "Inglés I", "Proyecto de vida", "Construcción social de la infancia",
-                    "Perspectiva del desarrollo infantil", "Salud y nutrición",
-                    "Lenguaje y educación infantil", "Juego y otras formas de comunicación",
+                {"number": 1, "name": "MÓDULO 1", "subjects": [
+                    "Inglés I",
+                    "Proyecto de vida",
+                    "Construcción social de la infancia",
+                    "Perspectiva del desarrollo infantil",
+                    "Salud y nutrición",
+                    "Lenguaje y educación infantil",
+                    "Juego y otras formas de comunicación",
                     "Educación y pedagogía"
                 ]},
-                {"number": 2, "name": "Módulo 2", "subjects": [
-                    "Inglés II", "Construcción del mundo Matemático",
-                    "Dificultades en el aprendizaje", "Estrategias del aula",
-                    "Trabajo de grado - Investigación", "Práctica - Informe"
+                {"number": 2, "name": "MÓDULO 2", "subjects": [
+                    "Inglés II",
+                    "Construcción del mundo Matemático",
+                    "Dificultades en el aprendizaje",
+                    "Estrategias del aula",
+                    "Trabajo de grado",
+                    "Investigación",
+                    "Práctica - Informe"
                 ]}
             ],
+            "module1_close_date": None,
+            "module2_close_date": None,
             "active": True,
             "created_at": datetime.now(timezone.utc).isoformat()
         },
@@ -771,17 +1028,25 @@ async def seed_data():
             "description": "Formación en prevención de riesgos laborales, medicina preventiva y gestión ambiental.",
             "duration": "12 meses (2 módulos)",
             "modules": [
-                {"number": 1, "name": "Módulo 1", "subjects": [
+                {"number": 1, "name": "MÓDULO 1", "subjects": [
                     "Fundamentos en Seguridad y Salud en el Trabajo",
-                    "Administración en salud", "Condiciones de seguridad",
-                    "Matemáticas", "Psicología del Trabajo"
+                    "Administración en salud",
+                    "Condiciones de seguridad",
+                    "Matemáticas",
+                    "Psicología del Trabajo"
                 ]},
-                {"number": 2, "name": "Módulo 2", "subjects": [
-                    "Comunicación oral y escrita", "Sistema de gestión de SST",
-                    "Anatomía y fisiología", "Medicina preventiva del trabajo",
-                    "Ética profesional", "Gestión ambiental", "Proyecto de grado"
+                {"number": 2, "name": "MÓDULO 2", "subjects": [
+                    "Comunicación oral y escrita",
+                    "Sistema de gestión de seguridad y salud del trabajo",
+                    "Anatomía y fisiología",
+                    "Medicina preventiva del trabajo",
+                    "Ética profesional",
+                    "Gestión ambiental",
+                    "Proyecto de grado"
                 ]}
             ],
+            "module1_close_date": None,
+            "module2_close_date": None,
             "active": True,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
