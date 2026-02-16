@@ -84,7 +84,7 @@ export default function DashboardLayout({ children, courseId }) {
     }
   }
 
-  const initials = user?.name?.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() || 'U';
+  const initials = user?.name?.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase() || 'U';
 
   const roleLabels = {
     admin: 'Administrador',

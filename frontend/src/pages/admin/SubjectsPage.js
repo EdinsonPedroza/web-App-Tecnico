@@ -97,7 +97,7 @@ export default function SubjectsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los programas</SelectItem>
-                {programs.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Button onClick={openCreate}><Plus className="h-4 w-4" /> Nueva Materia</Button>
@@ -153,7 +153,7 @@ export default function SubjectsPage() {
               <Select value={form.program_id} onValueChange={(v) => setForm({ ...form, program_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Seleccionar programa" /></SelectTrigger>
                 <SelectContent>
-                  {programs.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

@@ -80,7 +80,7 @@ export default function TeachersPage() {
     }
   };
 
-  const initials = (name) => name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  const initials = (name) => name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
 
   return (
     <DashboardLayout>
