@@ -30,7 +30,8 @@ export default function CoursesPage() {
     month: 'Enero',
     student_ids: [],
     start_date: '',
-    end_date: ''
+    end_date: '',
+    grupo: ''
   });
   const [saving, setSaving] = useState(false);
 
@@ -65,7 +66,8 @@ export default function CoursesPage() {
       month: 'Enero',
       student_ids: [],
       start_date: '',
-      end_date: ''
+      end_date: '',
+      grupo: ''
     });
     setDialogOpen(true);
   };
@@ -84,7 +86,8 @@ export default function CoursesPage() {
       month: monthMatch ? monthMatch[0] : 'Enero',
       student_ids: course.student_ids || [],
       start_date: course.start_date || '',
-      end_date: course.end_date || ''
+      end_date: course.end_date || '',
+      grupo: course.grupo || ''
     });
     setDialogOpen(true);
   };
@@ -107,7 +110,8 @@ export default function CoursesPage() {
         teacher_id: form.teacher_id,
         student_ids: form.student_ids,
         start_date: form.start_date || null,
-        end_date: form.end_date || null
+        end_date: form.end_date || null,
+        grupo: form.grupo || null
       };
       
       if (editing) {
@@ -178,7 +182,14 @@ export default function CoursesPage() {
                       <Users className="h-4 w-4" />
                       <span>Prof: {getName(teachers, c.teacher_id)}</span>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
+                    {c.grupo && (
+                      <div className="pt-1">
+                        <Badge variant="default" className="text-sm font-medium">
+                          {c.grupo}
+                        </Badge>
+                      </div>
+                    )}
+                    <div className="flex gap-2 flex-wrap pt-1">
                       <Badge variant="secondary">{c.year}</Badge>
                       <Badge variant="outline">{c.student_ids?.length || 0} estudiantes</Badge>
                     </div>
@@ -258,6 +269,22 @@ export default function CoursesPage() {
               {!editing && form.program_id && form.subject_id && form.month && form.year && (
                 <p className="text-sm text-muted-foreground">
                   Sugerencia: {getName(subjects, form.subject_id)} - {form.month} {form.year}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-base">Grupo/Cohorte</Label>
+              <Input 
+                value={form.grupo} 
+                onChange={(e) => setForm({ ...form, grupo: e.target.value })} 
+                placeholder={!editing && form.month && form.year && form.program_id
+                  ? `${form.month.toUpperCase()}-${form.year} - ${getName(programs, form.program_id).split(' ').slice(-2).join(' ').toUpperCase()}`
+                  : "Ej: ENERO-2026 - TECNICO EN SISTEMAS"
+                }
+              />
+              {!editing && form.month && form.year && form.program_id && (
+                <p className="text-sm text-muted-foreground">
+                  Sugerencia: {form.month.toUpperCase()}-{form.year} - {getName(programs, form.program_id).split(' ').slice(-2).join(' ').toUpperCase()}
                 </p>
               )}
             </div>
