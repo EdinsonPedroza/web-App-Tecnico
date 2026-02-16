@@ -139,7 +139,7 @@ class UserCreate(BaseModel):
     role: str
     program_id: Optional[str] = None
     phone: Optional[str] = None
-    module: Optional[int] = None
+    module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
 
 class UserUpdate(BaseModel):
@@ -149,7 +149,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     program_id: Optional[str] = None
     active: Optional[bool] = None
-    module: Optional[int] = None
+    module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
 
 class ProgramCreate(BaseModel):

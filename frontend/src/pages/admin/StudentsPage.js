@@ -67,7 +67,7 @@ export default function StudentsPage() {
   };
   const initials = (name) => name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
   
-  // Format: MOD1-ENERO-2026
+  // Format: MOD1-ENERO-2026 (with program short name prefix)
   const formatCourseInfo = (student) => {
     if (!student.module || !student.program_id) return '-';
     const monthNames = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
@@ -212,7 +212,7 @@ export default function StudentsPage() {
             </Select>
           </div>
           <div className="text-sm text-muted-foreground">
-            Mostrando {paginatedStudents.length} de {filtered.length} estudiantes
+            Mostrando {paginatedStudents.length > 0 ? ((page - 1) * pageSize + 1) : 0}-{Math.min(page * pageSize, filtered.length)} de {filtered.length} estudiantes
           </div>
         </div>
 

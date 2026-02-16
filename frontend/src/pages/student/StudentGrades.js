@@ -19,7 +19,7 @@ export default function StudentGrades() {
   const fetchData = useCallback(async () => {
     try {
       const gradeQuery = courseId ? `student_id=${user.id}&course_id=${courseId}` : `student_id=${user.id}`;
-      const courseQuery = courseId ? `student_id=${user.id}` : `student_id=${user.id}`;
+      const courseQuery = `student_id=${user.id}`;
       
       const [gRes, cRes] = await Promise.all([
         api.get(`/grades?${gradeQuery}`),

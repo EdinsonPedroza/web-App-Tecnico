@@ -16,6 +16,8 @@ export default function StudentCourseDashboard() {
   const [grades, setGrades] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const PASSING_GRADE_THRESHOLD = 3;
+
   const fetchData = useCallback(async () => {
     try {
       const [cRes, aRes, vRes, gRes] = await Promise.all([
@@ -95,7 +97,7 @@ export default function StudentCourseDashboard() {
                       </div>
                       <p className="text-xs text-muted-foreground">Vence: {due.toLocaleDateString('es-CO')}</p>
                     </div>
-                    <Badge variant={daysLeft <= 3 ? 'warning' : 'secondary'}>
+                    <Badge variant={daysLeft <= 3 ? 'destructive' : 'secondary'}>
                       {daysLeft} días
                     </Badge>
                   </div>
@@ -118,7 +120,7 @@ export default function StudentCourseDashboard() {
                     <p className="text-sm font-medium">Calificación</p>
                     <p className="text-xs text-muted-foreground">{grade.comments || 'Sin comentarios'}</p>
                   </div>
-                  <Badge variant={grade.value >= 3 ? 'success' : 'destructive'} className="text-base px-3">
+                  <Badge variant={grade.value >= PASSING_GRADE_THRESHOLD ? 'success' : 'destructive'} className="text-base px-3">
                     {grade.value.toFixed(1)}
                   </Badge>
                 </div>
