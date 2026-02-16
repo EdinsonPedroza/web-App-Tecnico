@@ -16,6 +16,7 @@ export default function SubjectsPage() {
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterProgram, setFilterProgram] = useState('all');
+  const [filterModule, setFilterModule] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', program_id: '', module_number: 1, description: '' });
@@ -35,7 +36,11 @@ export default function SubjectsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const filtered = filterProgram === 'all' ? subjects : subjects.filter(s => s.program_id === filterProgram);
+  const filtered = subjects.filter(s => {
+    if (filterProgram !== 'all' && s.program_id !== filterProgram) return false;
+    if (filterModule !== 'all' && s.module_number !== parseInt(filterModule)) return false;
+    return true;
+  });
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin programa';
 
   const openCreate = () => {
@@ -86,12 +91,12 @@ export default function SubjectsPage() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold font-heading">Materias</h1>
-            <p className="text-muted-foreground mt-1">Plan de estudios por programa</p>
+            <h1 className="text-3xl font-bold font-heading">Materias</h1>
+            <p className="text-muted-foreground mt-2 text-base">Plan de estudios por programa y módulo</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Select value={filterProgram} onValueChange={setFilterProgram}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-56">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Filtrar por programa" />
               </SelectTrigger>
@@ -100,7 +105,17 @@ export default function SubjectsPage() {
                 {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button onClick={openCreate}><Plus className="h-4 w-4" /> Nueva Materia</Button>
+            <Select value={filterModule} onValueChange={setFilterModule}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Módulo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los módulos</SelectItem>
+                <SelectItem value="1">Módulo 1</SelectItem>
+                <SelectItem value="2">Módulo 2</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nueva Materia</Button>
           </div>
         </div>
 

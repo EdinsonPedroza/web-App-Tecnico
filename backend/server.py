@@ -77,7 +77,7 @@ async def create_initial_data():
         },
         {
             "id": "prog-infancia", 
-            "name": "Técnico en Atención a la Primera Infancia", 
+            "name": "Técnico Laboral en Atención a la Primera Infancia", 
             "description": "Formación en desarrollo infantil", 
             "duration": "12 meses",
             "modules": [
