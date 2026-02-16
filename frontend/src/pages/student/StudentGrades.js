@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,7 @@ import api from '@/lib/api';
 
 export default function StudentGrades() {
   const { user } = useAuth();
+  const { courseId } = useParams();
   const [grades, setGrades] = useState([]);
   const [courses, setCourses] = useState([]);
   const [activities, setActivities] = useState([]);
@@ -16,15 +18,21 @@ export default function StudentGrades() {
 
   const fetchData = useCallback(async () => {
     try {
+      const gradeQuery = courseId ? `student_id=${user.id}&course_id=${courseId}` : `student_id=${user.id}`;
+      const courseQuery = `student_id=${user.id}`;
+      
       const [gRes, cRes] = await Promise.all([
-        api.get(`/grades?student_id=${user.id}`),
-        api.get(`/courses?student_id=${user.id}`)
+        api.get(`/grades?${gradeQuery}`),
+        api.get(`/courses?${courseQuery}`)
       ]);
       setGrades(gRes.data);
-      setCourses(cRes.data);
+      
+      // Filter courses if courseId is provided
+      const filteredCourses = courseId ? cRes.data.filter(c => c.id === courseId) : cRes.data;
+      setCourses(filteredCourses);
 
       const allActs = [];
-      for (const course of cRes.data) {
+      for (const course of filteredCourses) {
         const aRes = await api.get(`/activities?course_id=${course.id}`);
         allActs.push(...aRes.data);
       }
@@ -34,7 +42,7 @@ export default function StudentGrades() {
     } finally {
       setLoading(false);
     }
-  }, [user.id]);
+  }, [user.id, courseId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -57,7 +65,7 @@ export default function StudentGrades() {
   });
 
   return (
-    <DashboardLayout>
+    <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

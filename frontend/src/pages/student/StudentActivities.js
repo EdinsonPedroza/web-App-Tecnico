@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 export default function StudentActivities() {
   const { user } = useAuth();
+  const { courseId } = useParams();
   const [activities, setActivities] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,13 +27,9 @@ export default function StudentActivities() {
 
   const fetchData = useCallback(async () => {
     try {
-      const cRes = await api.get(`/courses?student_id=${user.id}`);
-      const allActivities = [];
-      for (const course of cRes.data) {
-        const aRes = await api.get(`/activities?course_id=${course.id}`);
-        allActivities.push(...aRes.data.map(a => ({ ...a, courseName: course.name })));
-      }
-      setActivities(allActivities);
+      const query = courseId ? `course_id=${courseId}` : '';
+      const aRes = await api.get(`/activities${query ? '?' + query : ''}`);
+      setActivities(aRes.data);
       const sRes = await api.get(`/submissions?student_id=${user.id}`);
       setSubmissions(sRes.data);
     } catch (err) {
@@ -39,7 +37,7 @@ export default function StudentActivities() {
     } finally {
       setLoading(false);
     }
-  }, [user.id]);
+  }, [user.id, courseId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -101,7 +99,7 @@ export default function StudentActivities() {
   const formatDate = (d) => new Date(d).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return (
-    <DashboardLayout>
+    <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold font-heading">Actividades</h1>

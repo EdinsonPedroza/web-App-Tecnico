@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 
@@ -22,8 +22,12 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', course_ids: [] });
+  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', course_ids: [], module: '', grupo: '' });
   const [saving, setSaving] = useState(false);
+  const [filterProgram, setFilterProgram] = useState('');
+  const [filterModule, setFilterModule] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   const fetchData = useCallback(async () => {
     try {
@@ -44,16 +48,41 @@ export default function StudentsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const filtered = students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search));
+  const filtered = students.filter(s => {
+    const matchesSearch = s.name.toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search);
+    const matchesProgram = !filterProgram || s.program_id === filterProgram;
+    const matchesModule = !filterModule || String(s.module) === filterModule;
+    return matchesSearch && matchesProgram && matchesModule;
+  });
+  
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginatedStudents = filtered.slice((page - 1) * pageSize, page * pageSize);
+  
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin asignar';
+  const getProgramShortName = (id) => {
+    const program = programs.find(p => p.id === id);
+    if (!program) return 'N/A';
+    const words = program.name.split(' ');
+    return words.length > 3 ? words.slice(2, 5).join(' ') : program.name;
+  };
   const initials = (name) => name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  
+  // Format: MOD1-ENERO-2026 (with program short name prefix)
+  const formatCourseInfo = (student) => {
+    if (!student.module || !student.program_id) return '-';
+    const monthNames = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+    const currentMonth = monthNames[new Date().getMonth()];
+    const currentYear = new Date().getFullYear();
+    const programShort = getProgramShortName(student.program_id);
+    return `${programShort}-MOD${student.module}-${currentMonth}-${currentYear}`;
+  };
 
   // Get which courses a student is enrolled in
   const getStudentCourseIds = (studentId) => courses.filter(c => (c.student_ids || []).includes(studentId)).map(c => c.id);
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', course_ids: [] });
+    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', course_ids: [], module: '', grupo: '' });
     setDialogOpen(true);
   };
 
@@ -65,7 +94,9 @@ export default function StudentsPage() {
       password: '',
       phone: student.phone || '',
       program_id: student.program_id || '',
-      course_ids: getStudentCourseIds(student.id)
+      course_ids: getStudentCourseIds(student.id),
+      module: student.module || '',
+      grupo: student.grupo || ''
     });
     setDialogOpen(true);
   };
@@ -86,11 +117,23 @@ export default function StudentsPage() {
     try {
       let studentId;
       if (editing) {
-        await api.put(`/users/${editing.id}`, { name: form.name, phone: form.phone, program_id: form.program_id || null });
+        const updateData = { 
+          name: form.name, 
+          phone: form.phone, 
+          program_id: form.program_id || null,
+          module: form.module ? parseInt(form.module) : null,
+          grupo: form.grupo || null
+        };
+        await api.put(`/users/${editing.id}`, updateData);
         studentId = editing.id;
         toast.success('Estudiante actualizado');
       } else {
-        const res = await api.post('/users', { ...form, role: 'estudiante' });
+        const createData = { 
+          ...form, 
+          role: 'estudiante',
+          module: form.module ? parseInt(form.module) : null
+        };
+        const res = await api.post('/users', createData);
         studentId = res.data.id;
         toast.success('Estudiante creado');
       }
@@ -142,9 +185,35 @@ export default function StudentsPage() {
           <Button onClick={openCreate}><Plus className="h-4 w-4" /> Nuevo Estudiante</Button>
         </div>
 
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por nombre o cédula..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Buscar por nombre o cédula..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <Select value={filterProgram} onValueChange={setFilterProgram}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Filtrar por técnico" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Todos los técnicos</SelectItem>
+                {programs.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterModule} onValueChange={setFilterModule}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Filtrar por módulo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Todos los módulos</SelectItem>
+                <SelectItem value="1">Módulo 1</SelectItem>
+                <SelectItem value="2">Módulo 2</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Mostrando {paginatedStudents.length > 0 ? ((page - 1) * pageSize + 1) : 0}-{Math.min(page * pageSize, filtered.length)} de {filtered.length} estudiantes
+          </div>
         </div>
 
         {loading ? (
@@ -163,6 +232,8 @@ export default function StudentsPage() {
                     <TableHead>Estudiante</TableHead>
                     <TableHead>Cédula</TableHead>
                     <TableHead>Programa</TableHead>
+                    <TableHead>Técnico-Módulo-Curso</TableHead>
+                    <TableHead>Grupo</TableHead>
                     <TableHead>Cursos</TableHead>
                     <TableHead>Teléfono</TableHead>
                     <TableHead>Estado</TableHead>
@@ -170,7 +241,7 @@ export default function StudentsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((s) => (
+                  {paginatedStudents.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -180,6 +251,10 @@ export default function StudentsPage() {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground font-mono">{s.cedula}</TableCell>
                       <TableCell><Badge variant="secondary" className="text-xs truncate max-w-32">{getProgramName(s.program_id)}</Badge></TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs font-mono">{formatCourseInfo(s)}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{s.grupo || '-'}</TableCell>
                       <TableCell><Badge variant="outline" className="text-xs">{getStudentCourseIds(s.id).length} cursos</Badge></TableCell>
                       <TableCell className="text-sm text-muted-foreground">{s.phone || '-'}</TableCell>
                       <TableCell><Badge variant={s.active !== false ? 'success' : 'destructive'}>{s.active !== false ? 'Activo' : 'Inactivo'}</Badge></TableCell>
@@ -192,6 +267,33 @@ export default function StudentsPage() {
                 </TableBody>
               </Table>
             </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Página {page} de {totalPages}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                  >
+                    Siguiente
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         )}
       </div>
@@ -214,6 +316,22 @@ export default function StudentsPage() {
                   {programs.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Módulo</Label>
+                <Select value={form.module} onValueChange={(v) => setForm({ ...form, module: v })}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar módulo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Módulo 1</SelectItem>
+                    <SelectItem value="2">Módulo 2</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Grupo</Label>
+                <Input value={form.grupo} onChange={(e) => setForm({ ...form, grupo: e.target.value })} placeholder="ej: A, B, Mañana" />
+              </div>
             </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
             <div className="space-y-2">
