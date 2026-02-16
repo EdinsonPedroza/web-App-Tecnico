@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock, Upload, Download, File, Eye, Image, Check } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -20,7 +21,7 @@ export default function TeacherActivities() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ title: '', description: '', start_date: '', due_date: '', files: [] });
+  const [form, setForm] = useState({ title: '', description: '', start_date: '', due_date: '', files: [], is_recovery: false });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [submissionsDialog, setSubmissionsDialog] = useState(null);
@@ -78,9 +79,9 @@ export default function TeacherActivities() {
     setGrades(prev => ({ ...prev, [studentId]: value }));
   };
 
-  const saveGrade = async (studentId) => {
-    const value = parseFloat(grades[studentId]);
-    if (isNaN(value) || value < 0 || value > 5) {
+  const saveGrade = async (studentId, recoveryStatus = null) => {
+    const value = recoveryStatus ? null : parseFloat(grades[studentId]);
+    if (!recoveryStatus && (isNaN(value) || value < 0 || value > 5)) {
       toast.error('La nota debe ser entre 0 y 5');
       return;
     }
@@ -90,9 +91,10 @@ export default function TeacherActivities() {
         student_id: studentId,
         course_id: courseId,
         activity_id: submissionsDialog.id,
-        value: value
+        value: value,
+        recovery_status: recoveryStatus
       });
-      toast.success('Nota guardada');
+      toast.success(recoveryStatus ? `Recuperación ${recoveryStatus === 'approved' ? 'aprobada' : 'rechazada'}` : 'Nota guardada');
     } catch (err) {
       toast.error('Error guardando nota');
     } finally {
@@ -111,7 +113,8 @@ export default function TeacherActivities() {
       description: '',
       start_date: defaultStart.toISOString().slice(0, 16),
       due_date: defaultDue.toISOString().slice(0, 16),
-      files: []
+      files: [],
+      is_recovery: false
     });
     setDialogOpen(true);
   };
@@ -123,7 +126,8 @@ export default function TeacherActivities() {
       description: act.description || '',
       start_date: act.start_date ? new Date(act.start_date).toISOString().slice(0, 16) : '',
       due_date: act.due_date ? new Date(act.due_date).toISOString().slice(0, 16) : '',
-      files: act.files || []
+      files: act.files || [],
+      is_recovery: act.is_recovery || false
     });
     setDialogOpen(true);
   };
@@ -169,7 +173,8 @@ export default function TeacherActivities() {
           description: form.description,
           start_date: startDate,
           due_date: dueDate,
-          files: form.files
+          files: form.files,
+          is_recovery: form.is_recovery
         });
         toast.success('Actividad actualizada');
       } else {
@@ -179,7 +184,8 @@ export default function TeacherActivities() {
           description: form.description,
           start_date: startDate,
           due_date: dueDate,
-          files: form.files
+          files: form.files,
+          is_recovery: form.is_recovery
         });
         toast.success('Actividad creada');
       }
@@ -245,6 +251,7 @@ export default function TeacherActivities() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <Badge variant="outline" className="shrink-0 text-xs font-mono">Act {actNum}</Badge>
+                          {act.is_recovery && <Badge variant="warning" className="shrink-0 text-xs">Recuperación</Badge>}
                           <StatusIcon className={`h-4 w-4 shrink-0 ${status.variant === 'destructive' ? 'text-destructive' : status.variant === 'success' ? 'text-success' : 'text-muted-foreground'}`} />
                           <h3 className="text-sm font-semibold text-foreground truncate">{act.title}</h3>
                         </div>
@@ -352,6 +359,26 @@ export default function TeacherActivities() {
                 </div>
               )}
             </div>
+
+            {/* Recovery Activity Checkbox */}
+            <div className="flex items-center space-x-2 rounded-lg border p-3">
+              <Checkbox 
+                id="is_recovery" 
+                checked={form.is_recovery} 
+                onCheckedChange={(checked) => setForm({ ...form, is_recovery: checked })} 
+              />
+              <div className="grid gap-1.5 leading-none">
+                <label
+                  htmlFor="is_recovery"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                >
+                  Actividad de Recuperación
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Solo visible para estudiantes habilitados por la secretaría
+                </p>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
@@ -423,27 +450,54 @@ export default function TeacherActivities() {
                         </div>
                         {/* Campo de calificación */}
                         <div className="flex items-center gap-2 shrink-0">
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number"
-                              min="0"
-                              max="5"
-                              step="0.1"
-                              placeholder="Nota"
-                              className="w-20 h-8 text-center text-sm"
-                              value={currentGrade}
-                              onChange={(e) => handleGradeChange(student.id, e.target.value)}
-                            />
-                            <span className="text-xs text-muted-foreground">/5</span>
-                          </div>
-                          <Button
-                            size="sm"
-                            className="h-8"
-                            onClick={() => saveGrade(student.id)}
-                            disabled={savingGrade === student.id || currentGrade === ''}
-                          >
-                            {savingGrade === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                          </Button>
+                          {submissionsDialog?.is_recovery ? (
+                            // Recovery grading: approve/reject buttons
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-success border-success hover:bg-success/10"
+                                onClick={() => saveGrade(student.id, 'approved')}
+                                disabled={savingGrade === student.id}
+                              >
+                                {savingGrade === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Aprobar'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-destructive border-destructive hover:bg-destructive/10"
+                                onClick={() => saveGrade(student.id, 'rejected')}
+                                disabled={savingGrade === student.id}
+                              >
+                                {savingGrade === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Rechazar'}
+                              </Button>
+                            </div>
+                          ) : (
+                            // Normal grading: numeric input
+                            <>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="5"
+                                  step="0.1"
+                                  placeholder="Nota"
+                                  className="w-20 h-8 text-center text-sm"
+                                  value={currentGrade}
+                                  onChange={(e) => handleGradeChange(student.id, e.target.value)}
+                                />
+                                <span className="text-xs text-muted-foreground">/5</span>
+                              </div>
+                              <Button
+                                size="sm"
+                                className="h-8"
+                                onClick={() => saveGrade(student.id)}
+                                disabled={savingGrade === student.id || currentGrade === ''}
+                              >
+                                {savingGrade === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </CardContent>

@@ -36,6 +36,18 @@ export default function StudentCourses() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
+  
+  // Group courses by module
+  const coursesByModule = courses.reduce((acc, course) => {
+    const subject = subjects.find(s => s.id === course.subject_id);
+    const moduleNum = subject?.module_number || 0;
+    if (!acc[moduleNum]) acc[moduleNum] = [];
+    acc[moduleNum].push(course);
+    return acc;
+  }, {});
+  
+  // Sort modules descending (Module 2 first)
+  const sortedModuleNumbers = Object.keys(coursesByModule).map(Number).sort((a, b) => b - a);
 
   return (
     <DashboardLayout>
@@ -53,30 +65,42 @@ export default function StudentCourses() {
             <p className="text-muted-foreground">No estás inscrito en ningún curso</p>
           </CardContent></Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {courses.map((course) => (
-              <Card key={course.id} className="shadow-card hover:shadow-card-hover transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-2">
-                    <BookOpen className="h-5 w-5" />
-                  </div>
-                  <CardTitle className="text-base font-heading">{course.name}</CardTitle>
-                  <CardDescription className="text-xs">{getName(subjects, course.subject_id)}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Building2 className="h-4 w-4" />
-                      <span className="truncate">{getName(programs, course.program_id)}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Users className="h-4 w-4" />
-                      <span>Prof: {getName(teachers, course.teacher_id)}</span>
-                    </div>
-                    <Badge variant="secondary">{course.year}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
+          <div className="space-y-8">
+            {sortedModuleNumbers.map(moduleNum => (
+              <div key={moduleNum} className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Badge variant="default" className="text-base px-4 py-1">
+                    MÓDULO {moduleNum}
+                  </Badge>
+                  <div className="flex-1 h-px bg-border"></div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {coursesByModule[moduleNum].map((course) => (
+                    <Card key={course.id} className="shadow-card hover:shadow-card-hover transition-shadow">
+                      <CardHeader className="pb-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-2">
+                          <BookOpen className="h-5 w-5" />
+                        </div>
+                        <CardTitle className="text-base font-heading">{course.name}</CardTitle>
+                        <CardDescription className="text-xs">{getName(subjects, course.subject_id)}</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Building2 className="h-4 w-4" />
+                            <span className="truncate">{getName(programs, course.program_id)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Users className="h-4 w-4" />
+                            <span>Prof: {getName(teachers, course.teacher_id)}</span>
+                          </div>
+                          <Badge variant="secondary">{course.year}</Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

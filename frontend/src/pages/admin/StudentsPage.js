@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight, ArrowUpCircle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 
@@ -174,6 +174,21 @@ export default function StudentsPage() {
     }
   };
 
+  const handlePromote = async (student) => {
+    if (!student.module || student.module >= 2) {
+      toast.error('El estudiante ya está en el módulo final');
+      return;
+    }
+    if (!window.confirm(`¿Promover a ${student.name} al Módulo ${student.module + 1}?`)) return;
+    try {
+      await api.put(`/users/${student.id}/promote`);
+      toast.success('Estudiante promovido exitosamente');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error promoviendo estudiante');
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -259,8 +274,20 @@ export default function StudentsPage() {
                       <TableCell className="text-sm text-muted-foreground">{s.phone || '-'}</TableCell>
                       <TableCell><Badge variant={s.active !== false ? 'success' : 'destructive'}>{s.active !== false ? 'Activo' : 'Inactivo'}</Badge></TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {s.module && s.module < 2 && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              onClick={() => handlePromote(s)}
+                              title="Promover al siguiente módulo"
+                            >
+                              <ArrowUpCircle className="h-4 w-4 text-success" />
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -329,8 +356,8 @@ export default function StudentsPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Grupo</Label>
-                <Input value={form.grupo} onChange={(e) => setForm({ ...form, grupo: e.target.value })} placeholder="ej: A, B, Mañana" />
+                <Label>Grupo (Mes y Año)</Label>
+                <Input value={form.grupo} onChange={(e) => setForm({ ...form, grupo: e.target.value })} placeholder="ej: Enero 2025, Febrero 2025" />
               </div>
             </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
