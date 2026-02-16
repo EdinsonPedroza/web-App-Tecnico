@@ -24,7 +24,7 @@ export default function StudentVideos() {
     } finally {
       setLoading(false);
     }
-  }, [user.id, courseId]);
+  }, [courseId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
