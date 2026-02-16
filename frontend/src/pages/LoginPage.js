@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { GraduationCap, User, Shield, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { GraduationCap, User, Shield, Eye, EyeOff, Loader2, Facebook } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function LoginPage() {
@@ -173,6 +173,20 @@ export default function LoginPage() {
                   Ingresar
                 </Button>
               </form>
+
+              <div className="mt-6 pt-4 border-t border-border/50">
+                <div className="flex justify-center">
+                  <a
+                    href="https://www.facebook.com/share/1HmbmUyj4p/?mibextid=wwXIfr"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <Facebook className="h-4 w-4" />
+                    <span>Síguenos en Facebook</span>
+                  </a>
+                </div>
+              </div>
 
             </CardContent>
           </Card>

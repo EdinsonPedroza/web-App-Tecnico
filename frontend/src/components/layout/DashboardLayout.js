@@ -41,11 +41,14 @@ const teacherCourseLinks = [
 ];
 
 const studentLinks = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/student' },
-  { label: 'Mis Cursos', icon: BookOpen, path: '/student/courses' },
-  { label: 'Actividades', icon: FileText, path: '/student/activities' },
-  { label: 'Mis Notas', icon: ClipboardList, path: '/student/grades' },
-  { label: 'Videos de Clase', icon: Video, path: '/student/videos' },
+  { label: 'Mis Cursos', icon: LayoutDashboard, path: '/student' },
+];
+
+const studentCourseLinks = [
+  { label: 'Resumen', icon: LayoutDashboard, path: '' },
+  { label: 'Actividades', icon: FileText, path: '/activities' },
+  { label: 'Mis Notas', icon: ClipboardList, path: '/grades' },
+  { label: 'Videos de Clase', icon: Video, path: '/videos' },
 ];
 
 export default function DashboardLayout({ children, courseId }) {
@@ -70,8 +73,15 @@ export default function DashboardLayout({ children, courseId }) {
     } else {
       links = teacherLinks;
     }
-  } else {
-    links = studentLinks;
+  } else if (user?.role === 'estudiante') {
+    if (courseId) {
+      links = studentCourseLinks.map(l => ({
+        ...l,
+        path: `/student/course/${courseId}${l.path}`
+      }));
+    } else {
+      links = studentLinks;
+    }
   }
 
   const initials = user?.name?.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() || 'U';
@@ -129,6 +139,16 @@ export default function DashboardLayout({ children, courseId }) {
               variant="ghost"
               className="w-full justify-start gap-2 mb-3 text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent text-xs"
               onClick={() => navigate('/teacher')}
+            >
+              <ChevronRight className="h-3 w-3 rotate-180" />
+              Volver a mis cursos
+            </Button>
+          )}
+          {user?.role === 'estudiante' && courseId && (
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-2 mb-3 text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent text-xs"
+              onClick={() => navigate('/student')}
             >
               <ChevronRight className="h-3 w-3 rotate-180" />
               Volver a mis cursos

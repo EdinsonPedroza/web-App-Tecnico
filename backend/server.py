@@ -139,6 +139,8 @@ class UserCreate(BaseModel):
     role: str
     program_id: Optional[str] = None
     phone: Optional[str] = None
+    module: Optional[int] = None
+    grupo: Optional[str] = None
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -147,6 +149,8 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     program_id: Optional[str] = None
     active: Optional[bool] = None
+    module: Optional[int] = None
+    grupo: Optional[str] = None
 
 class ProgramCreate(BaseModel):
     name: str
@@ -293,6 +297,8 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "role": req.role,
         "program_id": req.program_id,
         "phone": req.phone,
+        "module": req.module,
+        "grupo": req.grupo,
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
