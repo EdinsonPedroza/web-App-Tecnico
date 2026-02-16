@@ -7,7 +7,9 @@ services:
       - mongodb_data:/data/db
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev  # 👈 Usa el Dockerfile de desarrollo
     container_name: educando_backend
     restart: always
     depends_on:
