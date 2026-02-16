@@ -180,10 +180,10 @@ export default function LoginPage() {
                     href="https://www.facebook.com/share/1HmbmUyj4p/?mibextid=wwXIfr"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#1877f2] hover:bg-[#145dbf] text-white font-medium transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
                   >
-                    <Facebook className="h-4 w-4" />
-                    <span>Síguenos en Facebook</span>
+                    <Facebook className="h-5 w-5" />
+                    <span className="text-sm">Síguenos en Facebook</span>
                   </a>
                 </div>
               </div>

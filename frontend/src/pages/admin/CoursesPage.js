@@ -21,7 +21,17 @@ export default function CoursesPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', program_id: '', subject_id: '', teacher_id: '', year: 2025, student_ids: [] });
+  const [form, setForm] = useState({ 
+    name: '', 
+    program_id: '', 
+    subject_id: '', 
+    teacher_id: '', 
+    year: new Date().getFullYear(), 
+    month: 'Enero',
+    student_ids: [],
+    start_date: '',
+    end_date: ''
+  });
   const [saving, setSaving] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -46,13 +56,36 @@ export default function CoursesPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', program_id: '', subject_id: '', teacher_id: '', year: 2025, student_ids: [] });
+    setForm({ 
+      name: '', 
+      program_id: '', 
+      subject_id: '', 
+      teacher_id: '', 
+      year: new Date().getFullYear(), 
+      month: 'Enero',
+      student_ids: [],
+      start_date: '',
+      end_date: ''
+    });
     setDialogOpen(true);
   };
 
   const openEdit = (course) => {
     setEditing(course);
-    setForm({ name: course.name, program_id: course.program_id, subject_id: course.subject_id, teacher_id: course.teacher_id, year: course.year, student_ids: course.student_ids || [] });
+    // Extract month and year from course name if possible
+    const monthMatch = course.name.match(/(Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)/i);
+    const yearMatch = course.name.match(/\d{4}/);
+    setForm({ 
+      name: course.name, 
+      program_id: course.program_id, 
+      subject_id: course.subject_id, 
+      teacher_id: course.teacher_id, 
+      year: yearMatch ? parseInt(yearMatch[0]) : new Date().getFullYear(),
+      month: monthMatch ? monthMatch[0] : 'Enero',
+      student_ids: course.student_ids || [],
+      start_date: course.start_date || '',
+      end_date: course.end_date || ''
+    });
     setDialogOpen(true);
   };
 
@@ -69,17 +102,30 @@ export default function CoursesPage() {
     if (!form.name.trim()) { toast.error('Nombre del curso requerido'); return; }
     setSaving(true);
     try {
+      const saveData = {
+        name: form.name,
+        teacher_id: form.teacher_id,
+        student_ids: form.student_ids,
+        start_date: form.start_date || null,
+        end_date: form.end_date || null
+      };
+      
       if (editing) {
-        await api.put(`/courses/${editing.id}`, { name: form.name, teacher_id: form.teacher_id, student_ids: form.student_ids });
+        await api.put(`/courses/${editing.id}`, saveData);
         toast.success('Curso actualizado');
       } else {
-        await api.post('/courses', form);
+        await api.post('/courses', {
+          ...saveData,
+          program_id: form.program_id,
+          subject_id: form.subject_id,
+          year: form.year
+        });
         toast.success('Curso creado');
       }
       setDialogOpen(false);
       fetchData();
     } catch (err) {
-      toast.error('Error guardando curso');
+      toast.error('Error guardando curso: ' + (err.response?.data?.detail || err.message));
     } finally {
       setSaving(false);
     }
@@ -96,10 +142,10 @@ export default function CoursesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold font-heading">Cursos</h1>
-            <p className="text-muted-foreground mt-1">Gestiona cursos y grupos</p>
+            <h1 className="text-3xl font-bold font-heading">Cursos y Grupos</h1>
+            <p className="text-muted-foreground mt-1 text-base">Gestiona cursos por programa y grupo</p>
           </div>
-          <Button onClick={openCreate}><Plus className="h-4 w-4" /> Nuevo Curso</Button>
+          <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nuevo Curso/Grupo</Button>
         </div>
 
         {loading ? (
@@ -145,45 +191,110 @@ export default function CoursesPage() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? 'Editar Curso' : 'Nuevo Curso'}</DialogTitle>
-            <DialogDescription>Configura el curso y asigna estudiantes</DialogDescription>
+            <DialogTitle className="text-xl">{editing ? 'Editar Curso/Grupo' : 'Nuevo Curso/Grupo'}</DialogTitle>
+            <DialogDescription className="text-base">Configura el curso o grupo y asigna estudiantes</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Nombre del Curso</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ej: Fundamentos Admin - Grupo A" /></div>
             {!editing && (
               <>
                 <div className="space-y-2">
-                  <Label>Programa</Label>
+                  <Label className="text-base">Programa</Label>
                   <Select value={form.program_id} onValueChange={(v) => setForm({ ...form, program_id: v, subject_id: '' })}>
-                    <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar programa" /></SelectTrigger>
                     <SelectContent>{programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Materia</Label>
+                  <Label className="text-base">Materia</Label>
                   <Select value={form.subject_id} onValueChange={(v) => setForm({ ...form, subject_id: v })}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar materia" /></SelectTrigger>
-                    <SelectContent>{filteredSubjects.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {filteredSubjects.map(s => (
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          {s.name} (Módulo {s.module_number})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-base">Mes</Label>
+                    <Select value={form.month} onValueChange={(v) => setForm({ ...form, month: v })}>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar mes" /></SelectTrigger>
+                      <SelectContent>
+                        {['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map(m => (
+                          <SelectItem key={m} value={m}>{m}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-base">Año</Label>
+                    <Input 
+                      type="number" 
+                      value={form.year} 
+                      onChange={(e) => setForm({ ...form, year: parseInt(e.target.value) || new Date().getFullYear() })} 
+                      placeholder="2026"
+                      min="2024"
+                      max="2030"
+                    />
+                  </div>
                 </div>
               </>
             )}
             <div className="space-y-2">
-              <Label>Profesor</Label>
+              <Label className="text-base">Nombre del Curso/Grupo</Label>
+              <Input 
+                value={form.name} 
+                onChange={(e) => setForm({ ...form, name: e.target.value })} 
+                placeholder={!editing && form.program_id && form.subject_id && form.month && form.year 
+                  ? `${getName(subjects, form.subject_id)} - ${form.month} ${form.year}` 
+                  : "Ej: Fundamentos de Administración - Enero 2026"
+                } 
+              />
+              {!editing && form.program_id && form.subject_id && form.month && form.year && (
+                <p className="text-sm text-muted-foreground">
+                  Sugerencia: {getName(subjects, form.subject_id)} - {form.month} {form.year}
+                </p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-base">Fecha de Inicio</Label>
+                <Input 
+                  type="date" 
+                  value={form.start_date} 
+                  onChange={(e) => setForm({ ...form, start_date: e.target.value })} 
+                  placeholder="Fecha de inicio" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-base">Fecha de Fin</Label>
+                <Input 
+                  type="date" 
+                  value={form.end_date} 
+                  onChange={(e) => setForm({ ...form, end_date: e.target.value })} 
+                  placeholder="Fecha de fin" 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-base">Profesor</Label>
               <Select value={form.teacher_id} onValueChange={(v) => setForm({ ...form, teacher_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Asignar profesor" /></SelectTrigger>
                 <SelectContent>{teachers.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Estudiantes Inscritos</Label>
-              <div className="max-h-40 overflow-y-auto rounded-lg border p-3 space-y-2">
+              <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>
+              <div className="max-h-48 overflow-y-auto rounded-lg border p-4 space-y-2.5">
                 {students.length === 0 ? <p className="text-sm text-muted-foreground">No hay estudiantes</p> : students.map((s) => (
-                  <div key={s.id} className="flex items-center gap-2">
+                  <div key={s.id} className="flex items-center gap-2.5">
                     <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
-                    <span className="text-sm">{s.name} <span className="text-muted-foreground">({s.cedula})</span></span>
+                    <span className="text-sm">{s.name} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module}</span></span>
                   </div>
                 ))}
               </div>
