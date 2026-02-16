@@ -54,6 +54,13 @@ export default function CoursesPage() {
 
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
   const filteredSubjects = form.program_id ? subjects.filter(s => s.program_id === form.program_id) : subjects;
+  
+  const formatGrupoSuggestion = (month, year, programId) => {
+    if (!month || !year || !programId) return '';
+    const programName = getName(programs, programId);
+    const lastTwoWords = programName.split(' ').slice(-2).join(' ').toUpperCase();
+    return `${month.toUpperCase()}-${year} - ${lastTwoWords}`;
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -278,13 +285,13 @@ export default function CoursesPage() {
                 value={form.grupo} 
                 onChange={(e) => setForm({ ...form, grupo: e.target.value })} 
                 placeholder={!editing && form.month && form.year && form.program_id
-                  ? `${form.month.toUpperCase()}-${form.year} - ${getName(programs, form.program_id).split(' ').slice(-2).join(' ').toUpperCase()}`
+                  ? formatGrupoSuggestion(form.month, form.year, form.program_id)
                   : "Ej: ENERO-2026 - TECNICO EN SISTEMAS"
                 }
               />
               {!editing && form.month && form.year && form.program_id && (
                 <p className="text-sm text-muted-foreground">
-                  Sugerencia: {form.month.toUpperCase()}-{form.year} - {getName(programs, form.program_id).split(' ').slice(-2).join(' ').toUpperCase()}
+                  Sugerencia: {formatGrupoSuggestion(form.month, form.year, form.program_id)}
                 </p>
               )}
             </div>

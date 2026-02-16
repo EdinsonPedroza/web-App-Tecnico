@@ -42,6 +42,9 @@ export default function SubjectsPage() {
     return true;
   });
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin programa';
+  
+  // Get unique module numbers from subjects
+  const availableModules = [...new Set(subjects.map(s => s.module_number))].sort();
 
   const openCreate = () => {
     setEditing(null);
@@ -111,8 +114,9 @@ export default function SubjectsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los módulos</SelectItem>
-                <SelectItem value="1">Módulo 1</SelectItem>
-                <SelectItem value="2">Módulo 2</SelectItem>
+                {availableModules.map(num => (
+                  <SelectItem key={num} value={String(num)}>Módulo {num}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nueva Materia</Button>

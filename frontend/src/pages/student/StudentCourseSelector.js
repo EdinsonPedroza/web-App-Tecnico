@@ -124,7 +124,11 @@ export default function StudentCourseSelector() {
                   <div className="flex gap-2">
                     <Badge variant="outline" className="text-sm">{course.year}</Badge>
                     {course.grupo && (
-                      <Badge variant="secondary" className="text-sm truncate max-w-[150px]">
+                      <Badge 
+                        variant="secondary" 
+                        className="text-sm truncate max-w-[150px]"
+                        title={course.grupo}
+                      >
                         {course.grupo}
                       </Badge>
                     )}

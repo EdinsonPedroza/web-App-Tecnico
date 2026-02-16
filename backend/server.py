@@ -433,6 +433,13 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         if existing:
             raise HTTPException(status_code=400, detail="Cédula ya existe")
     
+    # Determine program_ids: use provided program_ids, or convert program_id to list, or empty list
+    program_ids = []
+    if req.program_ids:
+        program_ids = req.program_ids
+    elif req.program_id:
+        program_ids = [req.program_id]
+    
     new_user = {
         "id": str(uuid.uuid4()),
         "name": req.name,
@@ -441,7 +448,7 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "password_hash": hash_password(req.password),
         "role": req.role,
         "program_id": req.program_id,  # Keep for backward compatibility
-        "program_ids": req.program_ids if req.program_ids else ([req.program_id] if req.program_id else []),
+        "program_ids": program_ids,
         "phone": req.phone,
         "module": req.module,
         "grupo": req.grupo,
