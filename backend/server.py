@@ -310,12 +310,16 @@ class CourseCreate(BaseModel):
     teacher_id: str
     year: int = 2025
     student_ids: Optional[List[str]] = []
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 class CourseUpdate(BaseModel):
     name: Optional[str] = None
     teacher_id: Optional[str] = None
     student_ids: Optional[List[str]] = None
     active: Optional[bool] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 class ActivityCreate(BaseModel):
     course_id: str
@@ -584,6 +588,8 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         "teacher_id": req.teacher_id,
         "year": req.year,
         "student_ids": req.student_ids,
+        "start_date": req.start_date,
+        "end_date": req.end_date,
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
