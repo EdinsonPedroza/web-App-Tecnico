@@ -94,16 +94,6 @@ export default function StudentProgramSelector() {
                       </Badge>
                     )}
                   </div>
-                  {program.modules && program.modules.length > 0 && (
-                    <div className="text-base text-muted-foreground pt-2 border-t">
-                      {program.modules.map((module, idx) => (
-                        <div key={idx} className="py-1.5">
-                          <span className="font-medium">{module.name}:</span>{' '}
-                          {module.subjects?.length || 0} materias
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             ))}

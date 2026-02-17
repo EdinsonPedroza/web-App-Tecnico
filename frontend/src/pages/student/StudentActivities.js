@@ -154,22 +154,30 @@ export default function StudentActivities() {
                           )}
                         </div>
 
-                        {/* Attached files */}
+                        {/* Attached files - More visible */}
                         {act.files && act.files.length > 0 && (
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            {act.files.map((f, i) => (
-                              <a
-                                key={i}
-                                href={f.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-primary hover:underline bg-primary/5 rounded-md px-2 py-1"
-                              >
-                                <File className="h-3 w-3" />
-                                {f.name}
-                                <Download className="h-3 w-3" />
-                              </a>
-                            ))}
+                          <div className="mt-3 p-3 bg-primary/10 border-l-4 border-primary rounded-md">
+                            <p className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                              <File className="h-4 w-4" />
+                              Archivos del profesor:
+                            </p>
+                            <div className="flex flex-col gap-2">
+                              {act.files.map((f, i) => (
+                                <a
+                                  key={i}
+                                  href={f.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center justify-between gap-2 text-sm text-primary hover:text-primary/80 bg-background hover:bg-background/80 rounded-md px-3 py-2 border border-primary/30 hover:border-primary transition-all font-medium group"
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <File className="h-4 w-4" />
+                                    {f.name}
+                                  </span>
+                                  <Download className="h-4 w-4 group-hover:scale-110 transition-transform" />
+                                </a>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>

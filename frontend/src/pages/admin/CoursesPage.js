@@ -241,60 +241,66 @@ export default function CoursesPage() {
                     <SelectContent>{programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-base">Materias del Grupo ({form.subject_ids.length} seleccionadas)</Label>
-                    {filteredSubjects.length > 0 && (
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={() => {
-                          if (form.subject_ids.length === filteredSubjects.length) {
-                            setForm({ ...form, subject_ids: [] });
-                          } else {
-                            setForm({ ...form, subject_ids: filteredSubjects.map(s => s.id) });
-                          }
-                        }}
-                      >
-                        {form.subject_ids.length === filteredSubjects.length ? 'Deseleccionar todas' : 'Seleccionar todas'}
-                      </Button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      placeholder="Buscar materias..." 
-                      value={subjectSearch}
-                      onChange={(e) => setSubjectSearch(e.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
-                  <div className="max-h-48 overflow-y-auto rounded-lg border p-3 space-y-2">
-                    {filteredSubjects.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No hay materias para este programa</p>
-                    ) : (
-                      filteredSubjects
-                        .filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase()))
-                        .map((s) => (
-                          <div key={s.id} className="flex items-center gap-2">
-                            <Checkbox 
-                              checked={form.subject_ids.includes(s.id)} 
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setForm({ ...form, subject_ids: [...form.subject_ids, s.id] });
-                                } else {
-                                  setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== s.id) });
-                                }
-                              }}
-                            />
-                            <span className="text-sm">{s.name} <span className="text-muted-foreground">(Módulo {s.module_number})</span></span>
-                          </div>
-                        ))
-                    )}
-                  </div>
+              </>
+            )}
+            {/* Subject Selection - Show for both create and edit */}
+            {form.program_id && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base">Materias del Grupo ({form.subject_ids.length} seleccionadas)</Label>
+                  {filteredSubjects.length > 0 && (
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        if (form.subject_ids.length === filteredSubjects.length) {
+                          setForm({ ...form, subject_ids: [] });
+                        } else {
+                          setForm({ ...form, subject_ids: filteredSubjects.map(s => s.id) });
+                        }
+                      }}
+                    >
+                      {form.subject_ids.length === filteredSubjects.length ? 'Deseleccionar todas' : 'Seleccionar todas'}
+                    </Button>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    placeholder="Buscar materias..." 
+                    value={subjectSearch}
+                    onChange={(e) => setSubjectSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-lg border p-3 space-y-2">
+                  {filteredSubjects.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay materias para este programa</p>
+                  ) : (
+                    filteredSubjects
+                      .filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase()))
+                      .map((s) => (
+                        <div key={s.id} className="flex items-center gap-2">
+                          <Checkbox 
+                            checked={form.subject_ids.includes(s.id)} 
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setForm({ ...form, subject_ids: [...form.subject_ids, s.id] });
+                              } else {
+                                setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== s.id) });
+                              }
+                            }}
+                          />
+                          <span className="text-sm">{s.name} <span className="text-muted-foreground">(Módulo {s.module_number})</span></span>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+            )}
+            {!editing && (
+              <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-base">Mes</Label>
                     <Select value={form.month} onValueChange={(v) => {
@@ -333,7 +339,7 @@ export default function CoursesPage() {
                     />
                   </div>
                 </div>
-              </>
+              )}
             )}
             <div className="space-y-2">
               <Label className="text-base">Nombre del Grupo (Auto-generado)</Label>
