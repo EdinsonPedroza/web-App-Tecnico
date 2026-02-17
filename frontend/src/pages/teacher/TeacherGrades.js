@@ -96,7 +96,10 @@ export default function TeacherGrades() {
     }
   };
 
-  const initials = (name) => name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  const initials = (name) => {
+    if (!name) return '??';
+    return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  };
 
   const getStudentAverage = (studentId) => {
     const studentGrades = grades.filter(g => g.student_id === studentId);

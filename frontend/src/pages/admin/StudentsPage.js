@@ -61,7 +61,7 @@ export default function StudentsPage() {
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin asignar';
   const getProgramShortName = (id) => {
     const program = programs.find(p => p.id === id);
-    if (!program) return 'N/A';
+    if (!program || !program.name) return 'N/A';
     const words = program.name.split(' ');
     return words.length > 3 ? words.slice(2, 5).join(' ') : program.name;
   };
