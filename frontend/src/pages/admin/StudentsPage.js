@@ -22,17 +22,20 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', grupo: '' });
+  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', grupo: '', estado: 'activo' });
   const [saving, setSaving] = useState(false);
   const [filterProgram, setFilterProgram] = useState('all');
   const [filterModule, setFilterModule] = useState('all');
+  const [filterEstado, setFilterEstado] = useState('activo'); // Default to showing only active students
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
   const fetchData = useCallback(async () => {
     try {
+      // Fetch students with optional estado filter
+      const studentParams = filterEstado === 'all' ? '?role=estudiante' : `?role=estudiante&estado=${filterEstado}`;
       const [studRes, progRes, courseRes] = await Promise.all([
-        api.get('/users?role=estudiante'),
+        api.get(`/users${studentParams}`),
         api.get('/programs'),
         api.get('/courses')
       ]);
@@ -44,7 +47,7 @@ export default function StudentsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterEstado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -52,7 +55,8 @@ export default function StudentsPage() {
     const matchesSearch = (s.name || '').toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search);
     const matchesProgram = filterProgram === 'all' || String(s.program_id) === String(filterProgram);
     const matchesModule = filterModule === 'all' || String(s.module) === filterModule;
-    return matchesSearch && matchesProgram && matchesModule;
+    const matchesEstado = filterEstado === 'all' || (s.estado || 'activo') === filterEstado;
+    return matchesSearch && matchesProgram && matchesModule && matchesEstado;
   });
   
   const totalPages = Math.ceil(filtered.length / pageSize);
@@ -69,23 +73,13 @@ export default function StudentsPage() {
     if (!name) return '??';
     return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
   };
-  
-  // Format: MOD1-ENERO-2026 (with program short name prefix)
-  const formatCourseInfo = (student) => {
-    if (!student.module || !student.program_id) return '-';
-    const monthNames = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
-    const currentMonth = monthNames[new Date().getMonth()];
-    const currentYear = new Date().getFullYear();
-    const programShort = getProgramShortName(student.program_id);
-    return `${programShort}-MOD${student.module}-${currentMonth}-${currentYear}`;
-  };
 
   // Get which courses a student is enrolled in
   const getStudentCourseIds = (studentId) => courses.filter(c => (c.student_ids || []).includes(studentId)).map(c => c.id);
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', grupo: '' });
+    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', grupo: '', estado: 'activo' });
     setDialogOpen(true);
   };
 
@@ -102,7 +96,8 @@ export default function StudentsPage() {
       program_ids: studentProgramIds,
       course_ids: getStudentCourseIds(student.id),
       module: student.module || '',
-      grupo: student.grupo || ''
+      grupo: student.grupo || '',
+      estado: student.estado || 'activo'
     });
     setDialogOpen(true);
   };
@@ -145,7 +140,8 @@ export default function StudentsPage() {
           program_id: form.program_id || null,
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
           module: form.module ? parseInt(form.module) : null,
-          grupo: form.grupo || null
+          grupo: form.grupo || null,
+          estado: form.estado || 'activo'
         };
         // Include password only if provided (optional when editing)
         if (form.password && form.password.trim()) {
@@ -159,7 +155,8 @@ export default function StudentsPage() {
           ...form, 
           role: 'estudiante',
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
-          module: form.module ? parseInt(form.module) : null
+          module: form.module ? parseInt(form.module) : null,
+          estado: form.estado || 'activo'
         };
         const res = await api.post('/users', createData);
         studentId = res.data.id;
@@ -217,6 +214,21 @@ export default function StudentsPage() {
     }
   };
 
+  const handleGraduate = async (student) => {
+    if (student.module < 2) {
+      toast.error('El estudiante debe estar en el módulo 2 para graduarse');
+      return;
+    }
+    if (!window.confirm(`¿Marcar a ${student.name} como Egresado?`)) return;
+    try {
+      await api.put(`/users/${student.id}/graduate`);
+      toast.success('Estudiante marcado como egresado exitosamente');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error graduando estudiante');
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -253,6 +265,16 @@ export default function StudentsPage() {
                 <SelectItem value="2">Módulo 2</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={filterEstado} onValueChange={setFilterEstado}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Filtrar por estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="activo">Activos</SelectItem>
+                <SelectItem value="egresado">Egresados</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="text-sm text-muted-foreground">
             Mostrando {paginatedStudents.length > 0 ? ((page - 1) * pageSize + 1) : 0}-{Math.min(page * pageSize, filtered.length)} de {filtered.length} estudiantes
@@ -274,10 +296,10 @@ export default function StudentsPage() {
                   <TableRow>
                     <TableHead>Estudiante</TableHead>
                     <TableHead>Cédula</TableHead>
-                    <TableHead>Programa</TableHead>
-                    <TableHead>Técnico-Módulo-Curso</TableHead>
+                    <TableHead className="min-w-[200px]">Programa</TableHead>
+                    <TableHead>Módulo Actual</TableHead>
                     <TableHead>Grupo</TableHead>
-                    <TableHead>Cursos</TableHead>
+                    <TableHead>Grupos Inscritos</TableHead>
                     <TableHead>Teléfono</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
@@ -293,17 +315,21 @@ export default function StudentsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground font-mono">{s.cedula}</TableCell>
-                      <TableCell><Badge variant="secondary" className="text-xs truncate max-w-32">{getProgramName(s.program_id)}</Badge></TableCell>
+                      <TableCell><Badge variant="secondary" className="text-xs whitespace-normal">{getProgramName(s.program_id)}</Badge></TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs font-mono">{formatCourseInfo(s)}</Badge>
+                        <Badge variant="outline" className="text-xs font-mono">{s.module ? `Módulo ${s.module}` : '-'}</Badge>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{s.grupo || '-'}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{getStudentCourseIds(s.id).length} cursos</Badge></TableCell>
+                      <TableCell><Badge variant="outline" className="text-xs">{getStudentCourseIds(s.id).length} grupos</Badge></TableCell>
                       <TableCell className="text-sm text-muted-foreground">{s.phone || '-'}</TableCell>
-                      <TableCell><Badge variant={s.active !== false ? 'success' : 'destructive'}>{s.active !== false ? 'Activo' : 'Inactivo'}</Badge></TableCell>
+                      <TableCell>
+                        <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : 'secondary'}>
+                          {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {s.module && s.module < 2 && (
+                          {s.module && s.module < 2 && (s.estado || 'activo') === 'activo' && (
                             <Button 
                               variant="ghost" 
                               size="icon" 
@@ -311,6 +337,16 @@ export default function StudentsPage() {
                               title="Promover al siguiente módulo"
                             >
                               <ArrowUpCircle className="h-4 w-4 text-success" />
+                            </Button>
+                          )}
+                          {s.module === 2 && (s.estado || 'activo') === 'activo' && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              onClick={() => handleGraduate(s)}
+                              title="Marcar como egresado"
+                            >
+                              <GraduationCap className="h-4 w-4 text-blue-600" />
                             </Button>
                           )}
                           <Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
@@ -403,22 +439,63 @@ export default function StudentsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Grupo (Mes y Año)</Label>
-                <Input value={form.grupo} onChange={(e) => setForm({ ...form, grupo: e.target.value })} placeholder="ej: Enero 2025, Febrero 2025" />
+                <Select value={form.grupo} onValueChange={(v) => setForm({ ...form, grupo: v })}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar grupo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Enero 2025">Enero 2025</SelectItem>
+                    <SelectItem value="Febrero 2025">Febrero 2025</SelectItem>
+                    <SelectItem value="Marzo 2025">Marzo 2025</SelectItem>
+                    <SelectItem value="Abril 2025">Abril 2025</SelectItem>
+                    <SelectItem value="Mayo 2025">Mayo 2025</SelectItem>
+                    <SelectItem value="Junio 2025">Junio 2025</SelectItem>
+                    <SelectItem value="Julio 2025">Julio 2025</SelectItem>
+                    <SelectItem value="Agosto 2025">Agosto 2025</SelectItem>
+                    <SelectItem value="Septiembre 2025">Septiembre 2025</SelectItem>
+                    <SelectItem value="Octubre 2025">Octubre 2025</SelectItem>
+                    <SelectItem value="Noviembre 2025">Noviembre 2025</SelectItem>
+                    <SelectItem value="Diciembre 2025">Diciembre 2025</SelectItem>
+                    <SelectItem value="Enero 2026">Enero 2026</SelectItem>
+                    <SelectItem value="Febrero 2026">Febrero 2026</SelectItem>
+                    <SelectItem value="Marzo 2026">Marzo 2026</SelectItem>
+                    <SelectItem value="Abril 2026">Abril 2026</SelectItem>
+                    <SelectItem value="Mayo 2026">Mayo 2026</SelectItem>
+                    <SelectItem value="Junio 2026">Junio 2026</SelectItem>
+                    <SelectItem value="Julio 2026">Julio 2026</SelectItem>
+                    <SelectItem value="Agosto 2026">Agosto 2026</SelectItem>
+                    <SelectItem value="Septiembre 2026">Septiembre 2026</SelectItem>
+                    <SelectItem value="Octubre 2026">Octubre 2026</SelectItem>
+                    <SelectItem value="Noviembre 2026">Noviembre 2026</SelectItem>
+                    <SelectItem value="Diciembre 2026">Diciembre 2026</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
             <div className="space-y-2">
-              <Label>Cursos Inscritos</Label>
+              <Label>Grupos Inscritos</Label>
               <div className="max-h-36 overflow-y-auto rounded-lg border p-3 space-y-2">
-                {courses.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No hay cursos creados</p>
-                ) : courses.map((c) => (
-                  <div key={c.id} className="flex items-center gap-2">
-                    <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
-                    <span className="text-sm">{c.name}</span>
-                  </div>
-                ))}
+                {(() => {
+                  const filteredCourses = courses.filter(c => !form.program_ids.length || form.program_ids.includes(c.program_id));
+                  
+                  if (courses.length === 0) {
+                    return <p className="text-sm text-muted-foreground">No hay grupos creados</p>;
+                  }
+                  
+                  if (filteredCourses.length === 0 && form.program_ids.length > 0) {
+                    return <p className="text-sm text-muted-foreground">No hay grupos para los técnicos seleccionados</p>;
+                  }
+                  
+                  return filteredCourses.map((c) => (
+                    <div key={c.id} className="flex items-center gap-2">
+                      <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
+                      <span className="text-sm">{c.name}</span>
+                    </div>
+                  ));
+                })()}
               </div>
+              <p className="text-xs text-muted-foreground">
+                Solo se muestran los grupos correspondientes a los técnicos seleccionados
+              </p>
             </div>
           </div>
           <DialogFooter>
