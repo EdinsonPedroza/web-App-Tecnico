@@ -180,6 +180,13 @@ async def create_initial_data():
                     upsert=True
                 )
     
+    # Siempre asegurar que el editor exista (independiente de otros usuarios)
+    editor = await db.users.find_one({"email": "editorgeneral@educando.com"})
+    if not editor:
+        print("Creando usuario editor...")
+        editor_user = {"id": "user-editor-2", "name": "Editor General", "email": "editorgeneral@educando.com", "cedula": None, "password_hash": hash_password("EditorSeguro2025"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3002222222", "active": True, "module": None, "grupo": None}
+        await db.users.update_one({"id": editor_user["id"]}, {"$set": editor_user}, upsert=True)
+    
     # Crear usuarios solo si no existe el admin
     admin = await db.users.find_one({"email": "admin@educando.com"})
     if admin:
@@ -246,7 +253,8 @@ async def create_initial_data():
     
     print("Datos iniciales creados exitosamente")
     print("Credenciales:")
-    print("  Editor: editor@educando.com / editor123")
+    print("  Editor: editorgeneral@educando.com / EditorSeguro2025")
+    print("  Editor (legacy): editor@educando.com / editor123")
     print("  Admin: admin@educando.com / admin123")
     print("  Profesor: profesor@educando.com / profesor123")
     print("  Estudiante: 1234567890 / estudiante123")
@@ -1543,6 +1551,7 @@ async def seed_data():
     
     # Create Users
     admin_id = "user-admin"
+    editor_id = "user-editor-2"
     teacher1_id = "user-teacher1"
     teacher2_id = "user-teacher2"
     student1_id = "user-student1"
@@ -1550,6 +1559,18 @@ async def seed_data():
     student3_id = "user-student3"
     
     users = [
+        {
+            "id": editor_id,
+            "name": "Editor General",
+            "email": "editorgeneral@educando.com",
+            "cedula": None,
+            "password_hash": hash_password("EditorSeguro2025"),
+            "role": "editor",
+            "program_id": None,
+            "phone": "3002222222",
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        },
         {
             "id": admin_id,
             "name": "Administrador General",
@@ -1758,6 +1779,7 @@ async def seed_data():
     return {
         "message": "Datos iniciales creados exitosamente",
         "credentials": {
+            "editor": {"email": "editorgeneral@educando.com", "password": "EditorSeguro2025"},
             "admin": {"email": "admin@educando.com", "password": "admin123"},
             "profesor": {"email": "profesor@educando.com", "password": "profesor123"},
             "profesor2": {"email": "profesor2@educando.com", "password": "profesor123"},
