@@ -91,8 +91,8 @@ export default function ProgramsPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold font-heading">Programas Técnicos</h1>
-            <p className="text-muted-foreground mt-1">Gestiona los técnicos virtuales</p>
+            <h1 className="text-3xl font-bold font-heading">Programas Técnicos</h1>
+            <p className="text-muted-foreground mt-1 text-lg">Gestiona los técnicos virtuales</p>
           </div>
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4" /> Nuevo Programa

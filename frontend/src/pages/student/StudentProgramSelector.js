@@ -39,10 +39,10 @@ export default function StudentProgramSelector() {
     <DashboardLayout>
       <div className="space-y-8">
         <div className="text-center max-w-2xl mx-auto">
-          <h1 className="text-3xl sm:text-4xl font-bold font-heading text-foreground">
+          <h1 className="text-4xl sm:text-5xl font-bold font-heading text-foreground">
             ¡Bienvenido, {user?.name?.split(' ')[0]}!
           </h1>
-          <p className="text-muted-foreground mt-3 text-lg">
+          <p className="text-muted-foreground mt-3 text-xl">
             Selecciona el programa técnico para ver tus materias y actividades.
           </p>
         </div>
@@ -71,33 +71,33 @@ export default function StudentProgramSelector() {
               >
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between mb-4">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <GraduationCap className="h-7 w-7" />
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <GraduationCap className="h-8 w-8" />
                     </div>
-                    <ChevronRight className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <ChevronRight className="h-7 w-7 text-muted-foreground group-hover:text-primary transition-colors" />
                   </div>
-                  <CardTitle className="text-xl font-heading leading-tight">
+                  <CardTitle className="text-2xl font-heading leading-tight">
                     {program.name}
                   </CardTitle>
-                  <CardDescription className="text-sm mt-2">
+                  <CardDescription className="text-base mt-2">
                     {program.description}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-sm px-3 py-1">
+                    <Badge variant="outline" className="text-base px-4 py-1.5">
                       {program.duration || '12 meses'}
                     </Badge>
                     {program.modules && (
-                      <Badge variant="secondary" className="text-sm px-3 py-1">
+                      <Badge variant="secondary" className="text-base px-4 py-1.5">
                         {program.modules.length} módulos
                       </Badge>
                     )}
                   </div>
                   {program.modules && program.modules.length > 0 && (
-                    <div className="text-sm text-muted-foreground pt-2 border-t">
+                    <div className="text-base text-muted-foreground pt-2 border-t">
                       {program.modules.map((module, idx) => (
-                        <div key={idx} className="py-1">
+                        <div key={idx} className="py-1.5">
                           <span className="font-medium">{module.name}:</span>{' '}
                           {module.subjects?.length || 0} materias
                         </div>

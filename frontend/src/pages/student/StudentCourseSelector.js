@@ -78,10 +78,10 @@ export default function StudentCourseSelector() {
         )}
         
         <div className="text-center max-w-xl mx-auto">
-          <h1 className="text-3xl sm:text-4xl font-bold font-heading text-foreground">
+          <h1 className="text-4xl sm:text-5xl font-bold font-heading text-foreground">
             Mis Cursos
           </h1>
-          <p className="text-muted-foreground mt-3 text-lg">
+          <p className="text-muted-foreground mt-3 text-xl">
             Selecciona un curso para ver tus notas, actividades y clases.
           </p>
         </div>

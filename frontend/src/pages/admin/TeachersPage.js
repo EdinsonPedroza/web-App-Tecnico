@@ -93,8 +93,8 @@ export default function TeachersPage() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold font-heading">Profesores</h1>
-            <p className="text-muted-foreground mt-1">Gestiona el cuerpo docente</p>
+            <h1 className="text-3xl font-bold font-heading">Profesores</h1>
+            <p className="text-muted-foreground mt-1 text-lg">Gestiona el cuerpo docente</p>
           </div>
           <Button onClick={openCreate}><Plus className="h-4 w-4" /> Nuevo Profesor</Button>
         </div>

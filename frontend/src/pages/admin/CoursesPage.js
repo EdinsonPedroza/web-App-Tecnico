@@ -154,8 +154,8 @@ export default function CoursesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold font-heading">Grupos</h1>
-            <p className="text-muted-foreground mt-1 text-base">Gestiona grupos por programa, materia y cohorte</p>
+            <h1 className="text-4xl font-bold font-heading">Grupos</h1>
+            <p className="text-muted-foreground mt-1 text-xl">Gestiona grupos por programa, materia y cohorte</p>
           </div>
           <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nuevo Grupo</Button>
         </div>

@@ -102,8 +102,8 @@ export default function StudentActivities() {
     <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold font-heading">Actividades</h1>
-          <p className="text-muted-foreground mt-1">Tus actividades pendientes y entregadas</p>
+          <h1 className="text-3xl font-bold font-heading">Actividades</h1>
+          <p className="text-muted-foreground mt-1 text-lg">Tus actividades pendientes y entregadas</p>
         </div>
 
         {loading ? (
