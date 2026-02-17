@@ -22,6 +22,7 @@ export default function TeachersPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', subject_ids: [] });
   const [saving, setSaving] = useState(false);
+  const [subjectSearch, setSubjectSearch] = useState('');
 
   const fetchTeachers = useCallback(async () => {
     try {
@@ -45,12 +46,14 @@ export default function TeachersPage() {
   const openCreate = () => {
     setEditing(null);
     setForm({ name: '', email: '', password: '', phone: '', subject_ids: [] });
+    setSubjectSearch('');
     setDialogOpen(true);
   };
 
   const openEdit = (teacher) => {
     setEditing(teacher);
     setForm({ name: teacher.name, email: teacher.email || '', password: '', phone: teacher.phone || '', subject_ids: teacher.subject_ids || [] });
+    setSubjectSearch('');
     setDialogOpen(true);
   };
 
@@ -210,28 +213,49 @@ export default function TeachersPage() {
             
             <div className="space-y-2">
               <Label>Materias que enseña (opcional)</Label>
+              {subjects.length > 0 && (
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    placeholder="Buscar materias..." 
+                    className="pl-9" 
+                    value={subjectSearch} 
+                    onChange={(e) => setSubjectSearch(e.target.value)} 
+                  />
+                </div>
+              )}
               <div className="border rounded-lg p-3 max-h-60 overflow-y-auto space-y-2">
                 {subjects.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No hay materias disponibles</p>
                 ) : (
-                  subjects.map((subject) => (
-                    <div key={subject.id} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`subject-${subject.id}`}
-                        checked={form.subject_ids.includes(subject.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setForm({ ...form, subject_ids: [...form.subject_ids, subject.id] });
-                          } else {
-                            setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== subject.id) });
-                          }
-                        }}
-                      />
-                      <label htmlFor={`subject-${subject.id}`} className="text-sm cursor-pointer flex-1">
-                        {subject.name} <span className="text-muted-foreground text-xs">(Módulo {subject.module_number})</span>
-                      </label>
-                    </div>
-                  ))
+                  (() => {
+                    const filteredSubjects = subjects.filter(subject => 
+                      subject.name.toLowerCase().includes(subjectSearch.toLowerCase())
+                    );
+                    
+                    return filteredSubjects.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No se encontraron materias</p>
+                    ) : (
+                      filteredSubjects.map((subject) => (
+                        <div key={subject.id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`subject-${subject.id}`}
+                            checked={form.subject_ids.includes(subject.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setForm({ ...form, subject_ids: [...form.subject_ids, subject.id] });
+                              } else {
+                                setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== subject.id) });
+                              }
+                            }}
+                          />
+                          <label htmlFor={`subject-${subject.id}`} className="text-sm cursor-pointer flex-1">
+                            {subject.name} <span className="text-muted-foreground text-xs">(Módulo {subject.module_number})</span>
+                          </label>
+                        </div>
+                      ))
+                    );
+                  })()
                 )}
               </div>
             </div>
