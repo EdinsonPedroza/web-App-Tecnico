@@ -64,6 +64,7 @@ export default function CoursesPage() {
   const formatGrupoSuggestion = (month, year, programId) => {
     if (!month || !year || !programId) return '';
     const programName = getName(programs, programId);
+    if (!programName || programName === '-') return '';
     const lastTwoWords = programName.split(' ').slice(-2).join(' ').toUpperCase();
     return `${month.toUpperCase()}-${year} - ${lastTwoWords}`;
   };
