@@ -37,7 +37,7 @@ export default function SubjectsPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const filtered = subjects.filter(s => {
-    if (filterProgram !== 'all' && s.program_id !== filterProgram) return false;
+    if (filterProgram !== 'all' && String(s.program_id) !== String(filterProgram)) return false;
     if (filterModule !== 'all' && s.module_number !== parseInt(filterModule)) return false;
     return true;
   });
@@ -48,13 +48,13 @@ export default function SubjectsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', program_id: programs[0]?.id || '', module_number: 1, description: '' });
+    setForm({ name: '', program_id: programs[0]?.id ? String(programs[0].id) : '', module_number: 1, description: '' });
     setDialogOpen(true);
   };
 
   const openEdit = (subj) => {
     setEditing(subj);
-    setForm({ name: subj.name, program_id: subj.program_id, module_number: subj.module_number, description: subj.description || '' });
+    setForm({ name: subj.name, program_id: String(subj.program_id), module_number: subj.module_number, description: subj.description || '' });
     setDialogOpen(true);
   };
 

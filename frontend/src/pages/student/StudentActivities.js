@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { toast } from 'sonner';
 import { Loader2, FileText, Calendar, Clock, Lock, Unlock, Send, Download, File, TimerOff, Upload, Trash2, Image } from 'lucide-react';
 import api from '@/lib/api';
@@ -98,6 +99,24 @@ export default function StudentActivities() {
 
   const formatDate = (d) => new Date(d).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+  const handleEditSubmission = (act, submission, e) => {
+    e.stopPropagation();
+    toast.warning('⚠️ Importante: Solo puedes editar tu actividad UNA VEZ. Asegúrate de revisar bien antes de guardar.', {
+      duration: 6000,
+      important: true
+    });
+    setSubmitDialog(act);
+    setSubmitContent(submission.content || '');
+    setSubmitFiles(submission.files || []);
+  };
+
+  const handleSubmitActivity = (act, e) => {
+    e.stopPropagation();
+    setSubmitDialog(act);
+    setSubmitContent('');
+    setSubmitFiles([]);
+  };
+
   return (
     <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
@@ -114,7 +133,7 @@ export default function StudentActivities() {
             <p className="text-muted-foreground">No hay actividades disponibles</p>
           </CardContent></Card>
         ) : (
-          <div className="space-y-8">
+          <Accordion type="multiple" className="space-y-4">
             {activities.map((act) => {
               const status = getActivityStatus(act);
               const due = new Date(act.due_date);
@@ -127,93 +146,99 @@ export default function StudentActivities() {
 
               return (
                 <Card key={act.id} className={`shadow-card transition-all border-2 ${status.key !== 'active' && !submission ? 'opacity-70 border-muted' : 'hover:shadow-card-hover border-primary/20 hover:border-primary/40'} ${submission ? 'bg-success/5' : ''}`}>
-                  <CardContent className="p-6">
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="outline" className="shrink-0 text-xs font-mono">Act {actNum}</Badge>
-                          <StatusIcon className={`h-4 w-4 shrink-0 ${status.variant === 'destructive' ? 'text-destructive' : status.variant === 'success' ? 'text-success' : 'text-muted-foreground'}`} />
-                          <h3 className="text-sm font-semibold truncate">{act.title}</h3>
-                        </div>
-                        <p className="text-xs text-primary mb-2">{act.courseName}</p>
-                        <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{act.description}</p>
-
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                          {start && (
-                            <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Disponible: {formatDate(act.start_date)}</span>
-                          )}
-                          <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Vence: {formatDate(act.due_date)}</span>
-                          {status.key === 'active' && daysLeft > 0 && (
-                            <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {daysLeft} días restantes</span>
-                          )}
-                          {status.key === 'upcoming' && start && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              Disponible en {Math.ceil((start - now) / (1000 * 60 * 60 * 24))} días
+                  <AccordionItem value={`activity-${act.id}`} className="border-none">
+                    <CardContent className="p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        {/* Compact header - always visible */}
+                        <AccordionTrigger className="flex-1 hover:no-underline py-2">
+                          <div className="flex items-center gap-2 w-full">
+                            <Badge variant="outline" className="shrink-0 text-xs font-mono">Act {actNum}</Badge>
+                            <StatusIcon className={`h-4 w-4 shrink-0 ${status.variant === 'destructive' ? 'text-destructive' : status.variant === 'success' ? 'text-success' : 'text-muted-foreground'}`} />
+                            <h3 className="text-sm font-semibold truncate">{act.title}</h3>
+                            <span className="ml-auto text-xs text-muted-foreground hidden sm:flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {formatDate(act.due_date)}
                             </span>
+                          </div>
+                        </AccordionTrigger>
+                        
+                        {/* Action buttons - always visible */}
+                        <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
+                          {submission ? (
+                            <>
+                              <Badge variant="success" className="text-xs">Entregada</Badge>
+                              {submission.edited !== true && status.key === 'active' && (
+                                <Button size="sm" variant="outline" onClick={(e) => handleEditSubmission(act, submission, e)}>
+                                  Editar
+                                </Button>
+                              )}
+                            </>
+                          ) : status.key === 'active' ? (
+                            <Button size="sm" onClick={(e) => handleSubmitActivity(act, e)}>
+                              <Send className="h-3 w-3" /> Entregar
+                            </Button>
+                          ) : (
+                            <Badge variant={status.variant} className="text-xs">{status.label}</Badge>
                           )}
                         </div>
+                      </div>
 
-                        {/* Attached files - More visible */}
-                        {act.files && act.files.length > 0 && (
-                          <div className="mt-3 p-3 bg-primary/10 border-l-4 border-primary rounded-md">
-                            <p className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                              <File className="h-4 w-4" />
-                              Archivos del profesor:
-                            </p>
-                            <div className="flex flex-col gap-2">
-                              {act.files.map((f, i) => (
-                                <a
-                                  key={i}
-                                  href={f.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center justify-between gap-2 text-sm text-primary hover:text-primary/80 bg-background hover:bg-background/80 rounded-md px-3 py-2 border border-primary/30 hover:border-primary transition-all font-medium group"
-                                >
-                                  <span className="flex items-center gap-2">
-                                    <File className="h-4 w-4" />
-                                    {f.name}
-                                  </span>
-                                  <Download className="h-4 w-4 group-hover:scale-110 transition-transform" />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {submission ? (
-                          <>
-                            <Badge variant="success">Entregada</Badge>
-                            {submission.edited !== true && status.key === 'active' && (
-                              <Button size="sm" variant="outline" onClick={() => { 
-                                // Show warning before allowing edit
-                                toast.warning('⚠️ Importante: Solo puedes editar tu actividad UNA VEZ. Asegúrate de revisar bien antes de guardar.', {
-                                  duration: 6000,
-                                  important: true
-                                });
-                                setSubmitDialog(act); 
-                                setSubmitContent(submission.content || ''); 
-                                setSubmitFiles(submission.files || []); 
-                              }}>
-                                Editar
-                              </Button>
+                      {/* Expandable content - shows when clicked */}
+                      <AccordionContent>
+                        <div className="pt-3 space-y-3">
+                          <p className="text-xs text-primary">{act.courseName}</p>
+                          <p className="text-sm text-muted-foreground">{act.description}</p>
+
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                            {start && (
+                              <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Disponible: {formatDate(act.start_date)}</span>
                             )}
-                          </>
-                        ) : status.key === 'active' ? (
-                          <Button size="sm" onClick={() => { setSubmitDialog(act); setSubmitContent(''); setSubmitFiles([]); }}>
-                            <Send className="h-3 w-3" /> Entregar
-                          </Button>
-                        ) : (
-                          <Badge variant={status.variant}>{status.label}</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
+                            <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Vence: {formatDate(act.due_date)}</span>
+                            {status.key === 'active' && daysLeft > 0 && (
+                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {daysLeft} días restantes</span>
+                            )}
+                            {status.key === 'upcoming' && start && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                Disponible en {Math.ceil((start - now) / (1000 * 60 * 60 * 24))} días
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Attached files */}
+                          {act.files && act.files.length > 0 && (
+                            <div className="p-3 bg-primary/10 border-l-4 border-primary rounded-md">
+                              <p className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                                <File className="h-4 w-4" />
+                                Archivos del profesor:
+                              </p>
+                              <div className="flex flex-col gap-2">
+                                {act.files.map((f, i) => (
+                                  <a
+                                    key={i}
+                                    href={f.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center justify-between gap-2 text-sm text-primary hover:text-primary/80 bg-background hover:bg-background/80 rounded-md px-3 py-2 border border-primary/30 hover:border-primary transition-all font-medium group"
+                                  >
+                                    <span className="flex items-center gap-2">
+                                      <File className="h-4 w-4" />
+                                      {f.name}
+                                    </span>
+                                    <Download className="h-4 w-4 group-hover:scale-110 transition-transform" />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </AccordionContent>
+                    </CardContent>
+                  </AccordionItem>
                 </Card>
               );
             })}
-          </div>
+          </Accordion>
         )}
       </div>
 
