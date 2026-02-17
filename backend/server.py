@@ -675,7 +675,7 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         program_modules = req.program_modules
     elif req.module and program_ids:
         # Initialize all programs with the same module for backward compatibility
-        program_modules = dict.fromkeys(program_ids, req.module)
+        program_modules = {prog_id: req.module for prog_id in program_ids}
     else:
         program_modules = None
     
