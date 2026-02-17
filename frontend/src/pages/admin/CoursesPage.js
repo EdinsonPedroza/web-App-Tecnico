@@ -362,39 +362,39 @@ export default function CoursesPage() {
                   {Array(moduleCount).fill().map((_, i) => {
                     const moduleNum = i + 1;
                     return (
-                    <div key={moduleNum} className="space-y-2">
-                      <p className="text-sm font-semibold text-foreground">Módulo {moduleNum}</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Fecha Inicio</Label>
-                          <Input 
-                            type="date" 
-                            value={form.module_dates[moduleNum]?.start || ''} 
-                            onChange={(e) => {
-                              const newModuleDates = { ...form.module_dates };
-                              if (!newModuleDates[moduleNum]) newModuleDates[moduleNum] = {};
-                              newModuleDates[moduleNum].start = e.target.value;
-                              setForm({ ...form, module_dates: newModuleDates });
-                            }} 
-                            placeholder="Fecha de inicio" 
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Fecha Cierre</Label>
-                          <Input 
-                            type="date" 
-                            value={form.module_dates[moduleNum]?.end || ''} 
-                            onChange={(e) => {
-                              const newModuleDates = { ...form.module_dates };
-                              if (!newModuleDates[moduleNum]) newModuleDates[moduleNum] = {};
-                              newModuleDates[moduleNum].end = e.target.value;
-                              setForm({ ...form, module_dates: newModuleDates });
-                            }} 
-                            placeholder="Fecha de cierre" 
-                          />
+                      <div key={moduleNum} className="space-y-2">
+                        <p className="text-sm font-semibold text-foreground">Módulo {moduleNum}</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Fecha Inicio</Label>
+                            <Input 
+                              type="date" 
+                              value={form.module_dates[moduleNum]?.start || ''} 
+                              onChange={(e) => {
+                                const newModuleDates = { ...form.module_dates };
+                                if (!newModuleDates[moduleNum]) newModuleDates[moduleNum] = {};
+                                newModuleDates[moduleNum].start = e.target.value;
+                                setForm({ ...form, module_dates: newModuleDates });
+                              }} 
+                              placeholder="Fecha de inicio" 
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Fecha Cierre</Label>
+                            <Input 
+                              type="date" 
+                              value={form.module_dates[moduleNum]?.end || ''} 
+                              onChange={(e) => {
+                                const newModuleDates = { ...form.module_dates };
+                                if (!newModuleDates[moduleNum]) newModuleDates[moduleNum] = {};
+                                newModuleDates[moduleNum].end = e.target.value;
+                                setForm({ ...form, module_dates: newModuleDates });
+                              }} 
+                              placeholder="Fecha de cierre" 
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
                     );
                   })}
                 </div>
