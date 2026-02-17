@@ -5,7 +5,7 @@
 Railway es una plataforma que hace todo por ti. Solo necesitas:
 - Una cuenta de GitHub (ya la tienes ✅)
 - 10 minutos de tu tiempo
-- Tarjeta de crédito/débito (para plan de pago, ~$15/mes)
+- Tarjeta de crédito/débito (para plan de pago, $10-20/mes según uso)
 
 ---
 
@@ -308,7 +308,7 @@ Railway configurará SSL/HTTPS automáticamente. 🔒
 
 ```
 Costo Base:    $5/mes (500 horas de ejecución)
-Costo Real:    $10-20/mes según uso
+Costo Real:    $10-20/mes según uso (promedio ~$15)
 ```
 
 ### ¿Qué Incluye?
@@ -323,7 +323,7 @@ Costo Real:    $10-20/mes según uso
 ### ¿Es Mucho?
 
 Para una escuela pequeña-mediana (hasta 500 estudiantes):
-- **$15/mes** es un precio justo
+- **$10-20/mes** (promedio $15) es un precio justo
 - Es menos que una licencia de Zoom o Google Workspace
 - No necesitas contratar administrador de sistemas
 

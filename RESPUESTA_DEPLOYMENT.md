@@ -21,7 +21,7 @@ Railway es una plataforma que hace **LITERALMENTE TODO POR TI**:
 6. ✅ **Actualiza automáticamente cuando haces cambios en GitHub**
 
 **Tiempo total**: 10-15 minutos  
-**Costo**: $10-20/mes  
+**Costo**: $10-20/mes (promedio ~$15/mes)  
 **Dificultad**: Muy fácil (si sabes usar GitHub, puedes hacer esto)
 
 ---
@@ -115,15 +115,15 @@ Como dijiste que **no importa el precio**, aquí está el desglose:
 
 ### Con Railway (Recomendado):
 ```
-Mes 1:  $15 USD
-Mes 2:  $15 USD
+Mes 1:  $10-20 USD (promedio $15)
+Mes 2:  $10-20 USD (promedio $15)
 ...
-Año 1:  $180 USD aproximadamente
+Año 1:  $120-240 USD (promedio ~$180)
 
 + Dominio personalizado (opcional): $8-12 USD/año
 ```
 
-**Total Año 1:** ~$190-200 USD
+**Total Año 1:** ~$130-250 USD (promedio ~$190)
 
 ### ¿Es Mucho?
 
@@ -190,7 +190,7 @@ Por $180/año tienes:
 - ✅ Escalamiento fácil
 
 **Desventajas:**
-- ⚠️ Un poco más caro ($15/mes vs $5/mes de VPS)
+- ⚠️ Un poco más caro ($10-20/mes vs $5/mes de VPS)
 - ⚠️ Menos control técnico
 
 **¿Para quién?**
@@ -260,7 +260,7 @@ Basándome en tu pregunta **"no importa el precio"** y que quieres **"la forma m
 
 **Pregunta:** ¿Cuál es la forma más fácil de subir esto a la web?
 
-**Respuesta:** Railway.app - 15 minutos, $15/mes, super fácil.
+**Respuesta:** Railway.app - 15 minutos, $10-20/mes (promedio $15), super fácil.
 
 **Pasos:**
 1. Ve a railway.app
@@ -271,7 +271,7 @@ Basándome en tu pregunta **"no importa el precio"** y que quieres **"la forma m
 
 **Guía:** Lee `PASO_A_PASO_RAILWAY.md` para instrucciones detalladas.
 
-**Costo:** ~$180/año (menos que Netflix)
+**Costo:** $120-240/año, promedio ~$180 (menos que Netflix)
 
 **Resultado:** Tu aplicación disponible 24/7 en internet con HTTPS automático.
 
@@ -286,7 +286,7 @@ Basándome en tu pregunta **"no importa el precio"** y que quieres **"la forma m
 
 **Tiempo total desde ahora:** 20 minutos  
 **Dificultad:** Fácil  
-**Costo:** $15/mes  
+**Costo:** $10-20/mes (promedio $15)  
 **Resultado:** ✅ Aplicación en línea, funcionando, con HTTPS, disponible 24/7
 
 ---

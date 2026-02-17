@@ -259,7 +259,9 @@ Si prefieres tener **control total** y el mejor precio a largo plazo:
 
 3. **Espera 10-30 minutos** para que se propague
 
-4. **¡Visita tu dominio!**: `https://tudominio.com`
+4. **¡Visita tu dominio!**: `http://tudominio.com` (HTTP inicialmente)
+
+5. **Para agregar HTTPS** (SSL), consulta la sección "Agregar HTTPS (SSL) gratuito con Let's Encrypt" en el archivo `DESPLIEGUE.md`
 
 ---
 
