@@ -4,23 +4,29 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 
 > ⚠️ **Advertencia crítica de seguridad:** Las credenciales seed (`admin@educando.com / admin123`) son públicas y solo deben usarse en un entorno aislado para la primera verificación. Cámbialas o desactívalas inmediatamente después del primer inicio de sesión antes de abrir el acceso a otros usuarios.
 
+> 🔐 **JWT_SECRET obligatorio:** genera un secreto aleatorio de al menos 32 caracteres antes de exponer el backend (`openssl rand -hex 32`). No reutilices secretos de otros entornos ni lo dejes vacío.
+
+**Credenciales seed (solo para validar en entorno aislado)**
+- `SEED_ADMIN_EMAIL=admin@educando.com`
+- `SEED_ADMIN_PASSWORD=admin123`
+
 ## 1) Ten a la mano
 - URL pública del **frontend** (ej: `https://web-app-tecnico-production.up.railway.app`)
 - URL pública del **backend** (Networking del servicio backend)
-- Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (configura un secreto aleatorio de al menos 32 caracteres **antes** de abrir el entorno; no dejes el valor vacío ni reutilices secretos de otros entornos).
-- Credenciales iniciales para probar (solo si dejaste los datos seed por defecto): `admin@educando.com / admin123`. Úsalas solo en un entorno privado para validar; antes de hacerlo público crea credenciales nuevas y desactiva las seed.
+- Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (usa el secreto generado en el punto anterior).
+- Credenciales iniciales para probar: las seed listadas arriba (solo en entorno privado); antes de hacerlo público crea credenciales nuevas y desactiva las seed.
 
 ## 2) Verificación en 5 minutos
 1) **Estado en Railway:** abre el proyecto y confirma que MongoDB, backend y frontend están en verde/“Active”. Si alguno está en rojo, presiona **Restart** o **Redeploy**.
 2) **Backend responde:** en tu terminal ejecuta (cambia la URL por la tuya):
    ```bash
-   # Solo para validar en entorno aislado; rota la contraseña inmediatamente después.
+   # Usa las credenciales seed definidas arriba. Solo para validar en entorno aislado; rota la contraseña inmediatamente después.
    curl -X POST "https://TU-BACKEND.up.railway.app/api/auth/login" \
      -H "Content-Type: application/json" \
-     -d '{"email":"admin@educando.com","password":"admin123"}'
+     -d '{"email":"<SEED_ADMIN_EMAIL>","password":"<SEED_ADMIN_PASSWORD>"}'
    ```
    Debes recibir un `access_token` en JSON. Si falla, revisa variables y logs del backend.
-3) **Frontend y sesión:** abre la URL del frontend, inicia sesión con `admin@educando.com / admin123`, verifica que carga el dashboard sin errores y cambia la contraseña antes de continuar con cualquier otra acción.
+3) **Frontend y sesión:** abre la URL del frontend, inicia sesión con las credenciales seed indicadas arriba, verifica que carga el dashboard sin errores y cambia la contraseña antes de continuar con cualquier otra acción.
 4) **Datos en Mongo:** en Railway → servicio MongoDB → “Data” o “Connect”, ejecuta:
    ```js
    db.users.findOne({ email: "admin@educando.com" })
