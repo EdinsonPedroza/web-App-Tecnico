@@ -847,7 +847,7 @@ async def editor_get_admins(user=Depends(get_current_user)):
 
 @api_router.put("/editor/admins/{admin_id}")
 async def editor_update_admin(admin_id: str, req: AdminUpdateByEditor, user=Depends(get_current_user)):
-    """Endpoint for editor to update admin users"""
+    """Endpoint for editor to update admin users. At least one field must be provided."""
     if user["role"] != "editor":
         raise HTTPException(status_code=403, detail="Solo editor puede editar administradores")
     
@@ -885,8 +885,6 @@ async def editor_update_admin(admin_id: str, req: AdminUpdateByEditor, user=Depe
     
     # Update the admin
     result = await db.users.update_one({"id": admin_id}, {"$set": update_data})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Administrador no encontrado")
     
     logger.info(f"Admin updated: id={admin_id}, by={user['id']}, fields={list(update_data.keys())}")
     

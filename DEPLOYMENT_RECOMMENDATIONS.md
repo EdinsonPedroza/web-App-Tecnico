@@ -371,6 +371,8 @@ services:
     restart: always
     environment:
       # Usar MongoDB Atlas
+      # ⚠️ IMPORTANTE: Reemplazar 'usuario:password' con tus credenciales reales de MongoDB Atlas
+      # Nunca commitees estas credenciales al repositorio - usa variables de entorno
       - MONGO_URL=mongodb+srv://usuario:password@cluster.mongodb.net/
       - DB_NAME=educando_db
       - JWT_SECRET=${JWT_SECRET}
