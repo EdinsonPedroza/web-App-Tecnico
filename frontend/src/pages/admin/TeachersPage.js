@@ -57,6 +57,13 @@ export default function TeachersPage() {
   const handleSave = async () => {
     if (!form.name.trim() || (!editing && !form.email.trim())) { toast.error('Nombre y correo requeridos'); return; }
     if (!editing && !form.password) { toast.error('Contraseña requerida'); return; }
+    
+    // Password length validation
+    if (form.password && form.password.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    
     setSaving(true);
     try {
       if (editing) {
@@ -193,7 +200,11 @@ export default function TeachersPage() {
             <div className="space-y-2">
               <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>
               <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "Dejar vacío para no cambiar" : "Contraseña inicial"} />
-              {editing && <p className="text-xs text-muted-foreground">Dejar vacío si no deseas cambiar la contraseña</p>}
+              {editing ? (
+                <p className="text-xs text-muted-foreground">Dejar vacío si no deseas cambiar la contraseña. Mínimo 6 caracteres si se cambia.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Mínimo 6 caracteres</p>
+              )}
             </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
             

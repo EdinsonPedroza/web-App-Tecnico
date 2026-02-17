@@ -36,6 +36,12 @@ export default function EditorPage() {
       return;
     }
     
+    // Password length validation
+    if (form.password.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    
     setSaving(true);
     try {
       await api.post('/editor/create-admin', form);
@@ -160,6 +166,7 @@ export default function EditorPage() {
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 placeholder="Contraseña segura"
               />
+              <p className="text-xs text-muted-foreground">Mínimo 6 caracteres</p>
             </div>
           </div>
           <DialogFooter>

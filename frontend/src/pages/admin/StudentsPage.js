@@ -71,6 +71,17 @@ export default function StudentsPage() {
     const words = program.name.split(' ');
     return words.length > 3 ? words.slice(2, 5).join(' ') : program.name;
   };
+  
+  // Get all program names for a student (supports both program_id and program_ids)
+  const getStudentPrograms = (student) => {
+    const programIds = student.program_ids || (student.program_id ? [student.program_id] : []);
+    if (programIds.length === 0) return [{ id: null, name: 'Sin asignar' }];
+    return programIds.map(id => ({
+      id,
+      name: getProgramShortName(id)
+    }));
+  };
+  
   const initials = (name) => {
     if (!name) return '??';
     return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
@@ -134,6 +145,29 @@ export default function StudentsPage() {
   const handleSave = async () => {
     if (!form.name.trim() || (!editing && !form.cedula.trim())) { toast.error('Nombre y cédula requeridos'); return; }
     if (!editing && !form.password) { toast.error('Contraseña requerida'); return; }
+    
+    // Password length validation
+    if (form.password && form.password.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    
+    // Validate program-group relationship: each program should have at least one group
+    if (form.program_ids && form.program_ids.length > 0 && form.course_ids && form.course_ids.length > 0) {
+      // Get the programs for each selected course
+      const selectedCourses = courses.filter(c => form.course_ids.includes(c.id));
+      const courseProgramIds = selectedCourses.map(c => c.program_id);
+      
+      // Check that each selected program has at least one group
+      for (const programId of form.program_ids) {
+        if (!courseProgramIds.includes(programId)) {
+          const programName = programs.find(p => p.id === programId)?.name || 'Programa';
+          toast.error(`Debe seleccionar al menos un grupo para el programa: ${programName}`);
+          return;
+        }
+      }
+    }
+    
     setSaving(true);
     try {
       let studentId;
@@ -318,7 +352,15 @@ export default function StudentsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground font-mono">{s.cedula}</TableCell>
-                      <TableCell><Badge variant="secondary" className="text-xs whitespace-normal">{getProgramName(s.program_id)}</Badge></TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          {getStudentPrograms(s).map((prog, idx) => (
+                            <Badge key={prog.id || idx} variant="secondary" className="text-xs whitespace-normal">
+                              {prog.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs font-mono">{s.module ? `Módulo ${s.module}` : '-'}</Badge>
                       </TableCell>
@@ -427,7 +469,11 @@ export default function StudentsPage() {
             <div className="space-y-2">
               <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>
               <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "Dejar vacío para no cambiar" : "Contraseña inicial"} />
-              {editing && <p className="text-xs text-muted-foreground">Dejar vacío si no deseas cambiar la contraseña</p>}
+              {editing ? (
+                <p className="text-xs text-muted-foreground">Dejar vacío si no deseas cambiar la contraseña. Mínimo 6 caracteres si se cambia.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Mínimo 6 caracteres</p>
+              )}
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
