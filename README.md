@@ -21,6 +21,7 @@ Aplicación web full-stack para gestión educativa con React (frontend), FastAPI
 - **📱 [Guía Rápida - Comparación](GUIA_RAPIDA_DESPLIEGUE.md)** - Railway vs Render vs VPS
 - **📋 [Tarjeta de Referencia](REFERENCIA_RAPIDA.md)** - Para imprimir o consulta rápida
 - **📚 [Guía Completa Técnica](DESPLIEGUE.md)** - Documentación completa y detallada
+- **✅ [Checklist Post-Deploy](CHECKLIST_POST_DEPLOY.md)** - Verifica en 5 minutos que todo quedó bien
 - **🚀 [Para 3000+ Usuarios](DEPLOYMENT_RECOMMENDATIONS.md)** - Escalamiento profesional
 
 **No importa el precio? → Usa Railway (lo más fácil)**  
