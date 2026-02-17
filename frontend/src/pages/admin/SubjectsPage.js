@@ -147,7 +147,7 @@ export default function SubjectsPage() {
                   <p className="text-xs text-muted-foreground mb-3 flex-1">{subj.description || 'Sin descripción'}</p>
                   <div className="flex gap-2 mt-auto">
                     <Badge variant="secondary" className="text-xs">Módulo {subj.module_number}</Badge>
-                    <Badge variant="outline" className="text-xs truncate max-w-40">{getProgramName(subj.program_id)}</Badge>
+                    <Badge variant="outline" className="text-xs">{getProgramName(subj.program_id)}</Badge>
                   </div>
                 </CardContent>
               </Card>

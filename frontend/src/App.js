@@ -6,6 +6,7 @@ import '@/App.css';
 
 // Pages
 import LoginPage from '@/pages/LoginPage';
+import EditorPage from '@/pages/editor/EditorPage';
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import ProgramsPage from '@/pages/admin/ProgramsPage';
 import SubjectsPage from '@/pages/admin/SubjectsPage';
@@ -44,6 +45,7 @@ function ProtectedRoute({ children, allowedRoles }) {
 
   if (!user) return <Navigate to="/" replace />;
   if (allowedRoles && !allowedRoles.includes(user.role)) {
+    if (user.role === 'editor') return <Navigate to="/editor" replace />;
     if (user.role === 'admin') return <Navigate to="/admin" replace />;
     if (user.role === 'profesor') return <Navigate to="/teacher" replace />;
     return <Navigate to="/student" replace />;
@@ -57,6 +59,7 @@ function PublicRoute({ children }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (user) {
+    if (user.role === 'editor') return <Navigate to="/editor" replace />;
     if (user.role === 'admin') return <Navigate to="/admin" replace />;
     if (user.role === 'profesor') return <Navigate to="/teacher" replace />;
     return <Navigate to="/student" replace />;
@@ -71,6 +74,9 @@ function App() {
         <Routes>
           {/* Public */}
           <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
+
+          {/* Editor Route */}
+          <Route path="/editor" element={<ProtectedRoute allowedRoles={['editor']}><EditorPage /></ProtectedRoute>} />
 
           {/* Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
