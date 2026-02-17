@@ -73,8 +73,10 @@ scp educando.tar.gz root@TU_IP:/root/
 
 # Luego en el servidor
 cd /root
-tar xzf educando.tar.gz
-mv educando.tar.gz educando/
+mkdir educando
+cd educando
+tar xzf ../educando.tar.gz
+rm ../educando.tar.gz  # Limpia el archivo comprimido
 ```
 
 #### 6. Configurar variables de entorno
