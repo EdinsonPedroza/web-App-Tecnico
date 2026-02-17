@@ -41,14 +41,9 @@ async def startup_event():
 
 async def create_initial_data():
     """Crea los usuarios y datos iniciales si no existen"""
-    # Verificar si ya existe el admin
-    admin = await db.users.find_one({"email": "admin@educando.com"})
-    if admin:
-        return  # Ya existen datos
+    print("Verificando y creando datos iniciales...")
     
-    print("Creando datos iniciales...")
-    
-    # Crear programas con sus módulos y materias
+    # Crear programas con sus módulos y materias (siempre se verifican y crean si no existen)
     programs = [
         {
             "id": "prog-admin", 
@@ -154,7 +149,13 @@ async def create_initial_data():
                     upsert=True
                 )
     
-    # Crear usuarios
+    # Crear usuarios solo si no existe el admin
+    admin = await db.users.find_one({"email": "admin@educando.com"})
+    if admin:
+        print("Los usuarios ya existen, solo se verificaron/actualizaron programas y materias")
+        return  # Los usuarios ya existen
+    
+    print("Creando usuarios iniciales...")
     users = [
         {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001234567", "active": True, "module": None, "grupo": None},
         {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3009876543", "active": True, "module": None, "grupo": None},
