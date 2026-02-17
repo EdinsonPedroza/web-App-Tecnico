@@ -1372,6 +1372,23 @@ async def graduate_student(user_id: str, user=Depends(get_current_user)):
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     return updated
 
+@api_router.post("/admin/set-all-students-module-1")
+async def set_all_students_module_1(user=Depends(get_current_user)):
+    """Admin endpoint to set all existing students to Module 1"""
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede realizar esta operación")
+    
+    # Update all students to module 1
+    result = await db.users.update_many(
+        {"role": "estudiante"},
+        {"$set": {"module": 1}}
+    )
+    
+    return {
+        "message": f"Se actualizaron {result.modified_count} estudiantes al Módulo 1",
+        "modified_count": result.modified_count
+    }
+
 # --- Seed Data Route ---
 @api_router.post("/seed")
 async def seed_data():
