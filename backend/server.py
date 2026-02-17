@@ -157,6 +157,7 @@ async def create_initial_data():
     
     print("Creando usuarios iniciales...")
     users = [
+        {"id": "user-editor", "name": "Editor Principal", "email": "editor@educando.com", "cedula": None, "password_hash": hash_password("editor123"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001111111", "active": True, "module": None, "grupo": None},
         {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001234567", "active": True, "module": None, "grupo": None},
         {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3009876543", "active": True, "module": None, "grupo": None},
         {"id": "user-est-1", "name": "Juan Martínez Ruiz", "email": None, "cedula": "1234567890", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3101234567", "active": True, "module": 1, "grupo": "Enero 2025"},
@@ -214,6 +215,7 @@ async def create_initial_data():
     
     print("Datos iniciales creados exitosamente")
     print("Credenciales:")
+    print("  Editor: editor@educando.com / editor123")
     print("  Admin: admin@educando.com / admin123")
     print("  Profesor: profesor@educando.com / profesor123")
     print("  Estudiante: 1234567890 / estudiante123")
@@ -254,6 +256,11 @@ class LoginRequest(BaseModel):
     cedula: Optional[str] = None
     password: str
     role: str
+
+class AdminCreateByEditor(BaseModel):
+    name: str
+    email: str
+    password: str
 
 class UserCreate(BaseModel):
     name: str
@@ -496,6 +503,51 @@ async def delete_user(user_id: str, user=Depends(get_current_user)):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return {"message": "Usuario eliminado"}
+
+# --- Editor Routes ---
+@api_router.post("/editor/create-admin")
+async def editor_create_admin(req: AdminCreateByEditor, user=Depends(get_current_user)):
+    """Endpoint for editor to create admin users"""
+    if user["role"] != "editor":
+        raise HTTPException(status_code=403, detail="Solo editor puede crear administradores")
+    
+    if not req.email or not req.password or not req.name:
+        raise HTTPException(status_code=400, detail="Email, password y nombre son requeridos")
+    
+    # Check if email already exists
+    existing = await db.users.find_one({"email": req.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email ya existe")
+    
+    new_admin = {
+        "id": str(uuid.uuid4()),
+        "name": req.name,
+        "email": req.email,
+        "cedula": None,
+        "password_hash": hash_password(req.password),
+        "role": "admin",
+        "program_id": None,
+        "program_ids": [],
+        "subject_ids": [],
+        "phone": None,
+        "module": None,
+        "grupo": None,
+        "active": True,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.users.insert_one(new_admin)
+    del new_admin["_id"]
+    del new_admin["password_hash"]
+    return new_admin
+
+@api_router.get("/editor/admins")
+async def editor_get_admins(user=Depends(get_current_user)):
+    """Endpoint for editor to list all admins"""
+    if user["role"] != "editor":
+        raise HTTPException(status_code=403, detail="Solo editor puede ver administradores")
+    
+    admins = await db.users.find({"role": "admin"}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    return admins
 
 # --- Programs Routes ---
 @api_router.get("/programs")

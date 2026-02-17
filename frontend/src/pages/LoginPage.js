@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { GraduationCap, User, Shield, Eye, EyeOff, Loader2, Facebook } from 'lucide-react';
+import { GraduationCap, User, Shield, Eye, EyeOff, Loader2, Facebook, UserCog } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function LoginPage() {
@@ -35,7 +35,8 @@ export default function LoginPage() {
       const userData = await login(credentials);
       toast.success(`¡Bienvenido, ${userData.name}!`);
       
-      if (userData.role === 'admin') navigate('/admin');
+      if (userData.role === 'editor') navigate('/editor');
+      else if (userData.role === 'admin') navigate('/admin');
       else if (userData.role === 'profesor') navigate('/teacher');
       else navigate('/student');
     } catch (err) {
@@ -103,7 +104,7 @@ export default function LoginPage() {
             </CardHeader>
             <CardContent>
               <Tabs value={role} onValueChange={setRole} className="mb-6">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="estudiante" className="text-xs sm:text-sm">
                     <GraduationCap className="h-3.5 w-3.5 mr-1" />
                     Estudiante
@@ -115,6 +116,10 @@ export default function LoginPage() {
                   <TabsTrigger value="admin" className="text-xs sm:text-sm">
                     <Shield className="h-3.5 w-3.5 mr-1" />
                     Admin
+                  </TabsTrigger>
+                  <TabsTrigger value="editor" className="text-xs sm:text-sm">
+                    <UserCog className="h-3.5 w-3.5 mr-1" />
+                    Editor
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
