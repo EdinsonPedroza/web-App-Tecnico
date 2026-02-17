@@ -108,21 +108,27 @@ export default function StudentsPage() {
   };
 
   const toggleCourse = (courseId) => {
-    setForm(prev => ({
-      ...prev,
-      course_ids: (prev.course_ids || []).includes(courseId)
-        ? (prev.course_ids || []).filter(id => id !== courseId)
-        : [...(prev.course_ids || []), courseId]
-    }));
+    setForm(prev => {
+      const courseIds = prev.course_ids || [];
+      return {
+        ...prev,
+        course_ids: courseIds.includes(courseId)
+          ? courseIds.filter(id => id !== courseId)
+          : [...courseIds, courseId]
+      };
+    });
   };
 
   const toggleProgram = (programId) => {
-    setForm(prev => ({
-      ...prev,
-      program_ids: (prev.program_ids || []).includes(programId)
-        ? (prev.program_ids || []).filter(id => id !== programId)
-        : [...(prev.program_ids || []), programId]
-    }));
+    setForm(prev => {
+      const programIds = prev.program_ids || [];
+      return {
+        ...prev,
+        program_ids: programIds.includes(programId)
+          ? programIds.filter(id => id !== programId)
+          : [...programIds, programId]
+      };
+    });
   };
 
   const handleSave = async () => {
