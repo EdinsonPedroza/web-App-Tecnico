@@ -279,7 +279,7 @@ export default function CoursesPage() {
                     <p className="text-sm text-muted-foreground">No hay materias para este programa</p>
                   ) : (
                     filteredSubjects
-                      .filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase()))
+                      .filter(s => (s.name || '').toLowerCase().includes(subjectSearch.toLowerCase()))
                       .map((s) => (
                         <div key={s.id} className="flex items-center gap-2">
                           <Checkbox 
@@ -292,7 +292,7 @@ export default function CoursesPage() {
                               }
                             }}
                           />
-                          <span className="text-sm">{s.name} <span className="text-muted-foreground">(Módulo {s.module_number})</span></span>
+                          <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">(Módulo {s.module_number})</span></span>
                         </div>
                       ))
                   )}
@@ -434,13 +434,13 @@ export default function CoursesPage() {
               <div className="max-h-48 overflow-y-auto rounded-lg border p-4 space-y-2.5">
                 {students.length === 0 ? <p className="text-sm text-muted-foreground">No hay estudiantes</p> : students
                   .filter(s => 
-                    s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                    (s.name || '').toLowerCase().includes(studentSearch.toLowerCase()) || 
                     (s.cedula && s.cedula.includes(studentSearch))
                   )
                   .map((s) => (
                   <div key={s.id} className="flex items-center gap-2.5">
                     <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
-                    <span className="text-sm">{s.name} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module}</span></span>
+                    <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module}</span></span>
                   </div>
                 ))}
               </div>
