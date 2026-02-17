@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, UserCog, Loader2, LogOut } from 'lucide-react';
+import { Plus, UserCog, Loader2, LogOut, Pencil, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function EditorPage() {
@@ -14,7 +15,11 @@ export default function EditorPage() {
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [editForm, setEditForm] = useState({ id: '', name: '', email: '', password: '' });
+  const [adminToDelete, setAdminToDelete] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const fetchAdmins = async () => {
@@ -51,6 +56,74 @@ export default function EditorPage() {
       fetchAdmins();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error creando administrador');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditClick = (admin) => {
+    setEditForm({
+      id: admin.id,
+      name: admin.name,
+      email: admin.email,
+      password: ''
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editForm.name.trim() || !editForm.email.trim()) {
+      toast.error('Nombre y correo son requeridos');
+      return;
+    }
+    
+    // Password validation only if password is provided
+    if (editForm.password && editForm.password.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      const updateData = {
+        name: editForm.name,
+        email: editForm.email,
+      };
+      
+      // Only include password if it's not empty
+      if (editForm.password.trim()) {
+        updateData.password = editForm.password;
+      }
+      
+      await api.put(`/editor/admins/${editForm.id}`, updateData);
+      toast.success('Administrador actualizado exitosamente');
+      setEditDialogOpen(false);
+      setEditForm({ id: '', name: '', email: '', password: '' });
+      fetchAdmins();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error actualizando administrador');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteClick = (admin) => {
+    setAdminToDelete(admin);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!adminToDelete) return;
+    
+    setSaving(true);
+    try {
+      await api.delete(`/editor/admins/${adminToDelete.id}`);
+      toast.success('Administrador eliminado exitosamente');
+      setDeleteDialogOpen(false);
+      setAdminToDelete(null);
+      fetchAdmins();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error eliminando administrador');
     } finally {
       setSaving(false);
     }
@@ -119,8 +192,26 @@ export default function EditorPage() {
                         <p className="font-semibold">{admin.name}</p>
                         <p className="text-sm text-muted-foreground">{admin.email}</p>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {admin.active ? 'Activo' : 'Inactivo'}
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-muted-foreground mr-2">
+                          {admin.active ? 'Activo' : 'Inactivo'}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditClick(admin)}
+                        >
+                          <Pencil className="h-4 w-4 mr-1" />
+                          Editar
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteClick(admin)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Eliminar
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -180,6 +271,80 @@ export default function EditorPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Admin Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Administrador</DialogTitle>
+            <DialogDescription>
+              Actualiza la información del administrador. Deja la contraseña vacía si no deseas cambiarla.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nombre Completo</Label>
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                placeholder="Nombre del administrador"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Correo Electrónico</Label>
+              <Input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                placeholder="admin@educando.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Nueva Contraseña (opcional)</Label>
+              <Input
+                type="password"
+                value={editForm.password}
+                onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                placeholder="Dejar vacío para no cambiar"
+              />
+              <p className="text-xs text-muted-foreground">Mínimo 6 caracteres si se proporciona</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleEdit} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Guardar Cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Admin Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminará permanentemente al administrador{' '}
+              <strong>{adminToDelete?.name}</strong> ({adminToDelete?.email}).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={saving}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
