@@ -474,20 +474,24 @@ export default function StudentsPage() {
             <div className="space-y-2">
               <Label>Grupos Inscritos</Label>
               <div className="max-h-36 overflow-y-auto rounded-lg border p-3 space-y-2">
-                {courses.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No hay grupos creados</p>
-                ) : courses
-                    .filter(c => !form.program_ids.length || form.program_ids.includes(c.program_id))
-                    .map((c) => (
-                      <div key={c.id} className="flex items-center gap-2">
-                        <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
-                        <span className="text-sm">{c.name}</span>
-                      </div>
-                    ))
-                }
-                {courses.filter(c => !form.program_ids.length || form.program_ids.includes(c.program_id)).length === 0 && form.program_ids.length > 0 && (
-                  <p className="text-sm text-muted-foreground">No hay grupos para los técnicos seleccionados</p>
-                )}
+                {(() => {
+                  const filteredCourses = courses.filter(c => !form.program_ids.length || form.program_ids.includes(c.program_id));
+                  
+                  if (courses.length === 0) {
+                    return <p className="text-sm text-muted-foreground">No hay grupos creados</p>;
+                  }
+                  
+                  if (filteredCourses.length === 0 && form.program_ids.length > 0) {
+                    return <p className="text-sm text-muted-foreground">No hay grupos para los técnicos seleccionados</p>;
+                  }
+                  
+                  return filteredCourses.map((c) => (
+                    <div key={c.id} className="flex items-center gap-2">
+                      <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
+                      <span className="text-sm">{c.name}</span>
+                    </div>
+                  ));
+                })()}
               </div>
               <p className="text-xs text-muted-foreground">
                 Solo se muestran los grupos correspondientes a los técnicos seleccionados

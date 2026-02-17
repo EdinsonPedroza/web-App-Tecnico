@@ -274,7 +274,7 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None
     module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
-    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status
+    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status: "activo" (active) or "egresado" (graduate)
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -288,7 +288,7 @@ class UserUpdate(BaseModel):
     active: Optional[bool] = None
     module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
-    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status
+    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status: "activo" (active) or "egresado" (graduate)
 
 class ProgramCreate(BaseModel):
     name: str
