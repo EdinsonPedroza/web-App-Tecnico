@@ -48,6 +48,16 @@ login_attempts = defaultdict(list)
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_ATTEMPT_WINDOW = 300  # 5 minutes in seconds
 
+# Module validation constants
+MIN_MODULE_NUMBER = 1
+MAX_MODULE_NUMBER = 2
+
+def validate_module_number(module_num, field_name="module"):
+    """Validate that a module number is within the valid range"""
+    if not isinstance(module_num, int) or module_num < MIN_MODULE_NUMBER or module_num > MAX_MODULE_NUMBER:
+        raise ValueError(f"{field_name} must be between {MIN_MODULE_NUMBER} and {MAX_MODULE_NUMBER}, got {module_num}")
+    return True
+
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
@@ -379,8 +389,7 @@ class UserCreate(BaseModel):
     def validate_program_modules(cls, v):
         if v is not None:
             for prog_id, module_num in v.items():
-                if not isinstance(module_num, int) or module_num < 1 or module_num > 2:
-                    raise ValueError(f"Module number for program {prog_id} must be 1 or 2, got {module_num}")
+                validate_module_number(module_num, f"Module number for program {prog_id}")
         return v
 
 class UserUpdate(BaseModel):
@@ -413,8 +422,7 @@ class UserUpdate(BaseModel):
     def validate_program_modules(cls, v):
         if v is not None:
             for prog_id, module_num in v.items():
-                if not isinstance(module_num, int) or module_num < 1 or module_num > 2:
-                    raise ValueError(f"Module number for program {prog_id} must be 1 or 2, got {module_num}")
+                validate_module_number(module_num, f"Module number for program {prog_id}")
         return v
 
 class ProgramCreate(BaseModel):
@@ -667,7 +675,7 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         program_modules = req.program_modules
     elif req.module and program_ids:
         # Initialize all programs with the same module for backward compatibility
-        program_modules = {prog_id: req.module for prog_id in program_ids}
+        program_modules = dict.fromkeys(program_ids, req.module)
     else:
         program_modules = None
     

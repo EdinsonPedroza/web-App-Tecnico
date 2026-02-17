@@ -14,6 +14,8 @@ import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, Chev
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 
+const DEFAULT_MODULE = 1;
+
 export default function StudentsPage() {
   const [students, setStudents] = useState([]);
   const [programs, setPrograms] = useState([]);
@@ -168,10 +170,10 @@ export default function StudentsPage() {
         ? [...programIds, programId]
         : programIds.filter(id => id !== programId);
       
-      // Initialize module to 1 when adding a new program, remove when removing program
+      // Initialize module to DEFAULT_MODULE when adding a new program, remove when removing program
       const newProgramModules = { ...programModules };
       if (isAdding) {
-        newProgramModules[programId] = 1; // Default to module 1
+        newProgramModules[programId] = DEFAULT_MODULE;
       } else {
         delete newProgramModules[programId];
       }
@@ -603,7 +605,7 @@ export default function StudentsPage() {
                 <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
                   {form.program_ids.map(progId => {
                     const program = programs.find(p => p.id === progId);
-                    const currentModule = form.program_modules?.[progId] ?? 1;
+                    const currentModule = form.program_modules?.[progId] ?? DEFAULT_MODULE;
                     return (
                       <div key={progId} className="flex items-center justify-between gap-3 p-2 rounded bg-background">
                         <span className="text-sm font-medium flex-1">{program?.name || 'Programa'}</span>
