@@ -601,29 +601,36 @@ async def delete_subject(subject_id: str, user=Depends(get_current_user)):
 # --- Courses Routes ---
 @api_router.get("/courses")
 async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str] = None, user=Depends(get_current_user)):
-    query = {}
+    conditions = []
+    
     if teacher_id:
         # Get teacher's assigned subjects
         teacher = await db.users.find_one({"id": teacher_id}, {"_id": 0})
         if teacher and teacher.get("subject_ids"):
             # Match courses that have any subject in common with teacher's subjects
             # Also include courses explicitly assigned to this teacher (backward compatibility)
-            query = {
+            conditions.append({
                 "$or": [
                     {"teacher_id": teacher_id},
                     {"subject_ids": {"$in": teacher["subject_ids"]}},
                     {"subject_id": {"$in": teacher["subject_ids"]}}  # Backward compatibility
                 ]
-            }
+            })
         else:
             # Fallback to old behavior if teacher has no subjects assigned
-            query["teacher_id"] = teacher_id
+            conditions.append({"teacher_id": teacher_id})
+    
     if student_id:
-        if query:
-            # Combine with existing teacher query using $and
-            query = {"$and": [query, {"student_ids": student_id}]}
-        else:
-            query["student_ids"] = student_id
+        conditions.append({"student_ids": student_id})
+    
+    # Build final query
+    if len(conditions) == 0:
+        query = {}
+    elif len(conditions) == 1:
+        query = conditions[0]
+    else:
+        query = {"$and": conditions}
+    
     courses = await db.courses.find(query, {"_id": 0}).to_list(500)
     return courses
 
