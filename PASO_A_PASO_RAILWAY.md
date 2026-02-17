@@ -1,5 +1,12 @@
 # 🚂 Paso a Paso: Subir a Railway (10 Minutos)
 
+> 📌 **Tu estado actual (como en tu captura):** ya tienes `MongoDB` y un servicio `web-App-Tecnico`.
+>
+> Para que funcione esta app en Railway, debes dejar **3 servicios** en el mismo proyecto:
+> 1) `MongoDB` (base de datos), 2) `backend` (FastAPI), 3) `frontend` (React).
+>
+> El servicio único `web-App-Tecnico` (raíz del repo) **no sirve para producción** en este proyecto porque solo muestra un mensaje y no levanta la app completa.
+
 ## La Forma MÁS FÁCIL - Sin Servidor, Sin Complicaciones
 
 Railway es una plataforma que hace todo por ti. Solo necesitas:
@@ -41,11 +48,13 @@ Railway te mostrará varias opciones. Elige **"Deploy from GitHub repo"**.
    - Selecciona tu repositorio
    - Autoriza el acceso
 
-### 2.4 Railway Detectará Automáticamente
-Railway leerá tu `docker-compose.yml` y creará 3 servicios:
-- 🗄️ **MongoDB** (Base de datos)
-- ⚙️ **Backend** (API)
-- 🎨 **Frontend** (Interfaz web)
+### 2.4 Configuración correcta para este repositorio (Monorepo)
+Este repo se despliega como **monorepo**:
+- ⚙️ Un servicio con **Root Directory = `backend`**
+- 🎨 Un servicio con **Root Directory = `frontend`**
+- 🗄️ MongoDB como base de datos
+
+Si te aparece un servicio raíz `web-App-Tecnico`, puedes conservarlo solo de referencia, pero lo recomendable es **eliminarlo** para evitar confusión.
 
 ---
 
@@ -67,7 +76,14 @@ Si Railway ya detectó MongoDB de tu docker-compose, perfecto. No hagas nada.
 
 ---
 
-## 📍 PASO 4: Configurar el Backend
+## 📍 PASO 4: Crear y Configurar el Backend
+
+### 4.0 Crear servicio Backend (si aún no existe)
+1. Click en **+ Create**
+2. **GitHub Repo** → selecciona `web-App-Tecnico`
+3. Elige **Deploy from monorepo**
+4. En **Root Directory** escribe: `backend`
+5. Deploy
 
 ### 4.1 Haz Click en el Servicio "backend"
 
@@ -111,7 +127,14 @@ Haz clic en **"Save"** o las variables se guardan automáticamente.
 
 ---
 
-## 📍 PASO 5: Configurar el Frontend
+## 📍 PASO 5: Crear y Configurar el Frontend
+
+### 5.0 Crear servicio Frontend (si aún no existe)
+1. Click en **+ Create**
+2. **GitHub Repo** → selecciona `web-App-Tecnico`
+3. Elige **Deploy from monorepo**
+4. En **Root Directory** escribe: `frontend`
+5. Deploy
 
 ### 5.1 Haz Click en el Servicio "frontend"
 
@@ -120,7 +143,7 @@ Haz clic en **"Save"** o las variables se guardan automáticamente.
 ### 5.3 Agrega Esta Variable:
 
 ```
-Nombre: REACT_APP_API_URL
+Nombre: REACT_APP_BACKEND_URL
 Valor:  https://backend-production-XXXX.up.railway.app
 ```
 
@@ -134,7 +157,7 @@ Valor:  https://backend-production-XXXX.up.railway.app
 4. Railway te dará una URL como: `https://backend-production-a1b2.up.railway.app`
 5. **Copia esa URL**
 6. Vuelve al frontend
-7. Pégala en `REACT_APP_API_URL`
+7. Pégala en `REACT_APP_BACKEND_URL`
 
 ---
 
@@ -370,6 +393,35 @@ Para una escuela pequeña-mediana (hasta 500 estudiantes):
 2. Verifica la URL del frontend
 3. Abre las herramientas de desarrollador (F12)
 4. Mira si hay errores en la consola
+
+---
+
+## 🔎 Verificación Rápida (Checklist para hacerlo "bien")
+
+Cuando termines, valida en este orden:
+
+1. **Servicios en verde**
+   - MongoDB: Online
+   - backend: Active/Healthy
+   - frontend: Active/Healthy
+
+2. **Dominios generados**
+   - Backend con dominio público generado
+   - Frontend con dominio público generado
+
+3. **Variables correctas**
+   - Backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET`
+   - Frontend: `REACT_APP_BACKEND_URL` (apuntando al dominio del backend)
+
+4. **Pruebas funcionales mínimas**
+   - Abre URL frontend en incógnito
+   - Inicia sesión
+   - Navega al dashboard
+   - Cierra sesión e inicia nuevamente
+
+5. **Prueba técnica mínima**
+   - Abre en navegador: `https://TU_BACKEND.up.railway.app/docs`
+   - Debe cargar Swagger de FastAPI
 
 ---
 
