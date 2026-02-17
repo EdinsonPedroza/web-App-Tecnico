@@ -381,6 +381,18 @@ class AdminCreateByEditor(BaseModel):
     def sanitize_fields(cls, v):
         return sanitize_string(v, 200)
 
+class AdminUpdateByEditor(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    email: Optional[str] = Field(None, min_length=1, max_length=200)
+    password: Optional[str] = Field(None, min_length=6, max_length=200)
+    active: Optional[bool] = None
+
+    @validator('name', 'email')
+    def sanitize_fields(cls, v):
+        if v is not None:
+            return sanitize_string(v, 200)
+        return v
+
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     email: Optional[str] = Field(None, max_length=200)
@@ -832,6 +844,81 @@ async def editor_get_admins(user=Depends(get_current_user)):
     
     admins = await db.users.find({"role": "admin"}, {"_id": 0, "password_hash": 0}).to_list(1000)
     return admins
+
+@api_router.put("/editor/admins/{admin_id}")
+async def editor_update_admin(admin_id: str, req: AdminUpdateByEditor, user=Depends(get_current_user)):
+    """Endpoint for editor to update admin users. At least one field must be provided."""
+    if user["role"] != "editor":
+        raise HTTPException(status_code=403, detail="Solo editor puede editar administradores")
+    
+    # Check that the admin exists and is actually an admin
+    target_user = await db.users.find_one({"id": admin_id})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Administrador no encontrado")
+    
+    if target_user["role"] != "admin":
+        raise HTTPException(status_code=400, detail="El usuario no es un administrador")
+    
+    # Build update data
+    update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    
+    # Hash password if provided
+    if "password" in update_data:
+        password = update_data.pop("password")
+        if password and password.strip():
+            update_data["password_hash"] = hash_password(password)
+            logger.info(f"Password updated for admin: {admin_id} by editor: {user['id']}")
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+    
+    # Validate email uniqueness if it's being changed
+    if "email" in update_data and update_data["email"]:
+        existing = await db.users.find_one({"email": update_data["email"], "id": {"$ne": admin_id}})
+        if existing:
+            log_security_event("DUPLICATE_EMAIL_UPDATE_ATTEMPT", {
+                "email": update_data["email"],
+                "attempted_by": user["id"],
+                "target_user": admin_id
+            })
+            raise HTTPException(status_code=400, detail="Este correo ya está registrado")
+    
+    # Update the admin
+    result = await db.users.update_one({"id": admin_id}, {"$set": update_data})
+    
+    logger.info(f"Admin updated: id={admin_id}, by={user['id']}, fields={list(update_data.keys())}")
+    
+    # Return updated admin without sensitive data
+    updated_admin = await db.users.find_one({"id": admin_id}, {"_id": 0, "password_hash": 0})
+    return updated_admin
+
+@api_router.delete("/editor/admins/{admin_id}")
+async def editor_delete_admin(admin_id: str, user=Depends(get_current_user)):
+    """Endpoint for editor to delete admin users"""
+    if user["role"] != "editor":
+        raise HTTPException(status_code=403, detail="Solo editor puede eliminar administradores")
+    
+    # Check that the admin exists and is actually an admin
+    target_user = await db.users.find_one({"id": admin_id})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Administrador no encontrado")
+    
+    if target_user["role"] != "admin":
+        raise HTTPException(status_code=400, detail="El usuario no es un administrador")
+    
+    # Delete the admin
+    result = await db.users.delete_one({"id": admin_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Administrador no encontrado")
+    
+    logger.info(f"Admin deleted: id={admin_id}, by editor={user['id']}")
+    log_security_event("ADMIN_DELETED_BY_EDITOR", {
+        "deleted_admin_id": admin_id,
+        "deleted_admin_email": target_user.get("email"),
+        "editor_id": user["id"]
+    })
+    
+    return {"message": "Administrador eliminado exitosamente"}
 
 # --- Programs Routes ---
 @api_router.get("/programs")
