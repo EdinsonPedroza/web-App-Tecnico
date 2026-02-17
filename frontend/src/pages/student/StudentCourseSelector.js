@@ -144,7 +144,6 @@ export default function StudentCourseSelector() {
               );
             })}
           </div>
-          </div>
         )}
       </div>
     </DashboardLayout>
