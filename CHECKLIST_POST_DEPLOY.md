@@ -6,7 +6,7 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 - URL pública del **frontend** (ej: `https://web-app-tecnico-production.up.railway.app`)
 - URL pública del **backend** (Networking del servicio backend)
 - Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (no dejes el valor por defecto)
-- Credenciales iniciales para probar: `admin@educando.com / admin123`
+- Credenciales iniciales para probar: `admin@educando.com / admin123` (⚠️ solo para el primer inicio de sesión; cámbialas de inmediato)
 
 ## 2) Verificación en 5 minutos
 1) **Estado en Railway:** abre el proyecto y confirma que MongoDB, backend y frontend están en verde/“Active”. Si alguno está en rojo, presiona **Restart** o **Redeploy**.
