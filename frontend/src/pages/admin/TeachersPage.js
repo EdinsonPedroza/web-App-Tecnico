@@ -22,6 +22,7 @@ export default function TeachersPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', subject_ids: [] });
   const [saving, setSaving] = useState(false);
+  const [subjectSearch, setSubjectSearch] = useState('');
 
   const fetchTeachers = useCallback(async () => {
     try {
@@ -41,16 +42,23 @@ export default function TeachersPage() {
   useEffect(() => { fetchTeachers(); }, [fetchTeachers]);
 
   const filtered = teachers.filter(t => (t.name || '').toLowerCase().includes(search.toLowerCase()) || (t.email || '').toLowerCase().includes(search.toLowerCase()));
+  
+  // Filter subjects based on search
+  const filteredSubjects = subjects.filter(subject => 
+    subject.name.toLowerCase().includes(subjectSearch.toLowerCase())
+  );
 
   const openCreate = () => {
     setEditing(null);
     setForm({ name: '', email: '', password: '', phone: '', subject_ids: [] });
+    setSubjectSearch('');
     setDialogOpen(true);
   };
 
   const openEdit = (teacher) => {
     setEditing(teacher);
     setForm({ name: teacher.name, email: teacher.email || '', password: '', phone: teacher.phone || '', subject_ids: teacher.subject_ids || [] });
+    setSubjectSearch('');
     setDialogOpen(true);
   };
 
@@ -210,11 +218,24 @@ export default function TeachersPage() {
             
             <div className="space-y-2">
               <Label>Materias que enseña (opcional)</Label>
+              {subjects.length > 0 && (
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    placeholder="Buscar materias..." 
+                    className="pl-9" 
+                    value={subjectSearch} 
+                    onChange={(e) => setSubjectSearch(e.target.value)} 
+                  />
+                </div>
+              )}
               <div className="border rounded-lg p-3 max-h-60 overflow-y-auto space-y-2">
                 {subjects.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No hay materias disponibles</p>
+                ) : filteredSubjects.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No se encontraron materias</p>
                 ) : (
-                  subjects.map((subject) => (
+                  filteredSubjects.map((subject) => (
                     <div key={subject.id} className="flex items-center gap-2">
                       <Checkbox
                         id={`subject-${subject.id}`}
