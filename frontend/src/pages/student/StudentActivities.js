@@ -218,12 +218,12 @@ export default function StudentActivities() {
           <div className="space-y-4">
             {/* Show warning if editing an already submitted activity */}
             {submissions.find(s => s.activity_id === submitDialog?.id) && (
-              <div className="rounded-lg bg-warning/10 border border-warning/30 p-4">
-                <p className="text-sm font-semibold text-warning-foreground flex items-center gap-2">
+              <div className="rounded-lg bg-warning/15 border-2 border-warning p-4">
+                <p className="text-sm font-bold text-warning flex items-center gap-2">
                   <span className="text-xl">⚠️</span>
                   ¡IMPORTANTE! Solo puedes editar tu actividad UNA VEZ
                 </p>
-                <p className="text-xs text-warning-foreground/80 mt-1">
+                <p className="text-sm text-foreground mt-1">
                   Revisa cuidadosamente tu respuesta y archivos antes de entregar. Una vez editada, no podrás volver a modificarla.
                 </p>
               </div>
