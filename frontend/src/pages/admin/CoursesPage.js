@@ -31,7 +31,6 @@ export default function CoursesPage() {
     student_ids: [],
     start_date: '',
     end_date: '',
-    grupo: '',
     module_dates: {}  // e.g., {"1": {"start": "2026-01-01", "end": "2026-06-30"}}
   });
   const [saving, setSaving] = useState(false);
@@ -81,7 +80,6 @@ export default function CoursesPage() {
       student_ids: [],
       start_date: '',
       end_date: '',
-      grupo: '',
       module_dates: {}
     });
     setSubjectSearch('');
@@ -104,7 +102,6 @@ export default function CoursesPage() {
       student_ids: course.student_ids || [],
       start_date: course.start_date || '',
       end_date: course.end_date || '',
-      grupo: course.grupo || '',
       module_dates: course.module_dates || {}
     });
     setSubjectSearch('');
@@ -132,7 +129,6 @@ export default function CoursesPage() {
         student_ids: form.student_ids,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
-        grupo: form.grupo || null,
         module_dates: form.module_dates || {}
       };
       
@@ -207,13 +203,6 @@ export default function CoursesPage() {
                             {getName(subjects, subjectId)}
                           </Badge>
                         ))}
-                      </div>
-                    )}
-                    {c.grupo && (
-                      <div className="pt-1">
-                        <Badge variant="default" className="text-sm font-medium">
-                          {c.grupo}
-                        </Badge>
                       </div>
                     )}
                     <div className="flex gap-2 flex-wrap pt-1">
@@ -309,8 +298,12 @@ export default function CoursesPage() {
                   <div className="space-y-2">
                     <Label className="text-base">Mes</Label>
                     <Select value={form.month} onValueChange={(v) => {
-                      const newGrupo = `${v.toUpperCase()}-${form.year}`;
-                      setForm({ ...form, month: v, grupo: newGrupo });
+                      if (v && form.year) {
+                        const newName = `${v.toUpperCase()}-${form.year}`;
+                        setForm({ ...form, month: v, name: newName });
+                      } else {
+                        setForm({ ...form, month: v });
+                      }
                     }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar mes" /></SelectTrigger>
                       <SelectContent>
@@ -327,8 +320,12 @@ export default function CoursesPage() {
                       value={form.year} 
                       onChange={(e) => {
                         const newYear = parseInt(e.target.value) || new Date().getFullYear();
-                        const newGrupo = `${form.month.toUpperCase()}-${newYear}`;
-                        setForm({ ...form, year: newYear, grupo: newGrupo });
+                        if (form.month && newYear) {
+                          const newName = `${form.month.toUpperCase()}-${newYear}`;
+                          setForm({ ...form, year: newYear, name: newName });
+                        } else {
+                          setForm({ ...form, year: newYear });
+                        }
                       }} 
                       placeholder="2026"
                       min="2024"
@@ -343,22 +340,6 @@ export default function CoursesPage() {
               <Input 
                 value={form.name} 
                 onChange={(e) => setForm({ ...form, name: e.target.value })} 
-                placeholder={!editing && form.program_id && form.subject_ids.length > 0 && form.month && form.year 
-                  ? `${form.month} ${form.year} - ${getName(programs, form.program_id)}` 
-                  : "Ej: Enero 2026 - Asistencia Administrativa"
-                } 
-              />
-              {!editing && form.program_id && form.subject_ids.length > 0 && form.month && form.year && (
-                <p className="text-sm text-muted-foreground">
-                  Sugerencia: {form.month} {form.year} - {getName(programs, form.program_id)}
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label className="text-base">Grupo (Auto-generado desde Mes-Año)</Label>
-              <Input 
-                value={form.grupo} 
-                onChange={(e) => setForm({ ...form, grupo: e.target.value })} 
                 placeholder="Ej: ENERO-2026"
                 readOnly={!editing}
                 className={!editing ? 'bg-muted/30' : ''}

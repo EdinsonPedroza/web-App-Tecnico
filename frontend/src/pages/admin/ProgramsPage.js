@@ -137,9 +137,9 @@ export default function ProgramsPage() {
                   <p className="text-sm text-muted-foreground mb-3">{prog.description}</p>
                   <div className="flex gap-2 flex-wrap">
                     <Badge variant="secondary">{prog.duration}</Badge>
-                    {prog.modules?.map((m, i) => (
-                      <Badge key={i} variant="outline">{m.name}: {m.subjects?.length || 0} materias</Badge>
-                    ))}
+                    {prog.modules && prog.modules.length > 0 && (
+                      <Badge variant="outline">{prog.modules.length} MÓDULOS</Badge>
+                    )}
                   </div>
                 </CardContent>
               </Card>
