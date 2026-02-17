@@ -2,6 +2,8 @@
 
 Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos para validar que todo está correcto y qué hacer después.
 
+> ⚠️ **Advertencia crítica de seguridad:** Las credenciales seed (`admin@educando.com / admin123`) son públicas y solo deben usarse en un entorno aislado para la primera verificación. Cámbialas o desactívalas inmediatamente después del primer inicio de sesión antes de abrir el acceso a otros usuarios.
+
 ## 1) Ten a la mano
 - URL pública del **frontend** (ej: `https://web-app-tecnico-production.up.railway.app`)
 - URL pública del **backend** (Networking del servicio backend)
@@ -12,12 +14,13 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 1) **Estado en Railway:** abre el proyecto y confirma que MongoDB, backend y frontend están en verde/“Active”. Si alguno está en rojo, presiona **Restart** o **Redeploy**.
 2) **Backend responde:** en tu terminal ejecuta (cambia la URL por la tuya):
    ```bash
+   # Solo para validar en entorno aislado; rota la contraseña inmediatamente después.
    curl -X POST "https://TU-BACKEND.up.railway.app/api/auth/login" \
      -H "Content-Type: application/json" \
      -d '{"email":"admin@educando.com","password":"admin123"}'
    ```
    Debes recibir un `access_token` en JSON. Si falla, revisa variables y logs del backend.
-3) **Frontend y sesión:** abre la URL del frontend, inicia sesión con `admin@educando.com / admin123` y verifica que carga el dashboard sin errores.
+3) **Frontend y sesión:** abre la URL del frontend, inicia sesión con `admin@educando.com / admin123`, verifica que carga el dashboard sin errores y cambia la contraseña antes de continuar con cualquier otra acción.
 4) **Datos en Mongo:** en Railway → servicio MongoDB → “Data” o “Connect”, ejecuta:
    ```js
    db.users.findOne({ email: "admin@educando.com" })
