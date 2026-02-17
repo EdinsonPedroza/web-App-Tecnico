@@ -40,7 +40,7 @@ export default function TeachersPage() {
 
   useEffect(() => { fetchTeachers(); }, [fetchTeachers]);
 
-  const filtered = teachers.filter(t => t.name.toLowerCase().includes(search.toLowerCase()) || (t.email || '').toLowerCase().includes(search.toLowerCase()));
+  const filtered = teachers.filter(t => (t.name || '').toLowerCase().includes(search.toLowerCase()) || (t.email || '').toLowerCase().includes(search.toLowerCase()));
 
   const openCreate = () => {
     setEditing(null);
@@ -91,7 +91,7 @@ export default function TeachersPage() {
     }
   };
 
-  const initials = (name) => name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  const initials = (name) => (name || '').split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
 
   return (
     <DashboardLayout>
@@ -135,7 +135,7 @@ export default function TeachersPage() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar className="h-10 w-10"><AvatarFallback className="bg-primary/10 text-primary text-sm">{initials(t.name)}</AvatarFallback></Avatar>
-                        <span className="font-medium text-base">{t.name}</span>
+                        <span className="font-medium text-base">{t.name || 'Sin nombre'}</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-base text-muted-foreground">{t.email}</TableCell>
