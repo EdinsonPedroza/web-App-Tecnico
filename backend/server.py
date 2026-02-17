@@ -279,6 +279,7 @@ class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     cedula: Optional[str] = None
+    password: Optional[str] = None  # Allow password updates
     phone: Optional[str] = None
     program_id: Optional[str] = None  # For backward compatibility
     program_ids: Optional[List[str]] = None  # Multiple programs support
@@ -487,6 +488,10 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
     if not update_data:
         raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+    
+    # Hash password if provided
+    if "password" in update_data:
+        update_data["password_hash"] = hash_password(update_data.pop("password"))
     
     result = await db.users.update_one({"id": user_id}, {"$set": update_data})
     if result.matched_count == 0:

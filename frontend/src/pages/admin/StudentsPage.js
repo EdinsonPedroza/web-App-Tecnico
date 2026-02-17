@@ -137,6 +137,13 @@ export default function StudentsPage() {
           module: form.module ? parseInt(form.module) : null,
           grupo: form.grupo || null
         };
+        // Include password and cedula only if provided
+        if (form.password && form.password.trim()) {
+          updateData.password = form.password;
+        }
+        if (form.cedula && form.cedula.trim()) {
+          updateData.cedula = form.cedula;
+        }
         await api.put(`/users/${editing.id}`, updateData);
         studentId = editing.id;
         toast.success('Estudiante actualizado');
@@ -347,8 +354,16 @@ export default function StudentsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Nombre Completo</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del estudiante" /></div>
-            <div className="space-y-2"><Label>Cédula</Label><Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" disabled={!!editing} /></div>
-            {!editing && <div className="space-y-2"><Label>Contraseña</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Contraseña inicial" /></div>}
+            <div className="space-y-2">
+              <Label>Cédula</Label>
+              <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" />
+              {editing && <p className="text-xs text-muted-foreground">Puedes modificar la cédula si es necesario</p>}
+            </div>
+            <div className="space-y-2">
+              <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>
+              <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "Dejar vacío para no cambiar" : "Contraseña inicial"} />
+              {editing && <p className="text-xs text-muted-foreground">Dejar vacío si no deseas cambiar la contraseña</p>}
+            </div>
             <div className="space-y-2">
               <Label>Programas Técnicos (Puede seleccionar múltiples)</Label>
               <div className="max-h-40 overflow-y-auto rounded-lg border p-3 space-y-2 bg-muted/20">

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { GraduationCap, User, Shield, Eye, EyeOff, Loader2, Facebook, UserCog } from 'lucide-react';
+import { GraduationCap, User, Eye, EyeOff, Loader2, Facebook } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function LoginPage() {
@@ -104,7 +104,7 @@ export default function LoginPage() {
             </CardHeader>
             <CardContent>
               <Tabs value={role} onValueChange={setRole} className="mb-6">
-                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+                <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="estudiante" className="text-xs sm:text-sm">
                     <GraduationCap className="h-3.5 w-3.5 mr-1" />
                     Estudiante
@@ -113,15 +113,10 @@ export default function LoginPage() {
                     <User className="h-3.5 w-3.5 mr-1" />
                     Profesor
                   </TabsTrigger>
-                  <TabsTrigger value="admin" className="text-xs sm:text-sm">
-                    <Shield className="h-3.5 w-3.5 mr-1" />
-                    Admin
-                  </TabsTrigger>
-                  <TabsTrigger value="editor" className="text-xs sm:text-sm">
-                    <UserCog className="h-3.5 w-3.5 mr-1" />
-                    Editor
-                  </TabsTrigger>
                 </TabsList>
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  Admin y Editor inician sesión usando Profesor
+                </p>
               </Tabs>
 
               <form onSubmit={handleSubmit} className="space-y-4">
