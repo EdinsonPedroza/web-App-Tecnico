@@ -374,6 +374,14 @@ class UserCreate(BaseModel):
         if v:
             return re.sub(r'[^a-zA-Z0-9]', '', v)[:50]
         return v
+    
+    @validator('program_modules')
+    def validate_program_modules(cls, v):
+        if v is not None:
+            for prog_id, module_num in v.items():
+                if not isinstance(module_num, int) or module_num < 1 or module_num > 2:
+                    raise ValueError(f"Module number for program {prog_id} must be 1 or 2, got {module_num}")
+        return v
 
 class UserUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
@@ -399,6 +407,14 @@ class UserUpdate(BaseModel):
     def sanitize_cedula(cls, v):
         if v:
             return re.sub(r'[^a-zA-Z0-9]', '', v)[:50]
+        return v
+    
+    @validator('program_modules')
+    def validate_program_modules(cls, v):
+        if v is not None:
+            for prog_id, module_num in v.items():
+                if not isinstance(module_num, int) or module_num < 1 or module_num > 2:
+                    raise ValueError(f"Module number for program {prog_id} must be 1 or 2, got {module_num}")
         return v
 
 class ProgramCreate(BaseModel):
@@ -647,13 +663,13 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
     
     # Handle program_modules: if provided, use it; otherwise, if module is provided and we have program_ids, 
     # initialize program_modules with the same module for all programs
-    program_modules = {}
     if req.program_modules:
         program_modules = req.program_modules
     elif req.module and program_ids:
         # Initialize all programs with the same module for backward compatibility
-        for prog_id in program_ids:
-            program_modules[prog_id] = req.module
+        program_modules = {prog_id: req.module for prog_id in program_ids}
+    else:
+        program_modules = None
     
     new_user = {
         "id": str(uuid.uuid4()),
@@ -667,7 +683,7 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "subject_ids": subject_ids,
         "phone": req.phone,
         "module": req.module,  # Keep for backward compatibility
-        "program_modules": program_modules if program_modules else None,
+        "program_modules": program_modules,
         "estado": estado,
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()

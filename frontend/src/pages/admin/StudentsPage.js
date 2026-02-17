@@ -60,7 +60,7 @@ export default function StudentsPage() {
     let matchesProgram = filterProgram === 'all';
     if (!matchesProgram) {
       const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
-      matchesProgram = studentProgramIds.includes(filterProgram);
+      matchesProgram = studentProgramIds.some(id => String(id) === String(filterProgram));
     }
     
     // For module filter: check if student has this module in any of their programs
@@ -603,7 +603,7 @@ export default function StudentsPage() {
                 <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
                   {form.program_ids.map(progId => {
                     const program = programs.find(p => p.id === progId);
-                    const currentModule = (form.program_modules && form.program_modules[progId]) || 1;
+                    const currentModule = form.program_modules?.[progId] ?? 1;
                     return (
                       <div key={progId} className="flex items-center justify-between gap-3 p-2 rounded bg-background">
                         <span className="text-sm font-medium flex-1">{program?.name || 'Programa'}</span>
