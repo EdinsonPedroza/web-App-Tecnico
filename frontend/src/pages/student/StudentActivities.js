@@ -99,6 +99,24 @@ export default function StudentActivities() {
 
   const formatDate = (d) => new Date(d).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+  const handleEditSubmission = (act, submission, e) => {
+    e.stopPropagation();
+    toast.warning('⚠️ Importante: Solo puedes editar tu actividad UNA VEZ. Asegúrate de revisar bien antes de guardar.', {
+      duration: 6000,
+      important: true
+    });
+    setSubmitDialog(act);
+    setSubmitContent(submission.content || '');
+    setSubmitFiles(submission.files || []);
+  };
+
+  const handleSubmitActivity = (act, e) => {
+    e.stopPropagation();
+    setSubmitDialog(act);
+    setSubmitContent('');
+    setSubmitFiles([]);
+  };
+
   return (
     <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
@@ -150,27 +168,13 @@ export default function StudentActivities() {
                             <>
                               <Badge variant="success" className="text-xs">Entregada</Badge>
                               {submission.edited !== true && status.key === 'active' && (
-                                <Button size="sm" variant="outline" onClick={(e) => { 
-                                  e.stopPropagation();
-                                  toast.warning('⚠️ Importante: Solo puedes editar tu actividad UNA VEZ. Asegúrate de revisar bien antes de guardar.', {
-                                    duration: 6000,
-                                    important: true
-                                  });
-                                  setSubmitDialog(act); 
-                                  setSubmitContent(submission.content || ''); 
-                                  setSubmitFiles(submission.files || []); 
-                                }}>
+                                <Button size="sm" variant="outline" onClick={(e) => handleEditSubmission(act, submission, e)}>
                                   Editar
                                 </Button>
                               )}
                             </>
                           ) : status.key === 'active' ? (
-                            <Button size="sm" onClick={(e) => { 
-                              e.stopPropagation();
-                              setSubmitDialog(act); 
-                              setSubmitContent(''); 
-                              setSubmitFiles([]); 
-                            }}>
+                            <Button size="sm" onClick={(e) => handleSubmitActivity(act, e)}>
                               <Send className="h-3 w-3" /> Entregar
                             </Button>
                           ) : (
