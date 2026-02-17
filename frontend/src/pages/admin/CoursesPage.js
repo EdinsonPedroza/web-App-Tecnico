@@ -372,7 +372,9 @@ export default function CoursesPage() {
               <div className="space-y-3">
                 <Label className="text-base">Fechas de Inicio y Cierre por Módulo</Label>
                 <div className="rounded-lg border p-4 space-y-4 bg-muted/20">
-                  {Array.from({ length: moduleCount }, (_, i) => i + 1).map((moduleNum) => (
+                  {Array(moduleCount).fill().map((_, i) => {
+                    const moduleNum = i + 1;
+                    return (
                     <div key={moduleNum} className="space-y-2">
                       <p className="text-sm font-semibold text-foreground">Módulo {moduleNum}</p>
                       <div className="grid grid-cols-2 gap-3">
@@ -406,7 +408,8 @@ export default function CoursesPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Define el período de cada módulo para este grupo
