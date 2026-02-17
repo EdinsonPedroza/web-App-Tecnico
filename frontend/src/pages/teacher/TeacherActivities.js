@@ -492,7 +492,7 @@ export default function TeacherActivities() {
                                 size="sm"
                                 className="h-8"
                                 onClick={() => saveGrade(student.id)}
-                                disabled={savingGrade === student.id || currentGrade === ''}
+                                disabled={savingGrade === student.id || currentGrade == null || String(currentGrade).trim() === ''}
                               >
                                 {savingGrade === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                               </Button>
