@@ -400,11 +400,23 @@ async def login(req: LoginRequest):
             raise HTTPException(status_code=400, detail="Cédula requerida")
         query = {"cedula": req.cedula, "role": "estudiante"}
     else:
+        # For profesor role, also allow admin and editor to login
         if not req.email:
             raise HTTPException(status_code=400, detail="Correo requerido")
-        query = {"email": req.email, "role": req.role}
+        if req.role == "profesor":
+            # Allow profesor, admin, or editor to login through profesor tab
+            user = await db.users.find_one(
+                {"email": req.email, "role": {"$in": ["profesor", "admin", "editor"]}}, 
+                {"_id": 0}
+            )
+        else:
+            query = {"email": req.email, "role": req.role}
+            user = await db.users.find_one(query, {"_id": 0})
     
-    user = await db.users.find_one(query, {"_id": 0})
+    # For estudiante role, find user with the query
+    if req.role == "estudiante":
+        user = await db.users.find_one(query, {"_id": 0})
+    
     if not user:
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     
