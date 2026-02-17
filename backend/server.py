@@ -274,6 +274,7 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None
     module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
+    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -287,6 +288,7 @@ class UserUpdate(BaseModel):
     active: Optional[bool] = None
     module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
+    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status
 
 class ProgramCreate(BaseModel):
     name: str
@@ -434,12 +436,14 @@ async def get_me(user=Depends(get_current_user)):
 
 # --- Users Routes ---
 @api_router.get("/users")
-async def get_users(role: Optional[str] = None, user=Depends(get_current_user)):
+async def get_users(role: Optional[str] = None, estado: Optional[str] = None, user=Depends(get_current_user)):
     if user["role"] not in ["admin", "profesor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     query = {}
     if role:
         query["role"] = role
+    if estado:
+        query["estado"] = estado
     users = await db.users.find(query, {"_id": 0, "password_hash": 0}).to_list(1000)
     return users
 
@@ -468,6 +472,9 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
     # Handle subject_ids for professors
     subject_ids = req.subject_ids if req.subject_ids else []
     
+    # Set default estado for students
+    estado = req.estado if req.estado else ("activo" if req.role == "estudiante" else None)
+    
     new_user = {
         "id": str(uuid.uuid4()),
         "name": req.name,
@@ -481,6 +488,7 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "phone": req.phone,
         "module": req.module,
         "grupo": req.grupo,
+        "estado": estado,
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -1143,9 +1151,35 @@ async def promote_student(user_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="El estudiante ya está en el módulo final")
     
     # Promote to next module
+    # If promoting to module 2, student remains "activo" (active)
+    # When completing module 2, they become "egresado" (graduate) - handled separately
     await db.users.update_one(
         {"id": user_id},
         {"$set": {"module": current_module + 1}}
+    )
+    
+    updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    return updated
+
+@api_router.put("/users/{user_id}/graduate")
+async def graduate_student(user_id: str, user=Depends(get_current_user)):
+    """Admin marks a student as graduated (egresado)"""
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede graduar estudiantes")
+    
+    student = await db.users.find_one({"id": user_id, "role": "estudiante"}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+    
+    # Check if student is in module 2 (final module)
+    current_module = student.get("module", 1)
+    if current_module < 2:
+        raise HTTPException(status_code=400, detail="El estudiante debe estar en el módulo final para graduarse")
+    
+    # Mark as graduated
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"estado": "egresado"}}
     )
     
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
