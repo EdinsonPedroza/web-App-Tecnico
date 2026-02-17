@@ -11,14 +11,14 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 - `SEED_ADMIN_PASSWORD=admin123`
 
 ## Seguridad obligatoria (antes de dar acceso)
-- Genera y configura `JWT_SECRET` (>= 32 bytes aleatorios; 64 caracteres hexadecimales porque cada byte = 2 caracteres hex) durante el despliegue inicial.
+- Genera y configura `JWT_SECRET` (>= 32 bytes aleatorios) durante el despliegue inicial.
 - Crea credenciales propias para admin en el entorno y desactiva/rota las seed antes de permitir acceso público.
 - Cambia inmediatamente la contraseña al usar cualquier credencial seed para validar.
 
 ## 1) Ten a la mano
 - URL pública del **frontend** (ej: `https://web-app-tecnico-production.up.railway.app`)
 - URL pública del **backend** (Networking del servicio backend)
-- Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (usa el secreto generado en la sección de seguridad).
+- Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (debe estar configurado según la sección **Seguridad obligatoria**).
 - Credenciales iniciales para probar: las seed listadas arriba (solo en entorno privado); antes de hacerlo público aplica la sección de seguridad.
 
 ## 2) Verificación en 5 minutos
