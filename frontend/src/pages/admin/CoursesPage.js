@@ -298,8 +298,12 @@ export default function CoursesPage() {
                   <div className="space-y-2">
                     <Label className="text-base">Mes</Label>
                     <Select value={form.month} onValueChange={(v) => {
-                      const newName = `${v.toUpperCase()}-${form.year}`;
-                      setForm({ ...form, month: v, name: newName });
+                      if (v && form.year) {
+                        const newName = `${v.toUpperCase()}-${form.year}`;
+                        setForm({ ...form, month: v, name: newName });
+                      } else {
+                        setForm({ ...form, month: v });
+                      }
                     }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar mes" /></SelectTrigger>
                       <SelectContent>
@@ -316,8 +320,12 @@ export default function CoursesPage() {
                       value={form.year} 
                       onChange={(e) => {
                         const newYear = parseInt(e.target.value) || new Date().getFullYear();
-                        const newName = `${form.month.toUpperCase()}-${newYear}`;
-                        setForm({ ...form, year: newYear, name: newName });
+                        if (form.month && newYear) {
+                          const newName = `${form.month.toUpperCase()}-${newYear}`;
+                          setForm({ ...form, year: newYear, name: newName });
+                        } else {
+                          setForm({ ...form, year: newYear });
+                        }
                       }} 
                       placeholder="2026"
                       min="2024"
