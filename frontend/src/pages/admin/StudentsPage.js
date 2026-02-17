@@ -50,7 +50,7 @@ export default function StudentsPage() {
 
   const filtered = students.filter(s => {
     const matchesSearch = (s.name || '').toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search);
-    const matchesProgram = !filterProgram || s.program_id === filterProgram;
+    const matchesProgram = !filterProgram || String(s.program_id) === String(filterProgram);
     const matchesModule = !filterModule || String(s.module) === filterModule;
     return matchesSearch && matchesProgram && matchesModule;
   });

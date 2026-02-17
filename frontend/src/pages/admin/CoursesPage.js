@@ -55,7 +55,7 @@ export default function CoursesPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
-  const filteredSubjects = form.program_id ? subjects.filter(s => s.program_id === form.program_id) : subjects;
+  const filteredSubjects = form.program_id ? subjects.filter(s => String(s.program_id) === String(form.program_id)) : subjects;
   
   // Get the selected program to determine module count
   const selectedProgram = programs.find(p => p.id === form.program_id);
