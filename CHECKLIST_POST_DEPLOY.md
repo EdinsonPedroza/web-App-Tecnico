@@ -7,7 +7,7 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 ## 1) Ten a la mano
 - URL pública del **frontend** (ej: `https://web-app-tecnico-production.up.railway.app`)
 - URL pública del **backend** (Networking del servicio backend)
-- Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (configura un secreto aleatorio de al menos 32 caracteres **antes** de abrir el entorno; nunca dejes el valor por defecto).
+- Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (configura un secreto aleatorio de al menos 32 caracteres **antes** de abrir el entorno; no dejes el valor vacío ni reutilices secretos de otros entornos).
 - Credenciales iniciales para probar (solo si dejaste los datos seed por defecto): `admin@educando.com / admin123`. Úsalas solo en un entorno privado para validar; antes de hacerlo público crea credenciales nuevas y desactiva las seed.
 
 ## 2) Verificación en 5 minutos
@@ -26,7 +26,7 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
    db.users.findOne({ email: "admin@educando.com" })
    ```
    Si devuelve un documento, los datos iniciales se cargaron bien.
-5) **Seguridad mínima:** confirma que ya usas un `JWT_SECRET` de al menos 32 caracteres generado aleatoriamente (ej. `openssl rand -hex 32` o https://randomkeygen.com) y que el admin tiene contraseña nueva. Tras crear tu usuario admin propio, desactiva o cambia de inmediato las credenciales seed.
+5) **Seguridad mínima:** confirma que ya usas un `JWT_SECRET` de al menos 32 caracteres generado localmente (ej. `openssl rand -hex 32`) y que el admin tiene contraseña nueva. Tras crear tu usuario admin propio, desactiva o cambia de inmediato las credenciales seed.
 
 ## 3) Qué hacer después
 - Comparte la URL del frontend con tu equipo para pruebas finales.
