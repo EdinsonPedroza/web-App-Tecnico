@@ -131,12 +131,17 @@ export default function StudentsPage() {
       if (editing) {
         const updateData = { 
           name: form.name, 
+          cedula: form.cedula, // Always include cedula
           phone: form.phone, 
           program_id: form.program_id || null,
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
           module: form.module ? parseInt(form.module) : null,
           grupo: form.grupo || null
         };
+        // Include password only if provided (optional when editing)
+        if (form.password && form.password.trim()) {
+          updateData.password = form.password;
+        }
         await api.put(`/users/${editing.id}`, updateData);
         studentId = editing.id;
         toast.success('Estudiante actualizado');
@@ -347,8 +352,16 @@ export default function StudentsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Nombre Completo</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del estudiante" /></div>
-            <div className="space-y-2"><Label>Cédula</Label><Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" disabled={!!editing} /></div>
-            {!editing && <div className="space-y-2"><Label>Contraseña</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Contraseña inicial" /></div>}
+            <div className="space-y-2">
+              <Label>Cédula</Label>
+              <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" />
+              {editing && <p className="text-xs text-amber-600 dark:text-amber-500">⚠️ Cambiar la cédula puede afectar el acceso del estudiante. Verifica que no exista duplicado.</p>}
+            </div>
+            <div className="space-y-2">
+              <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>
+              <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "Dejar vacío para no cambiar" : "Contraseña inicial"} />
+              {editing && <p className="text-xs text-muted-foreground">Dejar vacío si no deseas cambiar la contraseña</p>}
+            </div>
             <div className="space-y-2">
               <Label>Programas Técnicos (Puede seleccionar múltiples)</Label>
               <div className="max-h-40 overflow-y-auto rounded-lg border p-3 space-y-2 bg-muted/20">

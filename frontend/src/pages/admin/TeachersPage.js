@@ -60,7 +60,12 @@ export default function TeachersPage() {
     setSaving(true);
     try {
       if (editing) {
-        await api.put(`/users/${editing.id}`, { name: form.name, email: form.email, phone: form.phone, subject_ids: form.subject_ids });
+        const updateData = { name: form.name, email: form.email, phone: form.phone, subject_ids: form.subject_ids };
+        // Include password only if provided
+        if (form.password && form.password.trim()) {
+          updateData.password = form.password;
+        }
+        await api.put(`/users/${editing.id}`, updateData);
         toast.success('Profesor actualizado');
       } else {
         await api.post('/users', { ...form, role: 'profesor' });
@@ -177,8 +182,16 @@ export default function TeachersPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Nombre Completo</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del profesor" /></div>
-            <div className="space-y-2"><Label>Correo Electrónico</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="correo@educando.com" /></div>
-            {!editing && <div className="space-y-2"><Label>Contraseña</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Contraseña inicial" /></div>}
+            <div className="space-y-2">
+              <Label>Correo Electrónico</Label>
+              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="correo@educando.com" />
+              {editing && <p className="text-xs text-amber-600 dark:text-amber-500">⚠️ Cambiar el correo puede afectar el acceso del profesor. Verifica que no exista duplicado.</p>}
+            </div>
+            <div className="space-y-2">
+              <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>
+              <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "Dejar vacío para no cambiar" : "Contraseña inicial"} />
+              {editing && <p className="text-xs text-muted-foreground">Dejar vacío si no deseas cambiar la contraseña</p>}
+            </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
             
             <div className="space-y-2">
