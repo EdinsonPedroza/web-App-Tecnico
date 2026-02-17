@@ -919,9 +919,14 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
         "student_id": user["id"]
     })
     if existing:
+        # Check if already edited once
+        if existing.get("edited", False):
+            raise HTTPException(status_code=400, detail="Ya editaste esta actividad. Solo se permite una edición por actividad.")
+        
+        # Allow editing, mark as edited
         await db.submissions.update_one(
             {"id": existing["id"]},
-            {"$set": {"content": req.content, "files": req.files, "submitted_at": datetime.now(timezone.utc).isoformat()}}
+            {"$set": {"content": req.content, "files": req.files, "submitted_at": datetime.now(timezone.utc).isoformat(), "edited": True}}
         )
         updated = await db.submissions.find_one({"id": existing["id"]}, {"_id": 0})
         return updated
@@ -932,7 +937,8 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
         "student_id": user["id"],
         "content": req.content,
         "files": req.files,
-        "submitted_at": datetime.now(timezone.utc).isoformat()
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "edited": False
     }
     await db.submissions.insert_one(submission)
     del submission["_id"]

@@ -175,7 +175,18 @@ export default function StudentActivities() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {submission ? (
-                          <Badge variant="success">Entregada</Badge>
+                          <>
+                            <Badge variant="success">Entregada</Badge>
+                            {!submission.edited && status.key === 'active' && (
+                              <Button size="sm" variant="outline" onClick={() => { 
+                                setSubmitDialog(act); 
+                                setSubmitContent(submission.content || ''); 
+                                setSubmitFiles(submission.files || []); 
+                              }}>
+                                Editar
+                              </Button>
+                            )}
+                          </>
                         ) : status.key === 'active' ? (
                           <Button size="sm" onClick={() => { setSubmitDialog(act); setSubmitContent(''); setSubmitFiles([]); }}>
                             <Send className="h-3 w-3" /> Entregar
