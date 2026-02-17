@@ -42,6 +42,8 @@ JWT_ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Rate limiting: track login attempts per IP
+# NOTE: This is in-memory storage. For production with multiple instances,
+# consider using Redis or another distributed cache for rate limiting.
 login_attempts = defaultdict(list)
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_ATTEMPT_WINDOW = 300  # 5 minutes in seconds
@@ -242,10 +244,12 @@ async def create_initial_data():
 # --- Utility Functions ---
 def sanitize_string(input_str: str, max_length: int = 500) -> str:
     """Sanitize string input to prevent injection attacks"""
-    if not input_str:
-        return input_str
-    # Remove potential XSS/injection characters
-    sanitized = re.sub(r'[<>{}]', '', input_str)
+    if not input_str or not isinstance(input_str, str):
+        return ""
+    # Remove potential XSS/injection characters including quotes, parentheses, and script-related chars
+    sanitized = re.sub(r'[<>{}()\'"\[\]\\;`]', '', input_str)
+    # Remove any non-printable characters and control characters
+    sanitized = ''.join(char for char in sanitized if char.isprintable())
     # Limit length
     return sanitized[:max_length]
 
@@ -273,22 +277,33 @@ def create_token(user_id: str, role: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+# Lock for thread-safe access to login_attempts
+login_attempts_lock = asyncio.Lock()
+
 async def check_rate_limit(ip_address: str) -> bool:
     """Check if IP has exceeded login attempt rate limit"""
-    current_time = datetime.now().timestamp()
-    # Clean old attempts
-    login_attempts[ip_address] = [
-        attempt_time for attempt_time in login_attempts[ip_address]
-        if current_time - attempt_time < LOGIN_ATTEMPT_WINDOW
-    ]
-    # Check if limit exceeded
-    if len(login_attempts[ip_address]) >= MAX_LOGIN_ATTEMPTS:
-        return False
-    return True
+    async with login_attempts_lock:
+        current_time = datetime.now().timestamp()
+        # Clean old attempts
+        login_attempts[ip_address] = [
+            attempt_time for attempt_time in login_attempts[ip_address]
+            if current_time - attempt_time < LOGIN_ATTEMPT_WINDOW
+        ]
+        # Check if limit exceeded
+        if len(login_attempts[ip_address]) >= MAX_LOGIN_ATTEMPTS:
+            return False
+        return True
 
 def log_security_event(event_type: str, details: dict):
-    """Log security-related events"""
-    logger.warning(f"SECURITY: {event_type} - {json.dumps(details)}")
+    """Log security-related events with sanitized details"""
+    # Sanitize details to prevent log injection
+    sanitized_details = {}
+    for key, value in details.items():
+        if isinstance(value, str):
+            sanitized_details[key] = sanitize_string(value, 200)
+        else:
+            sanitized_details[key] = str(value)[:200]
+    logger.warning(f"SECURITY: {event_type} - {json.dumps(sanitized_details)}")
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -505,8 +520,9 @@ async def login(req: LoginRequest, request: Request):
             detail="Demasiados intentos de inicio de sesión. Por favor, intente más tarde."
         )
     
-    # Record login attempt
-    login_attempts[client_ip].append(datetime.now().timestamp())
+    # Record login attempt (with lock)
+    async with login_attempts_lock:
+        login_attempts[client_ip].append(datetime.now().timestamp())
     
     # Validate input and find user
     if req.role == "estudiante":
@@ -557,8 +573,9 @@ async def login(req: LoginRequest, request: Request):
         })
         raise HTTPException(status_code=403, detail="Cuenta desactivada")
     
-    # Successful login - clear attempts for this IP
-    login_attempts[client_ip] = []
+    # Successful login - clear attempts for this IP (with lock)
+    async with login_attempts_lock:
+        login_attempts[client_ip] = []
     
     logger.info(f"Successful login: user_id={user['id']}, role={user['role']}, ip={client_ip}")
     

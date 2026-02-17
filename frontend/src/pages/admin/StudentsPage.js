@@ -463,7 +463,10 @@ export default function StudentsPage() {
                   <p className="text-sm text-muted-foreground">No hay programas disponibles</p>
                 ) : (
                   programs
-                    .filter(p => (p.name || '').toLowerCase().includes(programSearch.toLowerCase()))
+                    .filter(p => {
+                      const name = String(p.name || '');
+                      return name.toLowerCase().includes(programSearch.toLowerCase());
+                    })
                     .map((p) => (
                       <div key={p.id} className="flex items-center gap-2">
                         <Checkbox 
@@ -526,7 +529,8 @@ export default function StudentsPage() {
                 {(() => {
                   const filteredCourses = courses.filter(c => {
                     const matchesProgram = !form.program_ids.length || form.program_ids.includes(c.program_id);
-                    const matchesSearch = (c.name || '').toLowerCase().includes(courseSearch.toLowerCase());
+                    const courseName = String(c.name || '');
+                    const matchesSearch = courseName.toLowerCase().includes(courseSearch.toLowerCase());
                     return matchesProgram && matchesSearch;
                   });
                   
