@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { GraduationCap, User, Eye, EyeOff, Loader2, Facebook } from 'lucide-react';
+import { GraduationCap, User, Eye, EyeOff, Loader2, Facebook, Shield } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function LoginPage() {
