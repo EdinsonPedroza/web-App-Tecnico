@@ -104,7 +104,7 @@ export default function LoginPage() {
             </CardHeader>
             <CardContent>
               <Tabs value={role} onValueChange={setRole} className="mb-6">
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
                   <TabsTrigger value="estudiante" className="text-xs sm:text-sm">
                     <GraduationCap className="h-3.5 w-3.5 mr-1" />
                     Estudiante
