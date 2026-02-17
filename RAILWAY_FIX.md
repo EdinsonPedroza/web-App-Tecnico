@@ -13,7 +13,16 @@
 ### 1. Removed Misleading File
 - ❌ Deleted: `/yarn.lock` (root level, empty file)
 
-### 2. Added Railway Configuration Files
+### 2. Updated Dockerfiles for Railway Compatibility
+
+#### Backend Dockerfile
+Updated to support Railway's dynamic `$PORT` environment variable:
+```dockerfile
+# Use $PORT environment variable if provided (for Railway), otherwise default to 8001
+CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001}
+```
+
+### 3. Added Railway Configuration Files
 
 #### Root Configuration (`/railway.json`)
 ```json
@@ -63,7 +72,7 @@
 }
 ```
 
-### 3. Added Nixpacks Configuration Files
+### 4. Added Nixpacks Configuration Files
 
 #### Backend Nixpacks (`/backend/nixpacks.toml`)
 ```toml
@@ -95,8 +104,8 @@ cmds = ["yarn build"]
 cmd = "npx serve -s build -l $PORT"
 ```
 
-### 4. Updated Frontend Dependencies
-- Added `serve` package for serving the production build in Railway
+### 5. Updated Frontend Dependencies
+- Added `serve` package for serving the production build when using Nixpacks
 
 ## How to Deploy on Railway Now
 
