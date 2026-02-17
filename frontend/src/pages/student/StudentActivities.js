@@ -114,7 +114,7 @@ export default function StudentActivities() {
             <p className="text-muted-foreground">No hay actividades disponibles</p>
           </CardContent></Card>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-5">
             {activities.map((act) => {
               const status = getActivityStatus(act);
               const due = new Date(act.due_date);
@@ -126,8 +126,8 @@ export default function StudentActivities() {
               const actNum = act.activity_number || '?';
 
               return (
-                <Card key={act.id} className={`shadow-card transition-shadow ${status.key !== 'active' && !submission ? 'opacity-70' : 'hover:shadow-card-hover'}`}>
-                  <CardContent className="p-5">
+                <Card key={act.id} className={`shadow-card transition-all border-2 ${status.key !== 'active' && !submission ? 'opacity-70 border-muted' : 'hover:shadow-card-hover border-primary/20 hover:border-primary/40'} ${submission ? 'bg-success/5' : ''}`}>
+                  <CardContent className="p-6">
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">

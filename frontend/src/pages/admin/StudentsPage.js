@@ -22,7 +22,7 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', course_ids: [], module: '', grupo: '' });
+  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', grupo: '' });
   const [saving, setSaving] = useState(false);
   const [filterProgram, setFilterProgram] = useState('');
   const [filterModule, setFilterModule] = useState('');
@@ -82,18 +82,21 @@ export default function StudentsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', course_ids: [], module: '', grupo: '' });
+    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', grupo: '' });
     setDialogOpen(true);
   };
 
   const openEdit = (student) => {
     setEditing(student);
+    // Support both single program_id and multiple program_ids
+    const studentProgramIds = student.program_ids || (student.program_id ? [student.program_id] : []);
     setForm({
       name: student.name,
       cedula: student.cedula || '',
       password: '',
       phone: student.phone || '',
       program_id: student.program_id || '',
+      program_ids: studentProgramIds,
       course_ids: getStudentCourseIds(student.id),
       module: student.module || '',
       grupo: student.grupo || ''
@@ -110,6 +113,15 @@ export default function StudentsPage() {
     }));
   };
 
+  const toggleProgram = (programId) => {
+    setForm(prev => ({
+      ...prev,
+      program_ids: prev.program_ids.includes(programId)
+        ? prev.program_ids.filter(id => id !== programId)
+        : [...prev.program_ids, programId]
+    }));
+  };
+
   const handleSave = async () => {
     if (!form.name.trim() || (!editing && !form.cedula.trim())) { toast.error('Nombre y cédula requeridos'); return; }
     if (!editing && !form.password) { toast.error('Contraseña requerida'); return; }
@@ -121,6 +133,7 @@ export default function StudentsPage() {
           name: form.name, 
           phone: form.phone, 
           program_id: form.program_id || null,
+          program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
           module: form.module ? parseInt(form.module) : null,
           grupo: form.grupo || null
         };
@@ -131,6 +144,7 @@ export default function StudentsPage() {
         const createData = { 
           ...form, 
           role: 'estudiante',
+          program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
           module: form.module ? parseInt(form.module) : null
         };
         const res = await api.post('/users', createData);
@@ -336,13 +350,23 @@ export default function StudentsPage() {
             <div className="space-y-2"><Label>Cédula</Label><Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" disabled={!!editing} /></div>
             {!editing && <div className="space-y-2"><Label>Contraseña</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Contraseña inicial" /></div>}
             <div className="space-y-2">
-              <Label>Programa</Label>
-              <Select value={form.program_id} onValueChange={(v) => setForm({ ...form, program_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Seleccionar programa" /></SelectTrigger>
-                <SelectContent>
-                  {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>Programas Técnicos (Puede seleccionar múltiples)</Label>
+              <div className="max-h-40 overflow-y-auto rounded-lg border p-3 space-y-2 bg-muted/20">
+                {programs.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay programas disponibles</p>
+                ) : programs.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2">
+                    <Checkbox 
+                      checked={form.program_ids.includes(p.id)} 
+                      onCheckedChange={() => toggleProgram(p.id)} 
+                    />
+                    <span className="text-sm">{p.name}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Los estudiantes pueden inscribirse en varios técnicos simultáneamente
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
