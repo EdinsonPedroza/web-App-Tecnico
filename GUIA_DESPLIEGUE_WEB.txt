@@ -1,0 +1,883 @@
+═══════════════════════════════════════════════════════════════════════════
+  GUÍA COMPLETA DE DESPLIEGUE - Plataforma Educando
+═══════════════════════════════════════════════════════════════════════════
+
+Esta guía te llevará paso a paso para subir tu plataforma educativa a
+internet de forma profesional, segura y optimizada.
+
+═══════════════════════════════════════════════════════════════════════════
+  📊 RESUMEN DE OPCIONES RECOMENDADAS
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ OPCIÓN 1: VPS CON HETZNER (RECOMENDADO) ⭐⭐⭐⭐⭐                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Costo:           $5/mes + $8/año dominio = ~$6/mes total               │
+│ Dificultad:      Media (con esta guía será fácil)                      │
+│ Control:         Total                                                  │
+│ Rendimiento:     Excelente                                              │
+│ Escalabilidad:   Alta                                                   │
+│ Ideal para:      Producción profesional y uso serio                    │
+│                                                                          │
+│ ✓ Mejor precio/calidad                                                  │
+│ ✓ Control total sobre tu servidor                                       │
+│ ✓ Costo predecible y bajo                                               │
+│ ✓ Excelente rendimiento                                                 │
+│ ✓ Soporte de miles de usuarios simultáneos                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ OPCIÓN 2: RAILWAY ⭐⭐⭐                                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Costo:           $10-20/mes                                             │
+│ Dificultad:      Muy fácil                                              │
+│ Control:         Limitado                                               │
+│ Rendimiento:     Bueno                                                  │
+│ Escalabilidad:   Automática                                             │
+│ Ideal para:      Pruebas rápidas o quien no quiere administrar         │
+│                                                                          │
+│ ✓ Deploy automático desde GitHub                                        │
+│ ✓ Configuración en minutos                                              │
+│ ✓ SSL incluido                                                           │
+│ ✗ Más caro a largo plazo                                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ OPCIÓN 3: RENDER ⭐⭐⭐⭐                                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Costo:           Gratis (limitado) o $14/mes                            │
+│ Dificultad:      Fácil                                                  │
+│ Control:         Limitado                                               │
+│ Rendimiento:     Bueno (plan gratis limitado)                           │
+│ Escalabilidad:   Automática                                             │
+│ Ideal para:      Pruebas o inicio (plan gratis)                         │
+│                                                                          │
+│ ✓ Plan gratuito disponible                                              │
+│ ✓ SSL incluido                                                           │
+│ ✗ Plan gratis "duerme" con inactividad                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+  🏆 RECOMENDACIÓN FINAL
+═══════════════════════════════════════════════════════════════════════════
+
+Para una plataforma educativa seria y profesional, recomiendo:
+
+  ✓ Opción 1: VPS con Hetzner + Dominio de Namecheap
+  ✓ Costo total: ~$6-8/mes
+  ✓ Mejor rendimiento y control
+  ✓ Escalable hasta miles de usuarios
+  ✓ Costo predecible y bajo
+
+Esta guía se enfocará principalmente en esta opción, pero también
+incluiré instrucciones para Railway y Render.
+
+═══════════════════════════════════════════════════════════════════════════
+  📋 OPCIÓN 1: DESPLIEGUE CON VPS (HETZNER) - PASO A PASO
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 1: CREAR CUENTA EN HETZNER                                        │
+│ Tiempo estimado: 5 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+1.1 Ve a: https://www.hetzner.com/
+1.2 Haz clic en "Sign Up" (Registrarse)
+1.3 Completa el formulario de registro:
+    • Nombre completo
+    • Email
+    • Contraseña segura
+    • Acepta términos y condiciones
+1.4 Verifica tu email
+1.5 Agrega un método de pago (tarjeta de crédito o PayPal)
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 2: CREAR TU SERVIDOR VPS                                          │
+│ Tiempo estimado: 3 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+2.1 Una vez dentro, ve a "Cloud" → "Projects" → "New Project"
+2.2 Dale un nombre: "Educando Platform"
+2.3 Haz clic en "Add Server"
+2.4 Selecciona:
+    • Location: Nuremberg, Germany (o el más cercano a Colombia)
+    • Image: Ubuntu 22.04 LTS ✓
+    • Type: Shared vCPU
+    • CPU: CX11 (1 vCPU, 2GB RAM, 20GB SSD) - $4.15/mes
+      O CX21 (2 vCPU, 4GB RAM, 40GB SSD) - $5.83/mes (recomendado)
+    
+2.5 SSH Keys:
+    • Si tienes una llave SSH, agrégala (más seguro)
+    • Si no, selecciona "Password" (te darán una contraseña)
+
+2.6 Haz clic en "Create & Buy now"
+
+2.7 ¡Espera 1-2 minutos mientras se crea tu servidor!
+
+2.8 Una vez creado, anota:
+    • La IP del servidor (ej: 123.45.67.89)
+    • La contraseña root (si no usaste SSH key)
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 3: CONECTARTE AL SERVIDOR                                         │
+│ Tiempo estimado: 2 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+3.1 Desde Windows:
+    • Descarga PuTTY: https://www.putty.org/
+    • Abre PuTTY
+    • En "Host Name" pon: root@TU_IP
+    • Haz clic en "Open"
+    • Acepta el fingerprint
+    • Ingresa la contraseña cuando te la pida
+
+3.2 Desde Mac/Linux:
+    • Abre la Terminal
+    • Escribe: ssh root@TU_IP
+    • Presiona Enter
+    • Acepta el fingerprint (escribe "yes")
+    • Ingresa la contraseña
+
+3.3 ¡Deberías estar dentro del servidor! Verás algo como:
+    root@ubuntu-server:~#
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 4: ACTUALIZAR EL SERVIDOR                                         │
+│ Tiempo estimado: 5 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Copia y pega estos comandos uno por uno:
+
+4.1 Actualizar lista de paquetes:
+    apt update
+
+4.2 Actualizar todos los paquetes:
+    apt upgrade -y
+
+4.3 Espera a que termine (puede tomar 2-5 minutos)
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 5: INSTALAR DOCKER                                                │
+│ Tiempo estimado: 3 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Docker permite correr aplicaciones en contenedores aislados.
+
+5.1 Instalar Docker con el script oficial:
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sh get-docker.sh
+
+5.2 Verificar instalación:
+    docker --version
+    
+    Deberías ver algo como: Docker version 24.0.7
+
+5.3 Instalar Docker Compose:
+    apt install docker-compose -y
+
+5.4 Verificar instalación:
+    docker-compose --version
+    
+    Deberías ver algo como: docker-compose version 1.29.2
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 6: SUBIR TU CÓDIGO AL SERVIDOR                                    │
+│ Tiempo estimado: 2 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Como tu código está en GitHub, es muy fácil:
+
+6.1 Clonar el repositorio:
+    cd /root
+    git clone https://github.com/EdinsonPedroza/web-App-Tecnico.git educando
+    cd educando
+
+6.2 Verificar que se clonó correctamente:
+    ls -la
+    
+    Deberías ver las carpetas: backend, frontend, etc.
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 7: CONFIGURAR VARIABLES DE ENTORNO                                │
+│ Tiempo estimado: 2 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+7.1 Copiar archivo de ejemplo:
+    cp .env.example .env
+
+7.2 Editar el archivo .env:
+    nano .env
+
+7.3 Modifica el contenido (usa las flechas para moverte):
+    
+    DOMAIN_URL=http://TU_IP_DEL_SERVIDOR
+    JWT_SECRET=Camb1a_est0_p0r_un@_cl@ve_muy_sEgur@_y_l@rg@_2026!
+    
+    (Reemplaza TU_IP_DEL_SERVIDOR con la IP de tu servidor)
+    (Cambia JWT_SECRET por algo único y seguro)
+
+7.4 Guardar y salir:
+    • Presiona Ctrl + X
+    • Presiona Y (Yes)
+    • Presiona Enter
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 8: INICIAR LA APLICACIÓN                                          │
+│ Tiempo estimado: 10 minutos (construcción de contenedores)             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+8.1 Construir e iniciar todos los servicios:
+    docker-compose up -d --build
+
+8.2 Esto hará:
+    • Descargar las imágenes base (Node, Python, MongoDB)
+    • Construir el frontend y backend
+    • Iniciar los 3 contenedores
+    • Crear la base de datos
+    • Crear los usuarios iniciales
+    
+    El primer build tomará 5-10 minutos. ¡Sé paciente!
+
+8.3 Verás mensajes como:
+    Creating educando_mongodb ... done
+    Creating educando_backend ... done
+    Creating educando_frontend ... done
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 9: VERIFICAR QUE TODO FUNCIONE                                    │
+│ Tiempo estimado: 2 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+9.1 Ver el estado de los contenedores:
+    docker-compose ps
+    
+    Los 3 servicios deben mostrar "Up"
+
+9.2 Ver los logs:
+    docker-compose logs -f backend
+    
+    Busca estos mensajes:
+    • "Datos iniciales creados exitosamente"
+    • "Application startup complete"
+    • "Credenciales: ..."
+    
+    Presiona Ctrl + C para salir de los logs
+
+9.3 Verificar que el backend responda:
+    curl http://localhost:8001/health
+    
+    Deberías ver: {"status":"ok"}
+
+9.4 Verificar que el frontend responda:
+    curl -I http://localhost
+    
+    Deberías ver: HTTP/1.1 200 OK
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 10: CONFIGURAR EL FIREWALL                                        │
+│ Tiempo estimado: 2 minutos                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Para seguridad, solo abre los puertos necesarios:
+
+10.1 Instalar UFW (firewall):
+     ufw --version
+     # Si no está instalado:
+     apt install ufw -y
+
+10.2 Configurar reglas:
+     ufw default deny incoming
+     ufw default allow outgoing
+     ufw allow ssh
+     ufw allow 80/tcp
+     ufw allow 443/tcp
+
+10.3 Activar el firewall:
+     ufw enable
+     
+     Escribe "y" y presiona Enter
+
+10.4 Verificar:
+     ufw status
+     
+     Deberías ver los puertos 22, 80 y 443 abiertos
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 11: ¡PROBAR LA APLICACIÓN!                                        │
+│ Tiempo estimado: 1 minuto                                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+11.1 Abre tu navegador (Chrome, Firefox, Edge, Safari)
+
+11.2 Ve a: http://TU_IP_DEL_SERVIDOR
+     (Reemplaza con la IP real de tu servidor)
+
+11.3 Deberías ver la página de inicio de sesión de Educando
+
+11.4 Prueba iniciar sesión con:
+     • Pestaña: PROFESOR
+     • Email: admin@educando.com
+     • Contraseña: admin123
+
+11.5 ¡Deberías entrar al panel de administración!
+
+═══════════════════════════════════════════════════════════════════════════
+  🌐 CONFIGURAR UN DOMINIO PROPIO (OPCIONAL PERO RECOMENDADO)
+═══════════════════════════════════════════════════════════════════════════
+
+En lugar de acceder por IP (ej: http://123.45.67.89), es mejor tener
+un dominio como: https://educando.com
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 12: COMPRAR UN DOMINIO                                            │
+│ Tiempo estimado: 5 minutos                                              │
+│ Costo: $7-12/año                                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+12.1 Proveedores recomendados:
+     • Namecheap: https://www.namecheap.com/ ($8/año) ✓ Recomendado
+     • Porkbun: https://porkbun.com/ ($7/año) - Más barato
+     • Google Domains: https://domains.google/ ($12/año)
+
+12.2 Busca un dominio disponible:
+     Ejemplos:
+     • educando.com
+     • plataformaeducando.com
+     • colegioeducando.com
+     • educandovirtual.com
+
+12.3 Completa la compra
+
+12.4 Anota tu dominio
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 13: CONFIGURAR DNS (APUNTAR DOMINIO AL SERVIDOR)                  │
+│ Tiempo estimado: 3 minutos (+ 5-30 min de propagación)                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+13.1 En tu proveedor de dominio (Namecheap, Porkbun, etc.):
+     • Ve a tu panel de control
+     • Busca tu dominio
+     • Haz clic en "Manage" o "Administrar"
+
+13.2 Ve a "Advanced DNS" o "DNS Management"
+
+13.3 Agrega un registro tipo A:
+     
+     ┌──────────┬─────────┬─────────────────┬─────┐
+     │ Tipo     │ Host    │ Valor           │ TTL │
+     ├──────────┼─────────┼─────────────────┼─────┤
+     │ A Record │ @       │ TU_IP_SERVIDOR  │ 300 │
+     │ A Record │ www     │ TU_IP_SERVIDOR  │ 300 │
+     └──────────┴─────────┴─────────────────┴─────┘
+     
+     (Reemplaza TU_IP_SERVIDOR con tu IP real)
+
+13.4 Guarda los cambios
+
+13.5 Espera la propagación DNS (5-30 minutos, puede tomar hasta 24 horas)
+
+13.6 Verifica la propagación:
+     Ve a: https://dnschecker.org/
+     Ingresa tu dominio
+     Debería resolver a la IP de tu servidor
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 14: CONFIGURAR HTTPS/SSL CON LET'S ENCRYPT (GRATIS)               │
+│ Tiempo estimado: 10 minutos                                             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+HTTPS es FUNDAMENTAL para:
+  ✓ Seguridad: encripta los datos
+  ✓ Confianza: muestra el candado verde
+  ✓ SEO: Google favorece sitios HTTPS
+  ✓ Funcionalidad: muchas APIs requieren HTTPS
+
+14.1 Conecta a tu servidor por SSH (si no estás conectado)
+
+14.2 Instala Certbot:
+     apt update
+     apt install certbot python3-certbot-nginx -y
+
+14.3 Detén temporalmente el contenedor frontend:
+     docker stop educando_frontend
+
+14.4 Instala nginx temporalmente en el servidor:
+     apt install nginx -y
+
+14.5 Obtén el certificado SSL:
+     certbot --nginx -d tudominio.com -d www.tudominio.com
+     
+     (Reemplaza tudominio.com con tu dominio real)
+     
+     Sigue las instrucciones:
+     • Ingresa tu email
+     • Acepta los términos (escribe "y")
+     • ¿Compartir email con EFF? (opcional, escribe "n")
+     • Selecciona: Redirect (opción 2)
+
+14.6 Copia los certificados al proyecto:
+     mkdir -p /root/educando/ssl
+     cp /etc/letsencrypt/live/tudominio.com/fullchain.pem /root/educando/ssl/
+     cp /etc/letsencrypt/live/tudominio.com/privkey.pem /root/educando/ssl/
+
+14.7 Detén y desactiva nginx del servidor:
+     systemctl stop nginx
+     systemctl disable nginx
+
+14.8 Actualiza nginx.conf del frontend:
+     cd /root/educando/frontend
+     nano nginx.conf
+     
+     Reemplaza todo el contenido con:
+
+```nginx
+server {
+    listen 80;
+    server_name tudominio.com www.tudominio.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name tudominio.com www.tudominio.com;
+    
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    
+    root /usr/share/nginx/html;
+    index index.html;
+    
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    
+    location /api {
+        proxy_pass http://backend:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        client_max_body_size 50M;
+    }
+}
+```
+     
+     Guarda (Ctrl + X, Y, Enter)
+
+14.9 Actualiza docker-compose.yml:
+     cd /root/educando
+     nano docker-compose.yml
+     
+     En la sección de frontend, agrega:
+     
+```yaml
+frontend:
+  build:
+    context: ./frontend
+  container_name: educando_frontend
+  restart: always
+  depends_on:
+    - backend
+  ports:
+    - "80:80"
+    - "443:443"
+  volumes:
+    - ./ssl:/etc/nginx/ssl:ro
+```
+     
+     Guarda (Ctrl + X, Y, Enter)
+
+14.10 Actualiza .env con el dominio:
+      nano .env
+      
+      Cambia:
+      DOMAIN_URL=https://tudominio.com
+      
+      Guarda (Ctrl + X, Y, Enter)
+
+14.11 Reconstruye y reinicia:
+      docker-compose up -d --build
+
+14.12 Configura renovación automática del certificado:
+      crontab -e
+      
+      Selecciona nano (opción 1)
+      
+      Agrega al final:
+      0 3 * * * certbot renew --quiet && cp /etc/letsencrypt/live/tudominio.com/fullchain.pem /root/educando/ssl/ && cp /etc/letsencrypt/live/tudominio.com/privkey.pem /root/educando/ssl/ && docker restart educando_frontend
+      
+      Guarda (Ctrl + X, Y, Enter)
+
+14.13 ¡Prueba tu sitio!
+      Ve a: https://tudominio.com
+      
+      Deberías ver:
+      ✓ El candado verde en el navegador
+      ✓ La página de login de Educando
+      ✓ Sin advertencias de seguridad
+
+═══════════════════════════════════════════════════════════════════════════
+  🎯 CONFIGURACIÓN POST-DESPLIEGUE
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 15: CAMBIAR CONTRASEÑA DE ADMIN (¡MUY IMPORTANTE!)                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+⚠️  Las contraseñas por defecto son PÚBLICAS y de PRUEBA
+    ¡DEBES cambiarlas inmediatamente!
+
+15.1 Inicia sesión como admin:
+     https://tudominio.com
+     • Pestaña: Profesor
+     • Email: admin@educando.com
+     • Contraseña: admin123
+
+15.2 Ve a tu perfil o configuración de usuario
+
+15.3 Cambia la contraseña a algo seguro:
+     • Mínimo 12 caracteres
+     • Mayúsculas y minúsculas
+     • Números
+     • Símbolos
+     
+     Ejemplo: Educ@nd0*2026!Segur0
+
+15.4 Guarda la nueva contraseña en un lugar seguro
+
+15.5 Repite este proceso para los otros usuarios que uses en producción
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 16: CONFIGURAR BACKUPS AUTOMÁTICOS                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Los backups son ESENCIALES para no perder datos.
+
+16.1 Crear directorio de backups:
+     mkdir -p /root/backups
+
+16.2 Configurar backup automático diario:
+     crontab -e
+     
+     Agrega al final:
+     
+     # Backup diario a las 3 AM
+     0 3 * * * docker exec educando_mongodb mongodump --out /backup && docker cp educando_mongodb:/backup /root/backups/backup_$(date +\%Y\%m\%d) 2>&1 | logger -t mongodb-backup
+     
+     # Limpiar backups antiguos (más de 30 días)
+     0 4 * * * find /root/backups -name "backup_*" -type d -mtime +30 -exec rm -rf {} \; 2>&1 | logger -t backup-cleanup
+     
+     Guarda (Ctrl + X, Y, Enter)
+
+16.3 Probar backup manual:
+     docker exec educando_mongodb mongodump --out /backup
+     docker cp educando_mongodb:/backup ./backup_test
+     ls -lah backup_test
+     
+     Deberías ver la carpeta con los datos de la base de datos
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ PASO 17: CREAR USUARIOS INICIALES                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+17.1 Inicia sesión como admin
+
+17.2 Crea al menos:
+     • 1 profesor de prueba
+     • 1 estudiante de prueba
+
+17.3 Prueba que puedan iniciar sesión
+
+17.4 Verifica que las funcionalidades principales funcionen:
+     • Crear cursos
+     • Subir actividades
+     • Entregas de estudiantes
+     • Calificaciones
+
+═══════════════════════════════════════════════════════════════════════════
+  🚀 OPCIONES ALTERNATIVAS: RAILWAY Y RENDER
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ OPCIÓN 2: RAILWAY (DEPLOY FÁCIL EN 10 MINUTOS)                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Railway es perfecto si:
+  • Quieres algo rápido y fácil
+  • No quieres administrar servidores
+  • No te importa pagar $10-20/mes
+  • Quieres deploy automático desde GitHub
+
+PASOS:
+
+1. Ve a: https://railway.app
+2. Crea cuenta con GitHub
+3. Haz clic en "New Project"
+4. Selecciona "Deploy from GitHub repo"
+5. Autoriza a Railway
+6. Selecciona el repositorio: web-App-Tecnico
+7. Railway detectará automáticamente el docker-compose.yml
+8. Configura variables de entorno en el dashboard:
+   • Backend:
+     MONGO_URL=mongodb://mongodb:27017
+     DB_NAME=educando_db
+     JWT_SECRET=tu_clave_secreta_muy_larga_y_segura_123
+9. Railway construirá y desplegará automáticamente
+10. Te dará una URL: https://tu-app.up.railway.app
+11. ¡Listo! Prueba la URL
+
+COSTO: ~$10-20/mes según uso
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ OPCIÓN 3: RENDER (CON PLAN GRATUITO PARA PRUEBAS)                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Render es ideal si:
+  • Quieres probar gratis
+  • No necesitas alta disponibilidad 24/7
+  • Estás empezando y quieres ahorrar
+
+PASOS:
+
+1. Ve a: https://render.com
+2. Crea cuenta con GitHub
+3. Crea 3 servicios separados:
+
+   A) MongoDB:
+   • Click en "New +" > "MongoDB"
+   • Nombre: educando-db
+   • Plan: Free (256MB)
+   • Copia la "Internal Connection String"
+
+   B) Backend:
+   • Click en "New +" > "Web Service"
+   • Conecta repositorio: web-App-Tecnico
+   • Root Directory: backend
+   • Build Command: pip install -r requirements.txt
+   • Start Command: uvicorn server:app --host 0.0.0.0 --port 8001
+   • Variables de entorno:
+     MONGO_URL=<la connection string de MongoDB>
+     DB_NAME=educando_db
+     JWT_SECRET=tu_clave_secreta
+
+   C) Frontend:
+   • Click en "New +" > "Static Site"
+   • Conecta repositorio: web-App-Tecnico
+   • Root Directory: frontend
+   • Build Command: yarn install && yarn build
+   • Publish Directory: build
+   • Variables de entorno:
+     REACT_APP_BACKEND_URL=<URL del backend>
+
+4. Render construirá todo automáticamente
+5. Te dará URLs para frontend y backend
+6. ¡Listo! Visita la URL del frontend
+
+COSTO:
+  • Plan gratuito: $0 (con limitaciones)
+  • Plan pagado: ~$14/mes
+
+LIMITACIÓN DEL PLAN GRATIS:
+  • Los servicios "duermen" después de 15 min de inactividad
+  • Tarda ~30 segundos en "despertar" al primer acceso
+  • Solo 750 horas/mes de uptime
+
+═══════════════════════════════════════════════════════════════════════════
+  🛠️ COMANDOS ÚTILES PARA ADMINISTRACIÓN
+═══════════════════════════════════════════════════════════════════════════
+
+Ver logs en tiempo real:
+  docker-compose logs -f
+
+Ver logs de un servicio específico:
+  docker-compose logs -f backend
+  docker-compose logs -f frontend
+  docker-compose logs -f mongodb
+
+Ver estado de contenedores:
+  docker-compose ps
+
+Reiniciar todos los servicios:
+  docker-compose restart
+
+Reiniciar un servicio específico:
+  docker-compose restart backend
+
+Detener todo:
+  docker-compose down
+
+Actualizar después de cambios en el código:
+  cd /root/educando
+  git pull
+  docker-compose up -d --build
+
+Ver uso de recursos:
+  docker stats
+
+Entrar al contenedor del backend:
+  docker exec -it educando_backend bash
+
+Entrar a MongoDB:
+  docker exec -it educando_mongodb mongosh
+  use educando_db
+  db.users.find()
+  exit
+
+Crear backup manual:
+  docker exec educando_mongodb mongodump --out /backup
+  docker cp educando_mongodb:/backup ./backup_$(date +%Y%m%d)
+
+Restaurar backup:
+  docker cp ./backup_20260217 educando_mongodb:/backup
+  docker exec educando_mongodb mongorestore /backup
+
+Ver uso de disco:
+  df -h
+
+Ver uso de memoria:
+  free -h
+
+═══════════════════════════════════════════════════════════════════════════
+  🐛 SOLUCIÓN DE PROBLEMAS COMUNES
+═══════════════════════════════════════════════════════════════════════════
+
+Problema: La página no carga
+─────────────────────────────────────────────────────────────────────────
+  1. Verifica contenedores: docker-compose ps
+  2. Verifica logs: docker-compose logs frontend
+  3. Verifica firewall: ufw status
+  4. Reinicia: docker-compose restart
+
+Problema: Error de conexión a MongoDB
+─────────────────────────────────────────────────────────────────────────
+  1. Verifica MongoDB: docker-compose logs mongodb
+  2. Reinicia: docker-compose restart mongodb
+  3. Si persiste: docker-compose down && docker-compose up -d
+
+Problema: No puedo subir archivos
+─────────────────────────────────────────────────────────────────────────
+  1. Verifica permisos: docker exec -it educando_backend ls -la /app/uploads
+  2. Corrige permisos: docker exec -it educando_backend chmod 777 /app/uploads
+  3. Reinicia backend: docker-compose restart backend
+
+Problema: No puedo iniciar sesión
+─────────────────────────────────────────────────────────────────────────
+  1. Verifica usuarios: Ver archivo USUARIOS_Y_CONTRASEÑAS.txt
+  2. Para EDITOR y ADMIN: usa la pestaña "PROFESOR"
+  3. Reinicia backend: docker-compose restart backend
+  4. Verifica logs: docker-compose logs backend
+
+Problema: Certificado SSL expirado
+─────────────────────────────────────────────────────────────────────────
+  1. Renueva: certbot renew
+  2. Copia certificados: 
+     cp /etc/letsencrypt/live/tudominio.com/*.pem /root/educando/ssl/
+  3. Reinicia frontend: docker-compose restart frontend
+
+Problema: El sitio es lento
+─────────────────────────────────────────────────────────────────────────
+  1. Verifica recursos: htop o docker stats
+  2. Considera upgrade de servidor (más RAM/CPU)
+  3. Optimiza MongoDB con índices
+
+═══════════════════════════════════════════════════════════════════════════
+  ✅ CHECKLIST FINAL DE VERIFICACIÓN
+═══════════════════════════════════════════════════════════════════════════
+
+Antes del despliegue:
+  [ ] Código en GitHub
+  [ ] Proveedor elegido (Hetzner recomendado)
+  [ ] Dominio comprado (opcional)
+
+Durante el despliegue:
+  [ ] Servidor creado
+  [ ] Docker instalado
+  [ ] Código clonado
+  [ ] Variables de entorno configuradas
+  [ ] Contenedores corriendo
+  [ ] Frontend accesible
+  [ ] Backend respondiendo
+
+Después del despliegue:
+  [ ] Contraseña de admin cambiada
+  [ ] Dominio configurado (si aplica)
+  [ ] HTTPS/SSL configurado
+  [ ] Firewall configurado
+  [ ] Backups automáticos configurados
+  [ ] Usuarios de prueba creados
+  [ ] Funcionalidades probadas
+
+Seguridad:
+  [ ] Contraseñas cambiadas
+  [ ] JWT_SECRET único
+  [ ] Firewall activo
+  [ ] SSH con llaves (no password)
+  [ ] Backups funcionando
+  [ ] Certificado SSL activo
+
+═══════════════════════════════════════════════════════════════════════════
+  💰 RESUMEN DE COSTOS
+═══════════════════════════════════════════════════════════════════════════
+
+OPCIÓN 1: VPS (Hetzner)
+  • Servidor CX21: $5.83/mes
+  • Dominio Namecheap: ~$0.70/mes
+  • SSL Let's Encrypt: Gratis
+  • Total: ~$6.50/mes o $78/año
+
+OPCIÓN 2: Railway
+  • Uso típico: $10-20/mes
+  • SSL incluido
+  • Dominio incluido
+  • Total: $10-20/mes o $120-240/año
+
+OPCIÓN 3: Render
+  • Plan gratuito: $0/mes (limitado)
+  • Plan pagado: $14/mes
+  • SSL incluido
+  • Total: $0 o $14/mes o $168/año
+
+RECOMENDACIÓN: Hetzner por mejor precio/calidad
+
+═══════════════════════════════════════════════════════════════════════════
+  📞 SOPORTE Y RECURSOS
+═══════════════════════════════════════════════════════════════════════════
+
+Documentación del proyecto:
+  • README.md - Información general
+  • DESPLIEGUE.md - Guía de despliegue detallada
+  • USUARIOS_Y_CONTRASEÑAS.txt - Credenciales del sistema
+
+Comunidades de ayuda:
+  • Stack Overflow: https://stackoverflow.com/
+  • Reddit r/docker: https://reddit.com/r/docker
+  • Discord de FastAPI: https://discord.gg/fastapi
+
+Documentación oficial:
+  • Docker: https://docs.docker.com/
+  • FastAPI: https://fastapi.tiangolo.com/
+  • MongoDB: https://docs.mongodb.com/
+  • React: https://react.dev/
+
+═══════════════════════════════════════════════════════════════════════════
+
+🎉 ¡FELICIDADES! Tu plataforma educativa está ahora en línea y lista
+   para recibir estudiantes y profesores.
+
+📌 Recuerda:
+   • Cambiar contraseñas de producción
+   • Configurar backups
+   • Monitorear logs regularmente
+   • Mantener el sistema actualizado
+
+🚀 ¡Éxito con tu plataforma Educando!
+
+═══════════════════════════════════════════════════════════════════════════
+📅 Última actualización: 2026-02-17
+📧 Plataforma: Educando - Sistema Educativo Virtual
+═══════════════════════════════════════════════════════════════════════════

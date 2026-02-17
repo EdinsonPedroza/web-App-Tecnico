@@ -1,0 +1,244 @@
+═══════════════════════════════════════════════════════════════════════════
+  USUARIOS Y CONTRASEÑAS DEL SISTEMA - Plataforma Educando
+═══════════════════════════════════════════════════════════════════════════
+
+📌 UBICACIÓN EN EL CÓDIGO
+─────────────────────────────────────────────────────────────────────────
+
+Los usuarios se crean automáticamente en el archivo:
+  📁 Archivo: backend/server.py
+  📍 Líneas: 190-196
+
+Función que los crea: create_initial_data()
+  📍 Líneas: 74-252
+
+Autenticación/Login:
+  📍 Líneas: 530-615 (función login)
+  📍 Líneas: 266-280 (funciones de hash y verificación de contraseñas)
+
+═══════════════════════════════════════════════════════════════════════════
+  CREDENCIALES DE USUARIOS DISPONIBLES
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 1. EDITOR PRINCIPAL                                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Rol:             editor                                                 │
+│ Usuario/Email:   editor@educando.com                                    │
+│ Contraseña:      editor123                                              │
+│ Nombre:          Editor Principal                                       │
+│ Teléfono:        3001111111                                             │
+│ Acceso:          Gestión de contenido educativo                         │
+│                                                                          │
+│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "PROFESOR"             │
+│     (Admin y Editor inician sesión desde la pestaña de Profesor)        │
+│                                                                          │
+│ 📝 Código: backend/server.py - Línea 191                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 2. ADMINISTRADOR GENERAL                                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Rol:             admin                                                  │
+│ Usuario/Email:   admin@educando.com                                     │
+│ Contraseña:      admin123                                               │
+│ Nombre:          Administrador General                                  │
+│ Teléfono:        3001234567                                             │
+│ Acceso:          Control total del sistema                              │
+│                                                                          │
+│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "PROFESOR"             │
+│     (Admin y Editor inician sesión desde la pestaña de Profesor)        │
+│                                                                          │
+│ 📝 Código: backend/server.py - Línea 192                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 3. PROFESOR DE EJEMPLO                                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Rol:             profesor                                               │
+│ Usuario/Email:   profesor@educando.com                                  │
+│ Contraseña:      profesor123                                            │
+│ Nombre:          María García López                                     │
+│ Teléfono:        3009876543                                             │
+│ Acceso:          Gestión de cursos y actividades                        │
+│                                                                          │
+│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "PROFESOR"             │
+│                                                                          │
+│ 📝 Código: backend/server.py - Línea 193                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 4. ESTUDIANTE 1                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Rol:             estudiante                                             │
+│ Usuario/Cédula:  1234567890                                             │
+│ Contraseña:      estudiante123                                          │
+│ Nombre:          Juan Martínez Ruiz                                     │
+│ Teléfono:        3101234567                                             │
+│ Programa:        Administración de Empresas                             │
+│ Módulo:          1                                                      │
+│ Grupo:           Enero 2025                                             │
+│                                                                          │
+│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "ESTUDIANTE"           │
+│     (Los estudiantes usan su número de cédula, no email)                │
+│                                                                          │
+│ 📝 Código: backend/server.py - Línea 194                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 5. ESTUDIANTE 2                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Rol:             estudiante                                             │
+│ Usuario/Cédula:  0987654321                                             │
+│ Contraseña:      estudiante123                                          │
+│ Nombre:          Ana Sofía Hernández                                    │
+│ Teléfono:        3207654321                                             │
+│ Programa:        Administración de Empresas                             │
+│ Módulo:          1                                                      │
+│ Grupo:           Enero 2025                                             │
+│                                                                          │
+│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "ESTUDIANTE"           │
+│     (Los estudiantes usan su número de cédula, no email)                │
+│                                                                          │
+│ 📝 Código: backend/server.py - Línea 195                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+  CÓMO INICIAR SESIÓN
+═══════════════════════════════════════════════════════════════════════════
+
+1. Para EDITOR y ADMIN:
+   ✓ Selecciona la pestaña "PROFESOR" en la página de login
+   ✓ Ingresa el email correspondiente
+   ✓ Ingresa la contraseña
+   ✓ Haz clic en "Ingresar"
+
+2. Para PROFESOR:
+   ✓ Selecciona la pestaña "PROFESOR" en la página de login
+   ✓ Ingresa el email correspondiente
+   ✓ Ingresa la contraseña
+   ✓ Haz clic en "Ingresar"
+
+3. Para ESTUDIANTE:
+   ✓ Selecciona la pestaña "ESTUDIANTE" en la página de login
+   ✓ Ingresa tu número de cédula (sin puntos ni guiones)
+   ✓ Ingresa la contraseña
+   ✓ Haz clic en "Ingresar"
+
+═══════════════════════════════════════════════════════════════════════════
+  DETALLES TÉCNICOS
+═══════════════════════════════════════════════════════════════════════════
+
+Sistema de Autenticación:
+─────────────────────────────────────────────────────────────────────────
+  • Librería de hash: bcrypt (passlib)
+  • Función de hash: hash_password() - Línea 266-268
+  • Función de verificación: verify_password() - Línea 270-280
+  • Autenticación JWT con token
+  • Límite de intentos de login: 5 intentos cada 5 minutos
+  • Compatibilidad con hashes SHA256 legacy
+
+Lógica de Login (backend/server.py):
+─────────────────────────────────────────────────────────────────────────
+  • Endpoint: POST /login
+  • Líneas principales: 530-615
+  
+  Para estudiantes:
+    - Busca por cédula en la base de datos
+    - Valida que el rol sea "estudiante"
+    - Líneas: 554-561
+
+  Para profesor/admin/editor:
+    - Busca por email en la base de datos
+    - Acepta roles: "profesor", "admin" o "editor"
+    - Líneas: 562-571
+    - NOTA: Los tres roles pueden iniciar sesión desde la pestaña "Profesor"
+
+  Seguridad:
+    - Rate limiting por IP (líneas 537-545)
+    - Logging de eventos de seguridad
+    - Verificación de cuenta activa
+
+Base de Datos:
+─────────────────────────────────────────────────────────────────────────
+  • MongoDB
+  • Colección: users
+  • Campos principales:
+    - id: identificador único
+    - email: para profesor/admin/editor
+    - cedula: para estudiantes
+    - password_hash: contraseña hasheada con bcrypt
+    - role: estudiante/profesor/admin/editor
+    - active: estado de la cuenta (true/false)
+
+Interfaz de Usuario (frontend):
+─────────────────────────────────────────────────────────────────────────
+  • Archivo: frontend/src/pages/LoginPage.js
+  • Líneas: 1-198
+  • Dos pestañas: "Estudiante" y "Profesor"
+  • Nota visible (línea 118): "Admin y Editor inician sesión usando Profesor"
+
+═══════════════════════════════════════════════════════════════════════════
+  SOLUCIÓN DE PROBLEMAS
+═══════════════════════════════════════════════════════════════════════════
+
+❌ Problema: "Credenciales incorrectas" con usuario Editor
+─────────────────────────────────────────────────────────────────────────
+Solución:
+  1. Asegúrate de usar la pestaña "PROFESOR" (NO "Estudiante")
+  2. Usa el email: editor@educando.com
+  3. Usa la contraseña: editor123
+  4. Verifica que los datos fueron creados correctamente
+
+Verificar si el usuario existe:
+  docker exec -it educando_mongodb mongosh
+  use educando_db
+  db.users.findOne({email: "editor@educando.com"})
+  exit
+
+❌ Problema: La contraseña no coincide
+─────────────────────────────────────────────────────────────────────────
+Solución:
+  1. Verifica que estés escribiendo correctamente: editor123 (todo minúsculas)
+  2. Verifica que no haya espacios antes o después
+  3. Si cambiaste la contraseña, usa la nueva
+
+❌ Problema: No se crearon los usuarios iniciales
+─────────────────────────────────────────────────────────────────────────
+Solución:
+  Reinicia el backend para que vuelva a crear los datos:
+  docker-compose restart backend
+  docker-compose logs -f backend
+  
+  Busca el mensaje: "Datos iniciales creados exitosamente"
+
+═══════════════════════════════════════════════════════════════════════════
+  SEGURIDAD - CAMBIAR CONTRASEÑAS
+═══════════════════════════════════════════════════════════════════════════
+
+⚠️  ¡MUY IMPORTANTE!
+─────────────────────────────────────────────────────────────────────────
+
+Estas son contraseñas de PRUEBA. Después de hacer el primer despliegue
+en producción, DEBES cambiar todas las contraseñas, especialmente:
+
+  1. admin@educando.com
+  2. editor@educando.com
+  3. Cualquier otro usuario que vayas a usar en producción
+
+Cómo cambiar contraseñas:
+  • Desde la interfaz web (recomendado):
+    - Inicia sesión como admin
+    - Ve al panel de usuarios
+    - Edita cada usuario y cambia su contraseña
+
+  • Desde la línea de comandos:
+    Ver archivo DESPLIEGUE.md, sección "Crear los Datos Iniciales y Seguridad"
+
+═══════════════════════════════════════════════════════════════════════════
+
+📅 Última actualización: 2026-02-17
+📧 Sistema: Plataforma Educando
+🔐 Seguridad: Contraseñas hasheadas con bcrypt
+
+═══════════════════════════════════════════════════════════════════════════
