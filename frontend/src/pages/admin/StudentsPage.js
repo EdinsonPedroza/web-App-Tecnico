@@ -355,7 +355,7 @@ export default function StudentsPage() {
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           {getStudentPrograms(s).map((prog, idx) => (
-                            <Badge key={prog.id || idx} variant="secondary" className="text-xs whitespace-normal">
+                            <Badge key={prog.id ?? `unassigned-${idx}`} variant="secondary" className="text-xs whitespace-normal">
                               {prog.name}
                             </Badge>
                           ))}
