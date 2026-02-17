@@ -184,7 +184,21 @@ async def create_initial_data():
     editor = await db.users.find_one({"email": "editorgeneral@educando.com"})
     if not editor:
         print("Creando usuario editor...")
-        editor_user = {"id": "user-editor-2", "name": "Editor General", "email": "editorgeneral@educando.com", "cedula": None, "password_hash": hash_password("EditorSeguro2025"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3002222222", "active": True, "module": None, "grupo": None}
+        editor_user = {
+            "id": "user-editor-2",
+            "name": "Editor General",
+            "email": "editorgeneral@educando.com",
+            "cedula": None,
+            "password_hash": hash_password("EditorSeguro2025"),
+            "role": "editor",
+            "program_id": None,
+            "program_ids": [],
+            "subject_ids": [],
+            "phone": "3002222222",
+            "active": True,
+            "module": None,
+            "grupo": None
+        }
         await db.users.update_one({"id": editor_user["id"]}, {"$set": editor_user}, upsert=True)
     
     # Crear usuarios solo si no existe el admin
