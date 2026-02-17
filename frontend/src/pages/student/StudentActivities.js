@@ -102,8 +102,8 @@ export default function StudentActivities() {
     <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold font-heading">Actividades</h1>
-          <p className="text-muted-foreground mt-1">Tus actividades pendientes y entregadas</p>
+          <h1 className="text-3xl font-bold font-heading">Actividades</h1>
+          <p className="text-muted-foreground mt-1 text-lg">Tus actividades pendientes y entregadas</p>
         </div>
 
         {loading ? (
@@ -179,6 +179,11 @@ export default function StudentActivities() {
                             <Badge variant="success">Entregada</Badge>
                             {submission.edited !== true && status.key === 'active' && (
                               <Button size="sm" variant="outline" onClick={() => { 
+                                // Show warning before allowing edit
+                                toast.warning('⚠️ Importante: Solo puedes editar tu actividad UNA VEZ. Asegúrate de revisar bien antes de guardar.', {
+                                  duration: 6000,
+                                  important: true
+                                });
                                 setSubmitDialog(act); 
                                 setSubmitContent(submission.content || ''); 
                                 setSubmitFiles(submission.files || []); 
@@ -211,6 +216,18 @@ export default function StudentActivities() {
             <DialogDescription>{submitDialog?.title}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Show warning if editing an already submitted activity */}
+            {submissions.find(s => s.activity_id === submitDialog?.id) && (
+              <div className="rounded-lg bg-warning/10 border border-warning/30 p-4">
+                <p className="text-sm font-semibold text-warning-foreground flex items-center gap-2">
+                  <span className="text-xl">⚠️</span>
+                  ¡IMPORTANTE! Solo puedes editar tu actividad UNA VEZ
+                </p>
+                <p className="text-xs text-warning-foreground/80 mt-1">
+                  Revisa cuidadosamente tu respuesta y archivos antes de entregar. Una vez editada, no podrás volver a modificarla.
+                </p>
+              </div>
+            )}
             <div className="rounded-lg bg-muted/50 p-3">
               <p className="text-sm text-muted-foreground">{submitDialog?.description}</p>
             </div>

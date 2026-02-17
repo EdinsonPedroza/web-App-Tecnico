@@ -78,10 +78,10 @@ export default function StudentCourseSelector() {
         )}
         
         <div className="text-center max-w-xl mx-auto">
-          <h1 className="text-3xl sm:text-4xl font-bold font-heading text-foreground">
+          <h1 className="text-4xl sm:text-5xl font-bold font-heading text-foreground">
             Mis Cursos
           </h1>
-          <p className="text-muted-foreground mt-3 text-lg">
+          <p className="text-muted-foreground mt-3 text-xl">
             Selecciona un curso para ver tus notas, actividades y clases.
           </p>
         </div>
@@ -98,44 +98,52 @@ export default function StudentCourseSelector() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCourses.map((course) => (
-              <Card
-                key={course.id}
-                className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
-                onClick={() => navigate(`/student/course/${course.id}`)}
-              >
-                <CardHeader className="pb-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <BookOpen className="h-6 w-6" />
+            {filteredCourses.map((course) => {
+              const subjectName = getName(subjects, course.subject_id);
+              const programName = getName(programs, course.program_id);
+              
+              return (
+                <Card
+                  key={course.id}
+                  className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
+                  onClick={() => navigate(`/student/course/${course.id}`)}
+                >
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <BookOpen className="h-7 w-7" />
+                      </div>
+                      <ChevronRight className="h-7 w-7 text-muted-foreground group-hover:text-primary transition-colors" />
                     </div>
-                    <ChevronRight className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </div>
-                  <CardTitle className="text-lg font-heading mt-4 leading-tight">{course.name}</CardTitle>
-                  <CardDescription className="text-sm mt-2">
-                    {getName(programs, course.program_id)}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <BookOpen className="h-4 w-4" />
-                    <span className="truncate">{getName(subjects, course.subject_id)}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Badge variant="outline" className="text-sm">{course.year}</Badge>
+                    {/* Show SUBJECT name large */}
+                    <CardTitle className="text-2xl font-heading leading-tight">
+                      {subjectName}
+                    </CardTitle>
+                    {/* Show GROUP below (e.g., ENERO-2026) */}
                     {course.grupo && (
-                      <Badge 
-                        variant="secondary" 
-                        className="text-sm truncate max-w-[150px]"
-                        title={course.grupo}
-                      >
-                        {course.grupo}
-                      </Badge>
+                      <div className="mt-3">
+                        <Badge 
+                          variant="secondary" 
+                          className="text-base px-4 py-2"
+                        >
+                          {course.grupo}
+                        </Badge>
+                      </div>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <CardDescription className="text-base">
+                      {programName}
+                    </CardDescription>
+                    <div className="flex gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-base px-3 py-1">{course.year}</Badge>
+                      <Badge variant="outline" className="text-base px-3 py-1">{course.name}</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
           </div>
         )}
       </div>
