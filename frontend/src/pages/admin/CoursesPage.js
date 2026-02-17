@@ -317,10 +317,11 @@ export default function CoursesPage() {
                 value={form.grupo} 
                 onChange={(e) => setForm({ ...form, grupo: e.target.value })} 
                 placeholder="Ej: ENERO-2026"
-                disabled={!editing}
+                readOnly={!editing}
+                className={!editing ? 'bg-muted/30' : ''}
               />
               <p className="text-xs text-muted-foreground">
-                Se genera automáticamente al seleccionar mes y año
+                {!editing ? 'Se genera automáticamente al seleccionar mes y año' : 'Puedes editar el nombre del grupo'}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
