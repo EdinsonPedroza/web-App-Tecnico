@@ -4,14 +4,14 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 
 > ⚠️ **Advertencia crítica de seguridad:** Las credenciales seed (`admin@educando.com / admin123`) son públicas y solo deben usarse en un entorno local/sandbox sin acceso externo. No las uses en un despliegue público; crea credenciales específicas para el entorno y desactiva las seed antes de abrir el acceso.
 
-> 🔐 **JWT_SECRET obligatorio:** genera un secreto aleatorio de al menos 32 caracteres antes de exponer el backend (`openssl rand -hex 32`). No reutilices secretos de otros entornos ni lo dejes vacío.
+> 🔐 **JWT_SECRET obligatorio:** genera un secreto aleatorio de al menos 32 caracteres (p. ej. 32 bytes ≈ 64 caracteres hex con `openssl rand -hex 32`) antes de exponer el backend. No reutilices secretos de otros entornos ni lo dejes vacío.
 
 **Credenciales seed (solo para validar en entorno aislado)**
 - `SEED_ADMIN_EMAIL=admin@educando.com`
 - `SEED_ADMIN_PASSWORD=admin123`
 
 ## Seguridad obligatoria (antes de dar acceso)
-- Genera y configura `JWT_SECRET` (≥32 caracteres aleatorios) durante el despliegue inicial.
+- Genera y configura `JWT_SECRET` (>= 32 caracteres aleatorios) durante el despliegue inicial.
 - Crea credenciales propias para admin en el entorno y desactiva/rota las seed antes de permitir acceso público.
 - Cambia inmediatamente la contraseña al usar cualquier credencial seed para validar.
 
