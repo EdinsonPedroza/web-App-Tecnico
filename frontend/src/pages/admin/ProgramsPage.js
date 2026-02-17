@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, Building2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
 
 export default function ProgramsPage() {
@@ -18,7 +19,7 @@ export default function ProgramsPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', description: '', duration: '12 meses' });
+  const [form, setForm] = useState({ name: '', description: '', duration: '12 meses', moduleCount: 2 });
   const [saving, setSaving] = useState(false);
 
   const fetchPrograms = useCallback(async () => {
@@ -36,7 +37,7 @@ export default function ProgramsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', description: '', duration: '12 meses' });
+    setForm({ name: '', description: '', duration: '12 meses', moduleCount: 2 });
     setDialogOpen(true);
   };
 
@@ -45,7 +46,8 @@ export default function ProgramsPage() {
     setForm({ 
       name: prog.name, 
       description: prog.description || '', 
-      duration: prog.duration || '12 meses'
+      duration: prog.duration || '12 meses',
+      moduleCount: prog.modules?.length || 2
     });
     setDialogOpen(true);
   };
@@ -54,10 +56,21 @@ export default function ProgramsPage() {
     if (!form.name.trim()) { toast.error('Nombre requerido'); return; }
     setSaving(true);
     try {
+      // Generate modules structure based on moduleCount
+      const modules = [];
+      for (let i = 1; i <= form.moduleCount; i++) {
+        modules.push({
+          number: i,
+          name: `MÓDULO ${i}`,
+          subjects: editing?.modules?.[i - 1]?.subjects || []
+        });
+      }
+      
       const saveData = {
         name: form.name,
         description: form.description,
-        duration: form.duration
+        duration: form.duration,
+        modules: modules
       };
       if (editing) {
         await api.put(`/programs/${editing.id}`, saveData);
@@ -154,9 +167,26 @@ export default function ProgramsPage() {
               <Label>Duración</Label>
               <Input value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="12 meses" />
             </div>
+            <div className="space-y-2">
+              <Label>Número de Módulos</Label>
+              <Select value={form.moduleCount.toString()} onValueChange={(val) => setForm({ ...form, moduleCount: parseInt(val) })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona cantidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 Módulo</SelectItem>
+                  <SelectItem value="2">2 Módulos</SelectItem>
+                  <SelectItem value="3">3 Módulos</SelectItem>
+                  <SelectItem value="4">4 Módulos</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Define cuántos módulos tiene este programa técnico
+              </p>
+            </div>
             <div className="rounded-lg bg-muted/50 p-4">
               <p className="text-sm text-muted-foreground">
-                <strong>Nota:</strong> Las fechas de inicio y cierre de los módulos se configuran por grupo en la sección "Grupos", no a nivel de programa.
+                <strong>Nota:</strong> Las fechas de inicio y cierre de los módulos se configuran por grupo en la sección "Cursos", no a nivel de programa.
               </p>
             </div>
           </div>
