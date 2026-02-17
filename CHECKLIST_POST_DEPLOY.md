@@ -11,7 +11,7 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 - `SEED_ADMIN_PASSWORD=admin123`
 
 ## Seguridad obligatoria (antes de dar acceso)
-- Genera y configura `JWT_SECRET` (>= 32 bytes de entropía; si lo codificas en hex tendrás 64 caracteres) durante el despliegue inicial.
+- Genera y configura `JWT_SECRET` (>= 32 bytes de entropía, es decir 64 caracteres en hexadecimal; usa `openssl rand -hex 32`) durante el despliegue inicial.
 - Crea credenciales propias para admin en el entorno y desactiva/rota las seed antes de permitir acceso público.
 - Cambia inmediatamente la contraseña al usar cualquier credencial seed para validar.
 
