@@ -177,7 +177,7 @@ export default function StudentActivities() {
                         {submission ? (
                           <>
                             <Badge variant="success">Entregada</Badge>
-                            {!submission.edited && status.key === 'active' && (
+                            {submission.edited !== true && status.key === 'active' && (
                               <Button size="sm" variant="outline" onClick={() => { 
                                 setSubmitDialog(act); 
                                 setSubmitContent(submission.content || ''); 

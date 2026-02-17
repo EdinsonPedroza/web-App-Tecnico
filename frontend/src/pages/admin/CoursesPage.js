@@ -110,7 +110,7 @@ export default function CoursesPage() {
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('Nombre del curso requerido'); return; }
-    if (!editing && form.subject_ids.length === 0) { toast.error('Debes seleccionar al menos una materia'); return; }
+    if (form.subject_ids.length === 0) { toast.error('Debes seleccionar al menos una materia'); return; }
     setSaving(true);
     try {
       const saveData = {
@@ -225,7 +225,15 @@ export default function CoursesPage() {
               <>
                 <div className="space-y-2">
                   <Label className="text-base">Programa</Label>
-                  <Select value={form.program_id} onValueChange={(v) => setForm({ ...form, program_id: v, subject_ids: [] })}>
+                  <Select value={form.program_id} onValueChange={(v) => {
+                    if (form.subject_ids.length > 0) {
+                      if (window.confirm('¿Cambiar el programa borrará las materias seleccionadas. Continuar?')) {
+                        setForm({ ...form, program_id: v, subject_ids: [] });
+                      }
+                    } else {
+                      setForm({ ...form, program_id: v, subject_ids: [] });
+                    }
+                  }}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar programa" /></SelectTrigger>
                     <SelectContent>{programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
                   </Select>

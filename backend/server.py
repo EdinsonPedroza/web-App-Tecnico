@@ -649,7 +649,18 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
 async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_current_user)):
     if user["role"] not in ["admin", "profesor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
+    
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    
+    # Handle subject_ids backward compatibility: if subject_ids provided, also update subject_id for compatibility
+    if "subject_ids" in update_data and update_data["subject_ids"]:
+        if "subject_id" not in update_data:
+            update_data["subject_id"] = update_data["subject_ids"][0]
+    elif "subject_id" in update_data and update_data["subject_id"]:
+        # If only subject_id provided, ensure subject_ids includes it
+        if "subject_ids" not in update_data:
+            update_data["subject_ids"] = [update_data["subject_id"]]
+    
     result = await db.courses.update_one({"id": course_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
@@ -939,7 +950,7 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
     if existing:
         # Check if already edited once
         if existing.get("edited", False):
-            raise HTTPException(status_code=400, detail="Ya editaste esta actividad. Solo se permite una edición por actividad.")
+            raise HTTPException(status_code=400, detail="Esta actividad ya ha sido editada. Solo se permite una edición por actividad.")
         
         # Allow editing, mark as edited
         await db.submissions.update_one(
