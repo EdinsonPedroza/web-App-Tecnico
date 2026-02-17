@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Request
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, validator
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -14,9 +14,20 @@ import jwt
 import hashlib
 import json
 import shutil
+import re
+from passlib.context import CryptContext
+from collections import defaultdict
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -26,6 +37,14 @@ db = client[os.environ.get('DB_NAME', 'educando_db')]
 # JWT Secret
 JWT_SECRET = os.environ.get('JWT_SECRET', 'educando_secret_key_2025')
 JWT_ALGORITHM = "HS256"
+
+# Password hashing with bcrypt
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Rate limiting: track login attempts per IP
+login_attempts = defaultdict(list)
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_ATTEMPT_WINDOW = 300  # 5 minutes in seconds
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -221,11 +240,30 @@ async def create_initial_data():
     print("  Estudiante: 1234567890 / estudiante123")
 
 # --- Utility Functions ---
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+def sanitize_string(input_str: str, max_length: int = 500) -> str:
+    """Sanitize string input to prevent injection attacks"""
+    if not input_str:
+        return input_str
+    # Remove potential XSS/injection characters
+    sanitized = re.sub(r'[<>{}]', '', input_str)
+    # Limit length
+    return sanitized[:max_length]
 
-def verify_password(password: str, hashed: str) -> bool:
-    return hash_password(password) == hashed
+def hash_password(password: str) -> str:
+    """Hash password using bcrypt"""
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password against bcrypt hash"""
+    try:
+        # Try bcrypt first (new format)
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception:
+        # Fallback to SHA256 for legacy passwords
+        try:
+            return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+        except Exception:
+            return False
 
 def create_token(user_id: str, role: str) -> str:
     payload = {
@@ -234,6 +272,23 @@ def create_token(user_id: str, role: str) -> str:
         "exp": datetime.now(timezone.utc) + timedelta(days=7)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def check_rate_limit(ip_address: str) -> bool:
+    """Check if IP has exceeded login attempt rate limit"""
+    current_time = datetime.now().timestamp()
+    # Clean old attempts
+    login_attempts[ip_address] = [
+        attempt_time for attempt_time in login_attempts[ip_address]
+        if current_time - attempt_time < LOGIN_ATTEMPT_WINDOW
+    ]
+    # Check if limit exceeded
+    if len(login_attempts[ip_address]) >= MAX_LOGIN_ATTEMPTS:
+        return False
+    return True
+
+def log_security_event(event_type: str, details: dict):
+    """Log security-related events"""
+    logger.warning(f"SECURITY: {event_type} - {json.dumps(details)}")
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -254,41 +309,80 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
 class LoginRequest(BaseModel):
     email: Optional[str] = None
     cedula: Optional[str] = None
-    password: str
-    role: str
+    password: str = Field(..., min_length=1, max_length=200)
+    role: str = Field(..., pattern="^(estudiante|profesor|admin|editor)$")
+
+    @validator('email')
+    def sanitize_email(cls, v):
+        if v:
+            return sanitize_string(v, 200)
+        return v
+    
+    @validator('cedula')
+    def sanitize_cedula(cls, v):
+        if v:
+            # Only allow alphanumeric for cedula
+            return re.sub(r'[^a-zA-Z0-9]', '', v)[:50]
+        return v
 
 class AdminCreateByEditor(BaseModel):
-    name: str
-    email: str
-    password: str
+    name: str = Field(..., min_length=1, max_length=200)
+    email: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=6, max_length=200)
+
+    @validator('name', 'email')
+    def sanitize_fields(cls, v):
+        return sanitize_string(v, 200)
 
 class UserCreate(BaseModel):
-    name: str
-    email: Optional[str] = None
-    cedula: Optional[str] = None
-    password: str
-    role: str
+    name: str = Field(..., min_length=1, max_length=200)
+    email: Optional[str] = Field(None, max_length=200)
+    cedula: Optional[str] = Field(None, max_length=50)
+    password: str = Field(..., min_length=6, max_length=200)
+    role: str = Field(..., pattern="^(estudiante|profesor|admin)$")
     program_id: Optional[str] = None  # For backward compatibility
     program_ids: Optional[List[str]] = None  # Multiple programs support
     subject_ids: Optional[List[str]] = None  # For professors - subjects they teach
-    phone: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=50)
     module: Optional[int] = Field(None, ge=1, le=2)
-    grupo: Optional[str] = None
-    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status: "activo" (active) or "egresado" (graduate)
+    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status
+
+    @validator('name', 'email', 'phone')
+    def sanitize_text_fields(cls, v):
+        if v:
+            return sanitize_string(v, 200)
+        return v
+    
+    @validator('cedula')
+    def sanitize_cedula(cls, v):
+        if v:
+            return re.sub(r'[^a-zA-Z0-9]', '', v)[:50]
+        return v
 
 class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    email: Optional[str] = None
-    cedula: Optional[str] = None
-    password: Optional[str] = None  # Allow password updates
-    phone: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=200)
+    email: Optional[str] = Field(None, max_length=200)
+    cedula: Optional[str] = Field(None, max_length=50)
+    password: Optional[str] = Field(None, min_length=6, max_length=200)  # Allow password updates
+    phone: Optional[str] = Field(None, max_length=50)
     program_id: Optional[str] = None  # For backward compatibility
     program_ids: Optional[List[str]] = None  # Multiple programs support
     subject_ids: Optional[List[str]] = None  # For professors - subjects they teach
     active: Optional[bool] = None
     module: Optional[int] = Field(None, ge=1, le=2)
-    grupo: Optional[str] = None
-    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status: "activo" (active) or "egresado" (graduate)
+    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status
+
+    @validator('name', 'email', 'phone')
+    def sanitize_text_fields(cls, v):
+        if v:
+            return sanitize_string(v, 200)
+        return v
+    
+    @validator('cedula')
+    def sanitize_cedula(cls, v):
+        if v:
+            return re.sub(r'[^a-zA-Z0-9]', '', v)[:50]
+        return v
 
 class ProgramCreate(BaseModel):
     name: str
@@ -395,7 +489,26 @@ class ModuleCloseDateUpdate(BaseModel):
 
 # --- Auth Routes ---
 @api_router.post("/auth/login")
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
+    # Get client IP for rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Check rate limit
+    if not await check_rate_limit(client_ip):
+        log_security_event("RATE_LIMIT_EXCEEDED", {
+            "ip": client_ip,
+            "role": req.role,
+            "identifier": req.email or req.cedula
+        })
+        raise HTTPException(
+            status_code=429, 
+            detail="Demasiados intentos de inicio de sesión. Por favor, intente más tarde."
+        )
+    
+    # Record login attempt
+    login_attempts[client_ip].append(datetime.now().timestamp())
+    
+    # Validate input and find user
     if req.role == "estudiante":
         if not req.cedula:
             raise HTTPException(status_code=400, detail="Cédula requerida")
@@ -403,6 +516,7 @@ async def login(req: LoginRequest):
             {"cedula": req.cedula, "role": "estudiante"}, 
             {"_id": 0}
         )
+        identifier = req.cedula
     elif req.role == "profesor":
         # For profesor role, also allow admin and editor to login
         if not req.email:
@@ -412,18 +526,41 @@ async def login(req: LoginRequest):
             {"email": req.email, "role": {"$in": ["profesor", "admin", "editor"]}}, 
             {"_id": 0}
         )
+        identifier = req.email
     else:
         # Invalid role
+        log_security_event("INVALID_ROLE", {"role": req.role, "ip": client_ip})
         raise HTTPException(status_code=400, detail="Rol inválido")
     
     if not user:
+        log_security_event("LOGIN_FAILED_USER_NOT_FOUND", {
+            "ip": client_ip,
+            "role": req.role,
+            "identifier": identifier
+        })
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     
     if not verify_password(req.password, user["password_hash"]):
+        log_security_event("LOGIN_FAILED_WRONG_PASSWORD", {
+            "ip": client_ip,
+            "role": req.role,
+            "user_id": user["id"],
+            "identifier": identifier
+        })
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     
     if not user.get("active", True):
+        log_security_event("LOGIN_FAILED_INACTIVE_ACCOUNT", {
+            "ip": client_ip,
+            "user_id": user["id"],
+            "identifier": identifier
+        })
         raise HTTPException(status_code=403, detail="Cuenta desactivada")
+    
+    # Successful login - clear attempts for this IP
+    login_attempts[client_ip] = []
+    
+    logger.info(f"Successful login: user_id={user['id']}, role={user['role']}, ip={client_ip}")
     
     token = create_token(user["id"], user["role"])
     user_data = {k: v for k, v in user.items() if k != "password_hash"}
@@ -450,16 +587,30 @@ async def get_users(role: Optional[str] = None, estado: Optional[str] = None, us
 @api_router.post("/users")
 async def create_user(req: UserCreate, user=Depends(get_current_user)):
     if user["role"] != "admin":
+        log_security_event("UNAUTHORIZED_USER_CREATE_ATTEMPT", {
+            "attempted_by": user["id"],
+            "attempted_role": user["role"]
+        })
         raise HTTPException(status_code=403, detail="Solo admin puede crear usuarios")
     
+    # Validate unique email for admin/profesor
     if req.role in ["admin", "profesor"] and req.email:
         existing = await db.users.find_one({"email": req.email})
         if existing:
+            log_security_event("DUPLICATE_EMAIL_ATTEMPT", {
+                "email": req.email,
+                "attempted_by": user["id"]
+            })
             raise HTTPException(status_code=400, detail="Email ya existe")
     
+    # Validate unique cedula for estudiante
     if req.role == "estudiante" and req.cedula:
         existing = await db.users.find_one({"cedula": req.cedula})
         if existing:
+            log_security_event("DUPLICATE_CEDULA_ATTEMPT", {
+                "cedula": req.cedula,
+                "attempted_by": user["id"]
+            })
             raise HTTPException(status_code=400, detail="Cédula ya existe")
     
     # Determine program_ids: use provided program_ids, or convert program_id to list, or empty list
@@ -487,12 +638,14 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "subject_ids": subject_ids,
         "phone": req.phone,
         "module": req.module,
-        "grupo": req.grupo,
         "estado": estado,
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.users.insert_one(new_user)
+    
+    logger.info(f"User created: id={new_user['id']}, role={req.role}, by={user['id']}")
+    
     del new_user["_id"]
     del new_user["password_hash"]
     return new_user
@@ -500,6 +653,10 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
 @api_router.put("/users/{user_id}")
 async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_user)):
     if user["role"] != "admin":
+        log_security_event("UNAUTHORIZED_USER_UPDATE_ATTEMPT", {
+            "attempted_by": user["id"],
+            "target_user": user_id
+        })
         raise HTTPException(status_code=403, detail="Solo admin puede editar usuarios")
     
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
@@ -509,6 +666,7 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
         password = update_data.pop("password")
         if password is not None and password.strip():
             update_data["password_hash"] = hash_password(password)
+            logger.info(f"Password updated for user: {user_id} by admin: {user['id']}")
         # If password is empty/whitespace, just ignore it (don't update)
     
     if not update_data:
@@ -518,17 +676,29 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
     if "cedula" in update_data and update_data["cedula"]:
         existing = await db.users.find_one({"cedula": update_data["cedula"], "id": {"$ne": user_id}})
         if existing:
+            log_security_event("DUPLICATE_CEDULA_UPDATE_ATTEMPT", {
+                "cedula": update_data["cedula"],
+                "attempted_by": user["id"],
+                "target_user": user_id
+            })
             raise HTTPException(status_code=400, detail="Esta cédula ya está registrada")
     
     # Validate email uniqueness if it's being changed
     if "email" in update_data and update_data["email"]:
         existing = await db.users.find_one({"email": update_data["email"], "id": {"$ne": user_id}})
         if existing:
+            log_security_event("DUPLICATE_EMAIL_UPDATE_ATTEMPT", {
+                "email": update_data["email"],
+                "attempted_by": user["id"],
+                "target_user": user_id
+            })
             raise HTTPException(status_code=400, detail="Este correo ya está registrado")
     
     result = await db.users.update_one({"id": user_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    logger.info(f"User updated: id={user_id}, by={user['id']}, fields={list(update_data.keys())}")
     
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     return updated
