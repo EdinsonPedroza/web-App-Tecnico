@@ -31,7 +31,8 @@ export default function CoursesPage() {
     student_ids: [],
     start_date: '',
     end_date: '',
-    grupo: ''
+    grupo: '',
+    module_dates: {}  // e.g., {"1": {"start": "2026-01-01", "end": "2026-06-30"}}
   });
   const [saving, setSaving] = useState(false);
 
@@ -55,6 +56,10 @@ export default function CoursesPage() {
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
   const filteredSubjects = form.program_id ? subjects.filter(s => s.program_id === form.program_id) : subjects;
   
+  // Get the selected program to determine module count
+  const selectedProgram = programs.find(p => p.id === form.program_id);
+  const moduleCount = selectedProgram?.modules?.length || 0;
+  
   const formatGrupoSuggestion = (month, year, programId) => {
     if (!month || !year || !programId) return '';
     const programName = getName(programs, programId);
@@ -74,7 +79,8 @@ export default function CoursesPage() {
       student_ids: [],
       start_date: '',
       end_date: '',
-      grupo: ''
+      grupo: '',
+      module_dates: {}
     });
     setDialogOpen(true);
   };
@@ -94,7 +100,8 @@ export default function CoursesPage() {
       student_ids: course.student_ids || [],
       start_date: course.start_date || '',
       end_date: course.end_date || '',
-      grupo: course.grupo || ''
+      grupo: course.grupo || '',
+      module_dates: course.module_dates || {}
     });
     setDialogOpen(true);
   };
@@ -119,7 +126,8 @@ export default function CoursesPage() {
         student_ids: form.student_ids,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
-        grupo: form.grupo || null
+        grupo: form.grupo || null,
+        module_dates: form.module_dates || {}
       };
       
       if (editing) {
@@ -324,32 +332,52 @@ export default function CoursesPage() {
                 {!editing ? 'Se genera automáticamente al seleccionar mes y año' : 'Puedes editar el nombre del grupo'}
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-base">Fecha Inicio Módulos</Label>
-                <Input 
-                  type="date" 
-                  value={form.start_date} 
-                  onChange={(e) => setForm({ ...form, start_date: e.target.value })} 
-                  placeholder="Fecha de inicio de módulos" 
-                />
+            {/* Module Dates - Show only if a program is selected and it has modules */}
+            {form.program_id && moduleCount > 0 && (
+              <div className="space-y-3">
+                <Label className="text-base">Fechas de Inicio y Cierre por Módulo</Label>
+                <div className="rounded-lg border p-4 space-y-4 bg-muted/20">
+                  {Array.from({ length: moduleCount }, (_, i) => i + 1).map((moduleNum) => (
+                    <div key={moduleNum} className="space-y-2">
+                      <p className="text-sm font-semibold text-foreground">Módulo {moduleNum}</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Fecha Inicio</Label>
+                          <Input 
+                            type="date" 
+                            value={form.module_dates[moduleNum]?.start || ''} 
+                            onChange={(e) => {
+                              const newModuleDates = { ...form.module_dates };
+                              if (!newModuleDates[moduleNum]) newModuleDates[moduleNum] = {};
+                              newModuleDates[moduleNum].start = e.target.value;
+                              setForm({ ...form, module_dates: newModuleDates });
+                            }} 
+                            placeholder="Fecha de inicio" 
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Fecha Cierre</Label>
+                          <Input 
+                            type="date" 
+                            value={form.module_dates[moduleNum]?.end || ''} 
+                            onChange={(e) => {
+                              const newModuleDates = { ...form.module_dates };
+                              if (!newModuleDates[moduleNum]) newModuleDates[moduleNum] = {};
+                              newModuleDates[moduleNum].end = e.target.value;
+                              setForm({ ...form, module_dates: newModuleDates });
+                            }} 
+                            placeholder="Fecha de cierre" 
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Fecha de inicio de los módulos para este grupo
+                  Define el período de cada módulo para este grupo
                 </p>
               </div>
-              <div className="space-y-2">
-                <Label className="text-base">Fecha Cierre Módulos</Label>
-                <Input 
-                  type="date" 
-                  value={form.end_date} 
-                  onChange={(e) => setForm({ ...form, end_date: e.target.value })} 
-                  placeholder="Fecha de cierre de módulos" 
-                />
-                <p className="text-xs text-muted-foreground">
-                  Fecha de cierre de los módulos para este grupo
-                </p>
-              </div>
-            </div>
+            )}
             <div className="space-y-2">
               <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>
               <div className="max-h-48 overflow-y-auto rounded-lg border p-4 space-y-2.5">
