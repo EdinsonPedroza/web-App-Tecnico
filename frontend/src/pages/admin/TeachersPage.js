@@ -42,6 +42,11 @@ export default function TeachersPage() {
   useEffect(() => { fetchTeachers(); }, [fetchTeachers]);
 
   const filtered = teachers.filter(t => (t.name || '').toLowerCase().includes(search.toLowerCase()) || (t.email || '').toLowerCase().includes(search.toLowerCase()));
+  
+  // Filter subjects based on search
+  const filteredSubjects = subjects.filter(subject => 
+    subject.name.toLowerCase().includes(subjectSearch.toLowerCase())
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -227,35 +232,27 @@ export default function TeachersPage() {
               <div className="border rounded-lg p-3 max-h-60 overflow-y-auto space-y-2">
                 {subjects.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No hay materias disponibles</p>
+                ) : filteredSubjects.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No se encontraron materias</p>
                 ) : (
-                  (() => {
-                    const filteredSubjects = subjects.filter(subject => 
-                      subject.name.toLowerCase().includes(subjectSearch.toLowerCase())
-                    );
-                    
-                    return filteredSubjects.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No se encontraron materias</p>
-                    ) : (
-                      filteredSubjects.map((subject) => (
-                        <div key={subject.id} className="flex items-center gap-2">
-                          <Checkbox
-                            id={`subject-${subject.id}`}
-                            checked={form.subject_ids.includes(subject.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setForm({ ...form, subject_ids: [...form.subject_ids, subject.id] });
-                              } else {
-                                setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== subject.id) });
-                              }
-                            }}
-                          />
-                          <label htmlFor={`subject-${subject.id}`} className="text-sm cursor-pointer flex-1">
-                            {subject.name} <span className="text-muted-foreground text-xs">(Módulo {subject.module_number})</span>
-                          </label>
-                        </div>
-                      ))
-                    );
-                  })()
+                  filteredSubjects.map((subject) => (
+                    <div key={subject.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`subject-${subject.id}`}
+                        checked={form.subject_ids.includes(subject.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setForm({ ...form, subject_ids: [...form.subject_ids, subject.id] });
+                          } else {
+                            setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== subject.id) });
+                          }
+                        }}
+                      />
+                      <label htmlFor={`subject-${subject.id}`} className="text-sm cursor-pointer flex-1">
+                        {subject.name} <span className="text-muted-foreground text-xs">(Módulo {subject.module_number})</span>
+                      </label>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
