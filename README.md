@@ -2,6 +2,22 @@
 
 Aplicación web full-stack para gestión educativa con React (frontend), FastAPI (backend) y MongoDB.
 
+## 🌐 ¿Quieres Subir Esto a la Web?
+
+**¡Perfecto! Tenemos guías súper fáciles para ti:**
+
+- **📱 [GUÍA RÁPIDA - La Forma MÁS FÁCIL](GUIA_RAPIDA_DESPLIEGUE.md)** ⭐ Empieza aquí
+- **🚂 [Paso a Paso con Railway](PASO_A_PASO_RAILWAY.md)** - 10 minutos, sin servidor
+- **📋 [Tarjeta de Referencia Rápida](REFERENCIA_RAPIDA.md)** - Para imprimir
+- **📚 [Guía Completa de Despliegue](DESPLIEGUE.md)** - Todas las opciones detalladas
+- **🚀 [Recomendaciones para 3000+ Usuarios](DEPLOYMENT_RECOMMENDATIONS.md)** - Escalamiento
+
+**Tiempo estimado:** 10-30 minutos  
+**Costo estimado:** $5-20/mes  
+**Dificultad:** Fácil 😊
+
+---
+
 ## 🚀 Stack Tecnológico
 
 ### Frontend
