@@ -114,7 +114,7 @@ export default function StudentActivities() {
             <p className="text-muted-foreground">No hay actividades disponibles</p>
           </CardContent></Card>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-8">
             {activities.map((act) => {
               const status = getActivityStatus(act);
               const due = new Date(act.due_date);

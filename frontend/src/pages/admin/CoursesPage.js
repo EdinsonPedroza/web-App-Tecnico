@@ -339,7 +339,6 @@ export default function CoursesPage() {
                     />
                   </div>
                 </div>
-              )}
             )}
             <div className="space-y-2">
               <Label className="text-base">Nombre del Grupo (Auto-generado)</Label>
