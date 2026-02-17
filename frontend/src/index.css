@@ -8,53 +8,53 @@
   :root {
     /* Corporación Social Educando - Steel Blue Theme */
     /* Primary: Steel blue from logo - Enhanced for better contrast */
-    --primary: 207 65% 42%;
+    --primary: 207 75% 38%;
     --primary-foreground: 0 0% 100%;
     
     /* Secondary: Light steel blue for subtle backgrounds - Darker for better contrast */
-    --secondary: 210 45% 88%;
-    --secondary-foreground: 207 60% 18%;
+    --secondary: 210 50% 85%;
+    --secondary-foreground: 207 70% 15%;
     
     /* Background: Off-white with cool blue undertone */
     --background: 210 30% 97%;
-    --foreground: 207 55% 10%;
+    --foreground: 207 70% 8%;
     
     /* Card: Pure white with darker text for better contrast */
     --card: 0 0% 100%;
-    --card-foreground: 207 55% 10%;
+    --card-foreground: 207 70% 8%;
     
     /* Popover */
     --popover: 0 0% 100%;
-    --popover-foreground: 207 55% 10%;
+    --popover-foreground: 207 70% 8%;
     
     /* Muted: Darker for better visibility */
-    --muted: 210 28% 80%;
-    --muted-foreground: 207 25% 30%;
+    --muted: 210 35% 75%;
+    --muted-foreground: 207 35% 25%;
     
     /* Accent: Soft teal accent - Enhanced */
-    --accent: 210 40% 85%;
-    --accent-foreground: 207 60% 15%;
+    --accent: 210 45% 80%;
+    --accent-foreground: 207 70% 12%;
     
     /* Destructive - Enhanced contrast */
-    --destructive: 0 82% 48%;
+    --destructive: 0 90% 45%;
     --destructive-foreground: 0 0% 100%;
     
     /* Success - Enhanced for better visibility */
-    --success: 160 65% 35%;
+    --success: 160 75% 32%;
     --success-foreground: 0 0% 100%;
     
     /* Warning - Enhanced contrast */
-    --warning: 38 98% 48%;
+    --warning: 38 100% 45%;
     --warning-foreground: 0 0% 100%;
     
     /* Info */
-    --info: 207 65% 42%;
+    --info: 207 75% 38%;
     --info-foreground: 0 0% 100%;
     
     /* Border & Input - Better visibility */
-    --border: 210 25% 70%;
-    --input: 210 25% 75%;
-    --ring: 207 65% 42%;
+    --border: 210 30% 65%;
+    --input: 210 30% 70%;
+    --ring: 207 75% 38%;
     
     /* Radius */
     --radius: 0.625rem;
@@ -128,7 +128,7 @@
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 18px; /* Increased from 16px for better readability */
+    font-size: 20px; /* Increased from 18px for better readability */
     line-height: 1.6;
   }
   h1, h2, h3, h4, h5, h6 {
@@ -136,16 +136,24 @@
     font-weight: 600;
   }
   h1 {
-    font-size: 2.5rem; /* 40px - Increased from 32px */
-    line-height: 1.3;
+    font-size: 3rem; /* 48px - Increased from 40px */
+    line-height: 1.2;
   }
   h2 {
-    font-size: 2rem; /* 32px - Increased from 28px */
+    font-size: 2.25rem; /* 36px - Increased from 32px */
     line-height: 1.3;
   }
   h3 {
-    font-size: 1.75rem; /* 28px - Increased from 24px */
+    font-size: 1.875rem; /* 30px - Increased from 28px */
     line-height: 1.4;
+  }
+  h4 {
+    font-size: 1.5rem; /* 24px */
+    line-height: 1.4;
+  }
+  h5 {
+    font-size: 1.25rem; /* 20px */
+    line-height: 1.5;
   }
 }
 

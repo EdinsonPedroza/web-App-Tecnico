@@ -116,11 +116,12 @@ export default function TeachersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Profesor</TableHead>
-                  <TableHead>Correo</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="text-base">Profesor</TableHead>
+                  <TableHead className="text-base">Correo</TableHead>
+                  <TableHead className="text-base">Teléfono</TableHead>
+                  <TableHead className="text-base">Materias</TableHead>
+                  <TableHead className="text-base">Estado</TableHead>
+                  <TableHead className="text-right text-base">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -128,13 +129,34 @@ export default function TeachersPage() {
                   <TableRow key={t.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8"><AvatarFallback className="bg-primary/10 text-primary text-xs">{initials(t.name)}</AvatarFallback></Avatar>
-                        <span className="font-medium text-sm">{t.name}</span>
+                        <Avatar className="h-10 w-10"><AvatarFallback className="bg-primary/10 text-primary text-sm">{initials(t.name)}</AvatarFallback></Avatar>
+                        <span className="font-medium text-base">{t.name}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{t.email}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{t.phone || '-'}</TableCell>
-                    <TableCell><Badge variant={t.active !== false ? 'success' : 'destructive'}>{t.active !== false ? 'Activo' : 'Inactivo'}</Badge></TableCell>
+                    <TableCell className="text-base text-muted-foreground">{t.email}</TableCell>
+                    <TableCell className="text-base text-muted-foreground">{t.phone || '-'}</TableCell>
+                    <TableCell className="text-base">
+                      {t.subject_ids && t.subject_ids.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {t.subject_ids.slice(0, 2).map(subId => {
+                            const subj = subjects.find(s => s.id === subId);
+                            return subj ? (
+                              <Badge key={subId} variant="secondary" className="text-xs">
+                                {subj.name.length > 20 ? subj.name.substring(0, 20) + '...' : subj.name}
+                              </Badge>
+                            ) : null;
+                          })}
+                          {t.subject_ids.length > 2 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{t.subject_ids.length - 2} más
+                            </Badge>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Sin materias</span>
+                      )}
+                    </TableCell>
+                    <TableCell><Badge variant={t.active !== false ? 'success' : 'destructive'} className="text-sm">{t.active !== false ? 'Activo' : 'Inactivo'}</Badge></TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(t)}><Pencil className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>

@@ -154,10 +154,10 @@ export default function CoursesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold font-heading">Cursos y Grupos</h1>
-            <p className="text-muted-foreground mt-1 text-base">Gestiona cursos por programa y grupo</p>
+            <h1 className="text-3xl font-bold font-heading">Grupos</h1>
+            <p className="text-muted-foreground mt-1 text-base">Gestiona grupos por programa, materia y cohorte</p>
           </div>
-          <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nuevo Curso/Grupo</Button>
+          <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nuevo Grupo</Button>
         </div>
 
         {loading ? (
@@ -165,7 +165,7 @@ export default function CoursesPage() {
         ) : courses.length === 0 ? (
           <Card className="shadow-card"><CardContent className="p-10 text-center">
             <ClipboardList className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">No hay cursos creados</p>
+            <p className="text-muted-foreground">No hay grupos creados</p>
           </CardContent></Card>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -217,8 +217,8 @@ export default function CoursesPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl">{editing ? 'Editar Curso/Grupo' : 'Nuevo Curso/Grupo'}</DialogTitle>
-            <DialogDescription className="text-base">Configura el curso o grupo y asigna estudiantes</DialogDescription>
+            <DialogTitle className="text-xl">{editing ? 'Editar Grupo' : 'Nuevo Grupo'}</DialogTitle>
+            <DialogDescription className="text-base">Configura el grupo y asigna estudiantes y materias</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {!editing && (
@@ -265,7 +265,10 @@ export default function CoursesPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-base">Mes</Label>
-                    <Select value={form.month} onValueChange={(v) => setForm({ ...form, month: v })}>
+                    <Select value={form.month} onValueChange={(v) => {
+                      const newGrupo = `${v.toUpperCase()}-${form.year}`;
+                      setForm({ ...form, month: v, grupo: newGrupo });
+                    }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar mes" /></SelectTrigger>
                       <SelectContent>
                         {['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map(m => (
@@ -279,7 +282,11 @@ export default function CoursesPage() {
                     <Input 
                       type="number" 
                       value={form.year} 
-                      onChange={(e) => setForm({ ...form, year: parseInt(e.target.value) || new Date().getFullYear() })} 
+                      onChange={(e) => {
+                        const newYear = parseInt(e.target.value) || new Date().getFullYear();
+                        const newGrupo = `${form.month.toUpperCase()}-${newYear}`;
+                        setForm({ ...form, year: newYear, grupo: newGrupo });
+                      }} 
                       placeholder="2026"
                       min="2024"
                       max="2030"
@@ -289,7 +296,7 @@ export default function CoursesPage() {
               </>
             )}
             <div className="space-y-2">
-              <Label className="text-base">Nombre del Curso/Grupo</Label>
+              <Label className="text-base">Nombre del Grupo (Auto-generado)</Label>
               <Input 
                 value={form.name} 
                 onChange={(e) => setForm({ ...form, name: e.target.value })} 
@@ -305,39 +312,41 @@ export default function CoursesPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label className="text-base">Grupo/Cohorte</Label>
+              <Label className="text-base">Grupo (Auto-generado desde Mes-Año)</Label>
               <Input 
                 value={form.grupo} 
                 onChange={(e) => setForm({ ...form, grupo: e.target.value })} 
-                placeholder={!editing && form.month && form.year && form.program_id
-                  ? formatGrupoSuggestion(form.month, form.year, form.program_id)
-                  : "Ej: ENERO-2026 - TECNICO EN SISTEMAS"
-                }
+                placeholder="Ej: ENERO-2026"
+                disabled={!editing}
               />
-              {!editing && form.month && form.year && form.program_id && (
-                <p className="text-sm text-muted-foreground">
-                  Sugerencia: {formatGrupoSuggestion(form.month, form.year, form.program_id)}
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Se genera automáticamente al seleccionar mes y año
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-base">Fecha de Inicio</Label>
+                <Label className="text-base">Fecha Inicio Módulos</Label>
                 <Input 
                   type="date" 
                   value={form.start_date} 
                   onChange={(e) => setForm({ ...form, start_date: e.target.value })} 
-                  placeholder="Fecha de inicio" 
+                  placeholder="Fecha de inicio de módulos" 
                 />
+                <p className="text-xs text-muted-foreground">
+                  Fecha de inicio de los módulos para este grupo
+                </p>
               </div>
               <div className="space-y-2">
-                <Label className="text-base">Fecha de Fin</Label>
+                <Label className="text-base">Fecha Cierre Módulos</Label>
                 <Input 
                   type="date" 
                   value={form.end_date} 
                   onChange={(e) => setForm({ ...form, end_date: e.target.value })} 
-                  placeholder="Fecha de fin" 
+                  placeholder="Fecha de cierre de módulos" 
                 />
+                <p className="text-xs text-muted-foreground">
+                  Fecha de cierre de los módulos para este grupo
+                </p>
               </div>
             </div>
             <div className="space-y-2">
