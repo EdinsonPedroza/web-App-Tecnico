@@ -110,18 +110,18 @@ export default function StudentsPage() {
   const toggleCourse = (courseId) => {
     setForm(prev => ({
       ...prev,
-      course_ids: prev.course_ids.includes(courseId)
-        ? prev.course_ids.filter(id => id !== courseId)
-        : [...prev.course_ids, courseId]
+      course_ids: (prev.course_ids || []).includes(courseId)
+        ? (prev.course_ids || []).filter(id => id !== courseId)
+        : [...(prev.course_ids || []), courseId]
     }));
   };
 
   const toggleProgram = (programId) => {
     setForm(prev => ({
       ...prev,
-      program_ids: prev.program_ids.includes(programId)
-        ? prev.program_ids.filter(id => id !== programId)
-        : [...prev.program_ids, programId]
+      program_ids: (prev.program_ids || []).includes(programId)
+        ? (prev.program_ids || []).filter(id => id !== programId)
+        : [...(prev.program_ids || []), programId]
     }));
   };
 
@@ -163,7 +163,7 @@ export default function StudentsPage() {
       // Update course enrollments
       for (const course of courses) {
         const isEnrolled = (course.student_ids || []).includes(studentId);
-        const shouldBeEnrolled = form.course_ids.includes(course.id);
+        const shouldBeEnrolled = (form.course_ids || []).includes(course.id);
 
         if (isEnrolled && !shouldBeEnrolled) {
           // Remove from course
@@ -373,7 +373,7 @@ export default function StudentsPage() {
                 ) : programs.map((p) => (
                   <div key={p.id} className="flex items-center gap-2">
                     <Checkbox 
-                      checked={form.program_ids.includes(p.id)} 
+                      checked={(form.program_ids || []).includes(p.id)} 
                       onCheckedChange={() => toggleProgram(p.id)} 
                     />
                     <span className="text-sm">{p.name}</span>
@@ -408,7 +408,7 @@ export default function StudentsPage() {
                   <p className="text-sm text-muted-foreground">No hay cursos creados</p>
                 ) : courses.map((c) => (
                   <div key={c.id} className="flex items-center gap-2">
-                    <Checkbox checked={form.course_ids.includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
+                    <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
                     <span className="text-sm">{c.name}</span>
                   </div>
                 ))}
