@@ -65,7 +65,10 @@ export default function StudentsPage() {
     const words = program.name.split(' ');
     return words.length > 3 ? words.slice(2, 5).join(' ') : program.name;
   };
-  const initials = (name) => (name || '').split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  const initials = (name) => {
+    if (!name) return '??';
+    return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  };
   
   // Format: MOD1-ENERO-2026 (with program short name prefix)
   const formatCourseInfo = (student) => {
