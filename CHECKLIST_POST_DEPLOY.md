@@ -11,7 +11,7 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 - `SEED_ADMIN_PASSWORD=admin123`
 
 ## Seguridad obligatoria (antes de dar acceso)
-- Genera y configura `JWT_SECRET` (>= 32 bytes aleatorios, 64 caracteres hex) durante el despliegue inicial.
+- Genera y configura `JWT_SECRET` (>= 32 bytes aleatorios, que equivalen a 64 caracteres hexadecimales) durante el despliegue inicial.
 - Crea credenciales propias para admin en el entorno y desactiva/rota las seed antes de permitir acceso público.
 - Cambia inmediatamente la contraseña al usar cualquier credencial seed para validar.
 
@@ -25,11 +25,10 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 1) **Estado en Railway:** abre el proyecto y confirma que MongoDB, backend y frontend están en verde/“Active”. Si alguno está en rojo, presiona **Restart** o **Redeploy**.
 2) **Backend responde:** en tu terminal ejecuta (cambia la URL por la tuya):
    ```bash
-   # Reemplaza <SEED_ADMIN_EMAIL>/<SEED_ADMIN_PASSWORD> con los valores definidos arriba.
    # Solo para validar en entorno aislado; rota la contraseña inmediatamente después.
    curl -X POST "https://TU-BACKEND.up.railway.app/api/auth/login" \
      -H "Content-Type: application/json" \
-     -d '{"email":"<SEED_ADMIN_EMAIL>","password":"<SEED_ADMIN_PASSWORD>"}'
+     -d '{"email":"admin@educando.com","password":"admin123"}'
    ```
    Debes recibir un `access_token` en JSON. Si falla, revisa variables y logs del backend.
 3) **Frontend y sesión:** abre la URL del frontend, inicia sesión con las credenciales seed indicadas arriba, verifica que carga el dashboard sin errores y cambia la contraseña en cuanto ingreses (ver sección de seguridad).
