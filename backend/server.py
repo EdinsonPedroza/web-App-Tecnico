@@ -156,10 +156,10 @@ async def create_initial_data():
     
     # Crear usuarios
     users = [
-        {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "program_ids": [], "phone": "3001234567", "active": True, "module": None, "grupo": None},
-        {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "program_ids": [], "phone": "3009876543", "active": True, "module": None, "grupo": None},
-        {"id": "user-est-1", "name": "Juan Martínez Ruiz", "email": None, "cedula": "1234567890", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "phone": "3101234567", "active": True, "module": 1, "grupo": "Enero 2025"},
-        {"id": "user-est-2", "name": "Ana Sofía Hernández", "email": None, "cedula": "0987654321", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "phone": "3207654321", "active": True, "module": 1, "grupo": "Enero 2025"},
+        {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001234567", "active": True, "module": None, "grupo": None},
+        {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3009876543", "active": True, "module": None, "grupo": None},
+        {"id": "user-est-1", "name": "Juan Martínez Ruiz", "email": None, "cedula": "1234567890", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3101234567", "active": True, "module": 1, "grupo": "Enero 2025"},
+        {"id": "user-est-2", "name": "Ana Sofía Hernández", "email": None, "cedula": "0987654321", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3207654321", "active": True, "module": 1, "grupo": "Enero 2025"},
     ]
     for u in users:
         await db.users.update_one({"id": u["id"]}, {"$set": u}, upsert=True)
@@ -262,6 +262,7 @@ class UserCreate(BaseModel):
     role: str
     program_id: Optional[str] = None  # For backward compatibility
     program_ids: Optional[List[str]] = None  # Multiple programs support
+    subject_ids: Optional[List[str]] = None  # For professors - subjects they teach
     phone: Optional[str] = None
     module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
@@ -273,6 +274,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     program_id: Optional[str] = None  # For backward compatibility
     program_ids: Optional[List[str]] = None  # Multiple programs support
+    subject_ids: Optional[List[str]] = None  # For professors - subjects they teach
     active: Optional[bool] = None
     module: Optional[int] = Field(None, ge=1, le=2)
     grupo: Optional[str] = None
@@ -308,8 +310,9 @@ class SubjectUpdate(BaseModel):
 class CourseCreate(BaseModel):
     name: str
     program_id: str
-    subject_id: str
-    teacher_id: str
+    subject_id: Optional[str] = None  # For backward compatibility - single subject
+    subject_ids: Optional[List[str]] = []  # Multiple subjects per course/group
+    teacher_id: Optional[str] = None  # Optional - courses are cohorts/promotions
     year: int = 2025
     student_ids: Optional[List[str]] = []
     start_date: Optional[str] = None
@@ -318,6 +321,8 @@ class CourseCreate(BaseModel):
 
 class CourseUpdate(BaseModel):
     name: Optional[str] = None
+    subject_id: Optional[str] = None  # For backward compatibility
+    subject_ids: Optional[List[str]] = None  # Multiple subjects
     teacher_id: Optional[str] = None
     student_ids: Optional[List[str]] = None
     active: Optional[bool] = None
@@ -440,6 +445,9 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
     elif req.program_id:
         program_ids = [req.program_id]
     
+    # Handle subject_ids for professors
+    subject_ids = req.subject_ids if req.subject_ids else []
+    
     new_user = {
         "id": str(uuid.uuid4()),
         "name": req.name,
@@ -449,6 +457,7 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "role": req.role,
         "program_id": req.program_id,  # Keep for backward compatibility
         "program_ids": program_ids,
+        "subject_ids": subject_ids,
         "phone": req.phone,
         "module": req.module,
         "grupo": req.grupo,
@@ -609,11 +618,20 @@ async def get_course(course_id: str, user=Depends(get_current_user)):
 async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
+    
+    # Handle subject_ids: use provided subject_ids, or convert subject_id to list if provided
+    subject_ids = []
+    if req.subject_ids:
+        subject_ids = req.subject_ids
+    elif req.subject_id:
+        subject_ids = [req.subject_id]
+    
     course = {
         "id": str(uuid.uuid4()),
         "name": req.name,
         "program_id": req.program_id,
-        "subject_id": req.subject_id,
+        "subject_id": req.subject_id,  # Keep for backward compatibility
+        "subject_ids": subject_ids,
         "teacher_id": req.teacher_id,
         "year": req.year,
         "student_ids": req.student_ids,
@@ -631,7 +649,18 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
 async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_current_user)):
     if user["role"] not in ["admin", "profesor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
+    
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    
+    # Handle subject_ids backward compatibility: if subject_ids provided, also update subject_id for compatibility
+    if "subject_ids" in update_data and update_data["subject_ids"]:
+        if "subject_id" not in update_data:
+            update_data["subject_id"] = update_data["subject_ids"][0]
+    elif "subject_id" in update_data and update_data["subject_id"]:
+        # If only subject_id provided, ensure subject_ids includes it
+        if "subject_ids" not in update_data:
+            update_data["subject_ids"] = [update_data["subject_id"]]
+    
     result = await db.courses.update_one({"id": course_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
@@ -919,9 +948,14 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
         "student_id": user["id"]
     })
     if existing:
+        # Check if already edited once
+        if existing.get("edited", False):
+            raise HTTPException(status_code=400, detail="Esta actividad ya ha sido editada. Solo se permite una edición por actividad.")
+        
+        # Allow editing, mark as edited
         await db.submissions.update_one(
             {"id": existing["id"]},
-            {"$set": {"content": req.content, "files": req.files, "submitted_at": datetime.now(timezone.utc).isoformat()}}
+            {"$set": {"content": req.content, "files": req.files, "submitted_at": datetime.now(timezone.utc).isoformat(), "edited": True}}
         )
         updated = await db.submissions.find_one({"id": existing["id"]}, {"_id": 0})
         return updated
@@ -932,7 +966,8 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
         "student_id": user["id"],
         "content": req.content,
         "files": req.files,
-        "submitted_at": datetime.now(timezone.utc).isoformat()
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "edited": False
     }
     await db.submissions.insert_one(submission)
     del submission["_id"]

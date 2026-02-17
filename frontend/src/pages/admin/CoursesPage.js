@@ -24,8 +24,8 @@ export default function CoursesPage() {
   const [form, setForm] = useState({ 
     name: '', 
     program_id: '', 
-    subject_id: '', 
-    teacher_id: '', 
+    subject_id: '',  // Keep for backward compatibility
+    subject_ids: [],  // Multiple subjects
     year: new Date().getFullYear(), 
     month: 'Enero',
     student_ids: [],
@@ -67,8 +67,8 @@ export default function CoursesPage() {
     setForm({ 
       name: '', 
       program_id: '', 
-      subject_id: '', 
-      teacher_id: '', 
+      subject_id: '',  // Keep for backward compatibility
+      subject_ids: [],  // Multiple subjects
       year: new Date().getFullYear(), 
       month: 'Enero',
       student_ids: [],
@@ -87,8 +87,8 @@ export default function CoursesPage() {
     setForm({ 
       name: course.name, 
       program_id: course.program_id, 
-      subject_id: course.subject_id, 
-      teacher_id: course.teacher_id, 
+      subject_id: course.subject_id || '',  // Backward compatibility
+      subject_ids: course.subject_ids || (course.subject_id ? [course.subject_id] : []),  // Convert single to array
       year: yearMatch ? parseInt(yearMatch[0]) : new Date().getFullYear(),
       month: monthMatch ? monthMatch[0] : 'Enero',
       student_ids: course.student_ids || [],
@@ -110,11 +110,12 @@ export default function CoursesPage() {
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('Nombre del curso requerido'); return; }
+    if (form.subject_ids.length === 0) { toast.error('Debes seleccionar al menos una materia'); return; }
     setSaving(true);
     try {
       const saveData = {
         name: form.name,
-        teacher_id: form.teacher_id,
+        subject_ids: form.subject_ids,
         student_ids: form.student_ids,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
@@ -128,7 +129,7 @@ export default function CoursesPage() {
         await api.post('/courses', {
           ...saveData,
           program_id: form.program_id,
-          subject_id: form.subject_id,
+          subject_id: form.subject_ids[0] || null,  // For backward compatibility, use first subject
           year: form.year
         });
         toast.success('Curso creado');
@@ -185,10 +186,15 @@ export default function CoursesPage() {
                       <BookOpen className="h-4 w-4" />
                       <span className="truncate">{getName(programs, c.program_id)}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Users className="h-4 w-4" />
-                      <span>Prof: {getName(teachers, c.teacher_id)}</span>
-                    </div>
+                    {c.subject_ids && c.subject_ids.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {c.subject_ids.map(subjectId => (
+                          <Badge key={subjectId} variant="secondary" className="text-xs">
+                            {getName(subjects, subjectId)}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                     {c.grupo && (
                       <div className="pt-1">
                         <Badge variant="default" className="text-sm font-medium">
@@ -219,23 +225,42 @@ export default function CoursesPage() {
               <>
                 <div className="space-y-2">
                   <Label className="text-base">Programa</Label>
-                  <Select value={form.program_id} onValueChange={(v) => setForm({ ...form, program_id: v, subject_id: '' })}>
+                  <Select value={form.program_id} onValueChange={(v) => {
+                    if (form.subject_ids.length > 0) {
+                      if (window.confirm('¿Cambiar el programa borrará las materias seleccionadas. Continuar?')) {
+                        setForm({ ...form, program_id: v, subject_ids: [] });
+                      }
+                    } else {
+                      setForm({ ...form, program_id: v, subject_ids: [] });
+                    }
+                  }}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar programa" /></SelectTrigger>
                     <SelectContent>{programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-base">Materia</Label>
-                  <Select value={form.subject_id} onValueChange={(v) => setForm({ ...form, subject_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Seleccionar materia" /></SelectTrigger>
-                    <SelectContent>
-                      {filteredSubjects.map(s => (
-                        <SelectItem key={s.id} value={String(s.id)}>
-                          {s.name} (Módulo {s.module_number})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-base">Materias del Grupo ({form.subject_ids.length} seleccionadas)</Label>
+                  <div className="max-h-48 overflow-y-auto rounded-lg border p-3 space-y-2">
+                    {filteredSubjects.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No hay materias para este programa</p>
+                    ) : (
+                      filteredSubjects.map((s) => (
+                        <div key={s.id} className="flex items-center gap-2">
+                          <Checkbox 
+                            checked={form.subject_ids.includes(s.id)} 
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setForm({ ...form, subject_ids: [...form.subject_ids, s.id] });
+                              } else {
+                                setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== s.id) });
+                              }
+                            }}
+                          />
+                          <span className="text-sm">{s.name} <span className="text-muted-foreground">(Módulo {s.module_number})</span></span>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -268,14 +293,14 @@ export default function CoursesPage() {
               <Input 
                 value={form.name} 
                 onChange={(e) => setForm({ ...form, name: e.target.value })} 
-                placeholder={!editing && form.program_id && form.subject_id && form.month && form.year 
-                  ? `${getName(subjects, form.subject_id)} - ${form.month} ${form.year}` 
-                  : "Ej: Fundamentos de Administración - Enero 2026"
+                placeholder={!editing && form.program_id && form.subject_ids.length > 0 && form.month && form.year 
+                  ? `${form.month} ${form.year} - ${getName(programs, form.program_id)}` 
+                  : "Ej: Enero 2026 - Asistencia Administrativa"
                 } 
               />
-              {!editing && form.program_id && form.subject_id && form.month && form.year && (
+              {!editing && form.program_id && form.subject_ids.length > 0 && form.month && form.year && (
                 <p className="text-sm text-muted-foreground">
-                  Sugerencia: {getName(subjects, form.subject_id)} - {form.month} {form.year}
+                  Sugerencia: {form.month} {form.year} - {getName(programs, form.program_id)}
                 </p>
               )}
             </div>
@@ -314,13 +339,6 @@ export default function CoursesPage() {
                   placeholder="Fecha de fin" 
                 />
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-base">Profesor</Label>
-              <Select value={form.teacher_id} onValueChange={(v) => setForm({ ...form, teacher_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Asignar profesor" /></SelectTrigger>
-                <SelectContent>{teachers.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}</SelectContent>
-              </Select>
             </div>
             <div className="space-y-2">
               <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>

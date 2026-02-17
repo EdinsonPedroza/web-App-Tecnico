@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
@@ -14,17 +15,22 @@ import api from '@/lib/api';
 
 export default function TeachersPage() {
   const [teachers, setTeachers] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', password: '', phone: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', subject_ids: [] });
   const [saving, setSaving] = useState(false);
 
   const fetchTeachers = useCallback(async () => {
     try {
-      const res = await api.get('/users?role=profesor');
-      setTeachers(res.data);
+      const [tRes, sRes] = await Promise.all([
+        api.get('/users?role=profesor'),
+        api.get('/subjects')
+      ]);
+      setTeachers(tRes.data);
+      setSubjects(sRes.data);
     } catch (err) {
       toast.error('Error cargando profesores');
     } finally {
@@ -38,13 +44,13 @@ export default function TeachersPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', email: '', password: '', phone: '' });
+    setForm({ name: '', email: '', password: '', phone: '', subject_ids: [] });
     setDialogOpen(true);
   };
 
   const openEdit = (teacher) => {
     setEditing(teacher);
-    setForm({ name: teacher.name, email: teacher.email || '', password: '', phone: teacher.phone || '' });
+    setForm({ name: teacher.name, email: teacher.email || '', password: '', phone: teacher.phone || '', subject_ids: teacher.subject_ids || [] });
     setDialogOpen(true);
   };
 
@@ -54,7 +60,7 @@ export default function TeachersPage() {
     setSaving(true);
     try {
       if (editing) {
-        await api.put(`/users/${editing.id}`, { name: form.name, email: form.email, phone: form.phone });
+        await api.put(`/users/${editing.id}`, { name: form.name, email: form.email, phone: form.phone, subject_ids: form.subject_ids });
         toast.success('Profesor actualizado');
       } else {
         await api.post('/users', { ...form, role: 'profesor' });
@@ -152,6 +158,34 @@ export default function TeachersPage() {
             <div className="space-y-2"><Label>Correo Electrónico</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="correo@educando.com" /></div>
             {!editing && <div className="space-y-2"><Label>Contraseña</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Contraseña inicial" /></div>}
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
+            
+            <div className="space-y-2">
+              <Label>Materias que enseña (opcional)</Label>
+              <div className="border rounded-lg p-3 max-h-60 overflow-y-auto space-y-2">
+                {subjects.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay materias disponibles</p>
+                ) : (
+                  subjects.map((subject) => (
+                    <div key={subject.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`subject-${subject.id}`}
+                        checked={form.subject_ids.includes(subject.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setForm({ ...form, subject_ids: [...form.subject_ids, subject.id] });
+                          } else {
+                            setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== subject.id) });
+                          }
+                        }}
+                      />
+                      <label htmlFor={`subject-${subject.id}`} className="text-sm cursor-pointer flex-1">
+                        {subject.name} <span className="text-muted-foreground text-xs">(Módulo {subject.module_number})</span>
+                      </label>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>

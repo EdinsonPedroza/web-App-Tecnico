@@ -63,11 +63,11 @@ export default function AdminDashboardHome() {
               })}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
               <Card className="shadow-card">
                 <CardHeader>
-                  <CardTitle className="text-lg font-heading">Accesos Rápidos</CardTitle>
-                  <CardDescription>Gestiona la plataforma desde aquí</CardDescription>
+                  <CardTitle className="text-xl font-heading">Accesos Rápidos</CardTitle>
+                  <CardDescription className="text-base">Gestiona la plataforma desde aquí</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {[
@@ -82,14 +82,14 @@ export default function AdminDashboardHome() {
                       <a
                         key={item.path}
                         href={item.path}
-                        className="flex items-center gap-4 rounded-lg p-3 hover:bg-accent transition-colors group"
+                        className="flex items-center gap-4 rounded-lg p-4 hover:bg-accent transition-colors group"
                       >
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                          <Icon className="h-5 w-5" />
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <Icon className="h-6 w-6" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{item.label}</p>
-                          <p className="text-xs text-muted-foreground">{item.desc}</p>
+                          <p className="text-base font-medium text-foreground group-hover:text-primary transition-colors">{item.label}</p>
+                          <p className="text-sm text-muted-foreground">{item.desc}</p>
                         </div>
                       </a>
                     );
@@ -99,8 +99,8 @@ export default function AdminDashboardHome() {
 
               <Card className="shadow-card">
                 <CardHeader>
-                  <CardTitle className="text-lg font-heading">Programas Técnicos</CardTitle>
-                  <CardDescription>Programas ofrecidos actualmente</CardDescription>
+                  <CardTitle className="text-xl font-heading">Programas Técnicos</CardTitle>
+                  <CardDescription className="text-base">Programas ofrecidos actualmente</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {[
