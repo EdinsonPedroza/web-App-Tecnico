@@ -24,8 +24,8 @@ export default function StudentsPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', grupo: '' });
   const [saving, setSaving] = useState(false);
-  const [filterProgram, setFilterProgram] = useState('');
-  const [filterModule, setFilterModule] = useState('');
+  const [filterProgram, setFilterProgram] = useState('all');
+  const [filterModule, setFilterModule] = useState('all');
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
@@ -50,8 +50,8 @@ export default function StudentsPage() {
 
   const filtered = students.filter(s => {
     const matchesSearch = (s.name || '').toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search);
-    const matchesProgram = !filterProgram || String(s.program_id) === String(filterProgram);
-    const matchesModule = !filterModule || String(s.module) === filterModule;
+    const matchesProgram = filterProgram === 'all' || String(s.program_id) === String(filterProgram);
+    const matchesModule = filterModule === 'all' || String(s.module) === filterModule;
     return matchesSearch && matchesProgram && matchesModule;
   });
   
@@ -239,7 +239,7 @@ export default function StudentsPage() {
                 <SelectValue placeholder="Filtrar por técnico" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos los técnicos</SelectItem>
+                <SelectItem value="all">Todos los técnicos</SelectItem>
                 {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -248,7 +248,7 @@ export default function StudentsPage() {
                 <SelectValue placeholder="Filtrar por módulo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos los módulos</SelectItem>
+                <SelectItem value="all">Todos los módulos</SelectItem>
                 <SelectItem value="1">Módulo 1</SelectItem>
                 <SelectItem value="2">Módulo 2</SelectItem>
               </SelectContent>
