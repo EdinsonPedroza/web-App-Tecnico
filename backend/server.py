@@ -318,6 +318,7 @@ class CourseCreate(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     grupo: Optional[str] = None  # e.g., "ENERO-2026 - TECNICO EN SISTEMAS"
+    module_dates: Optional[dict] = {}  # e.g., {"1": {"start": "2026-01-01", "end": "2026-06-30"}, "2": {"start": "2026-07-01", "end": "2026-12-31"}}
 
 class CourseUpdate(BaseModel):
     name: Optional[str] = None
@@ -329,6 +330,7 @@ class CourseUpdate(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     grupo: Optional[str] = None  # e.g., "ENERO-2026 - TECNICO EN SISTEMAS"
+    module_dates: Optional[dict] = None  # e.g., {"1": {"start": "2026-01-01", "end": "2026-06-30"}, "2": {"start": "2026-07-01", "end": "2026-12-31"}}
 
 class ActivityCreate(BaseModel):
     course_id: str
@@ -638,6 +640,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         "start_date": req.start_date,
         "end_date": req.end_date,
         "grupo": req.grupo,
+        "module_dates": req.module_dates if req.module_dates else {},
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
