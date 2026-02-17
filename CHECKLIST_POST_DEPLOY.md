@@ -5,7 +5,7 @@ Ya tienes el frontend, backend y MongoDB desplegados. Sigue estos pasos cortos p
 ## 1) Ten a la mano
 - URL pública del **frontend** (ej: `https://web-app-tecnico-production.up.railway.app`)
 - URL pública del **backend** (Networking del servicio backend)
-- Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (configura un secreto aleatorio de ≥32 caracteres **antes** de abrir el entorno; nunca dejes el valor por defecto).
+- Variables en backend: `MONGO_URL`, `DB_NAME`, `JWT_SECRET` (configura un secreto aleatorio de al menos 32 caracteres **antes** de abrir el entorno; nunca dejes el valor por defecto).
 - Credenciales iniciales para probar (solo si dejaste los datos seed por defecto): `admin@educando.com / admin123`. Úsalas solo en un entorno privado para validar; antes de hacerlo público crea credenciales nuevas y desactiva las seed.
 
 ## 2) Verificación en 5 minutos
