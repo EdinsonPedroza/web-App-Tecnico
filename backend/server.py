@@ -394,28 +394,25 @@ class ModuleCloseDateUpdate(BaseModel):
 # --- Auth Routes ---
 @api_router.post("/auth/login")
 async def login(req: LoginRequest):
-    query = {}
     if req.role == "estudiante":
         if not req.cedula:
             raise HTTPException(status_code=400, detail="Cédula requerida")
-        query = {"cedula": req.cedula, "role": "estudiante"}
-    else:
+        user = await db.users.find_one(
+            {"cedula": req.cedula, "role": "estudiante"}, 
+            {"_id": 0}
+        )
+    elif req.role == "profesor":
         # For profesor role, also allow admin and editor to login
         if not req.email:
             raise HTTPException(status_code=400, detail="Correo requerido")
-        if req.role == "profesor":
-            # Allow profesor, admin, or editor to login through profesor tab
-            user = await db.users.find_one(
-                {"email": req.email, "role": {"$in": ["profesor", "admin", "editor"]}}, 
-                {"_id": 0}
-            )
-        else:
-            query = {"email": req.email, "role": req.role}
-            user = await db.users.find_one(query, {"_id": 0})
-    
-    # For estudiante role, find user with the query
-    if req.role == "estudiante":
-        user = await db.users.find_one(query, {"_id": 0})
+        # Allow profesor, admin, or editor to login through profesor tab
+        user = await db.users.find_one(
+            {"email": req.email, "role": {"$in": ["profesor", "admin", "editor"]}}, 
+            {"_id": 0}
+        )
+    else:
+        # Invalid role
+        raise HTTPException(status_code=400, detail="Rol inválido")
     
     if not user:
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
@@ -498,12 +495,28 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
         raise HTTPException(status_code=403, detail="Solo admin puede editar usuarios")
     
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    
+    # Hash password if provided and not empty
+    if "password" in update_data:
+        password = update_data.pop("password")
+        if password is not None and password.strip():
+            update_data["password_hash"] = hash_password(password)
+        # If password is empty/whitespace, just ignore it (don't update)
+    
     if not update_data:
         raise HTTPException(status_code=400, detail="No hay datos para actualizar")
     
-    # Hash password if provided
-    if "password" in update_data:
-        update_data["password_hash"] = hash_password(update_data.pop("password"))
+    # Validate cedula uniqueness if it's being changed
+    if "cedula" in update_data and update_data["cedula"]:
+        existing = await db.users.find_one({"cedula": update_data["cedula"], "id": {"$ne": user_id}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Esta cédula ya está registrada")
+    
+    # Validate email uniqueness if it's being changed
+    if "email" in update_data and update_data["email"]:
+        existing = await db.users.find_one({"email": update_data["email"], "id": {"$ne": user_id}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Este correo ya está registrado")
     
     result = await db.users.update_one({"id": user_id}, {"$set": update_data})
     if result.matched_count == 0:

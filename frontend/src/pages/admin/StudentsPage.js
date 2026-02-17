@@ -131,18 +131,16 @@ export default function StudentsPage() {
       if (editing) {
         const updateData = { 
           name: form.name, 
+          cedula: form.cedula, // Always include cedula
           phone: form.phone, 
           program_id: form.program_id || null,
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
           module: form.module ? parseInt(form.module) : null,
           grupo: form.grupo || null
         };
-        // Include password and cedula only if provided
+        // Include password only if provided (optional when editing)
         if (form.password && form.password.trim()) {
           updateData.password = form.password;
-        }
-        if (form.cedula && form.cedula.trim()) {
-          updateData.cedula = form.cedula;
         }
         await api.put(`/users/${editing.id}`, updateData);
         studentId = editing.id;
@@ -357,7 +355,7 @@ export default function StudentsPage() {
             <div className="space-y-2">
               <Label>Cédula</Label>
               <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" />
-              {editing && <p className="text-xs text-muted-foreground">Puedes modificar la cédula si es necesario</p>}
+              {editing && <p className="text-xs text-amber-600 dark:text-amber-500">⚠️ Cambiar la cédula puede afectar el acceso del estudiante. Verifica que no exista duplicado.</p>}
             </div>
             <div className="space-y-2">
               <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>

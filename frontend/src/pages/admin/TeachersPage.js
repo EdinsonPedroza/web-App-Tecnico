@@ -185,7 +185,7 @@ export default function TeachersPage() {
             <div className="space-y-2">
               <Label>Correo Electrónico</Label>
               <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="correo@educando.com" />
-              {editing && <p className="text-xs text-muted-foreground">Puedes modificar el correo si es necesario</p>}
+              {editing && <p className="text-xs text-amber-600 dark:text-amber-500">⚠️ Cambiar el correo puede afectar el acceso del profesor. Verifica que no exista duplicado.</p>}
             </div>
             <div className="space-y-2">
               <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>
