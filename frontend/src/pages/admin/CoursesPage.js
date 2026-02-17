@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, ClipboardList, Users, BookOpen } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, ClipboardList, Users, BookOpen, Search } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function CoursesPage() {
@@ -35,6 +35,8 @@ export default function CoursesPage() {
     module_dates: {}  // e.g., {"1": {"start": "2026-01-01", "end": "2026-06-30"}}
   });
   const [saving, setSaving] = useState(false);
+  const [subjectSearch, setSubjectSearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -82,6 +84,8 @@ export default function CoursesPage() {
       grupo: '',
       module_dates: {}
     });
+    setSubjectSearch('');
+    setStudentSearch('');
     setDialogOpen(true);
   };
 
@@ -103,6 +107,8 @@ export default function CoursesPage() {
       grupo: course.grupo || '',
       module_dates: course.module_dates || {}
     });
+    setSubjectSearch('');
+    setStudentSearch('');
     setDialogOpen(true);
   };
 
@@ -247,26 +253,55 @@ export default function CoursesPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-base">Materias del Grupo ({form.subject_ids.length} seleccionadas)</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base">Materias del Grupo ({form.subject_ids.length} seleccionadas)</Label>
+                    {filteredSubjects.length > 0 && (
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => {
+                          if (form.subject_ids.length === filteredSubjects.length) {
+                            setForm({ ...form, subject_ids: [] });
+                          } else {
+                            setForm({ ...form, subject_ids: filteredSubjects.map(s => s.id) });
+                          }
+                        }}
+                      >
+                        {form.subject_ids.length === filteredSubjects.length ? 'Deseleccionar todas' : 'Seleccionar todas'}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                      placeholder="Buscar materias..." 
+                      value={subjectSearch}
+                      onChange={(e) => setSubjectSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
                   <div className="max-h-48 overflow-y-auto rounded-lg border p-3 space-y-2">
                     {filteredSubjects.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No hay materias para este programa</p>
                     ) : (
-                      filteredSubjects.map((s) => (
-                        <div key={s.id} className="flex items-center gap-2">
-                          <Checkbox 
-                            checked={form.subject_ids.includes(s.id)} 
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setForm({ ...form, subject_ids: [...form.subject_ids, s.id] });
-                              } else {
-                                setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== s.id) });
-                              }
-                            }}
-                          />
-                          <span className="text-sm">{s.name} <span className="text-muted-foreground">(Módulo {s.module_number})</span></span>
-                        </div>
-                      ))
+                      filteredSubjects
+                        .filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase()))
+                        .map((s) => (
+                          <div key={s.id} className="flex items-center gap-2">
+                            <Checkbox 
+                              checked={form.subject_ids.includes(s.id)} 
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setForm({ ...form, subject_ids: [...form.subject_ids, s.id] });
+                                } else {
+                                  setForm({ ...form, subject_ids: form.subject_ids.filter(id => id !== s.id) });
+                                }
+                              }}
+                            />
+                            <span className="text-sm">{s.name} <span className="text-muted-foreground">(Módulo {s.module_number})</span></span>
+                          </div>
+                        ))
                     )}
                   </div>
                 </div>
@@ -379,9 +414,41 @@ export default function CoursesPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>
+                {students.length > 0 && (
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => {
+                      if (form.student_ids.length === students.length) {
+                        setForm({ ...form, student_ids: [] });
+                      } else {
+                        setForm({ ...form, student_ids: students.map(s => s.id) });
+                      }
+                    }}
+                  >
+                    {form.student_ids.length === students.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                  </Button>
+                )}
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Buscar estudiantes por nombre o cédula..." 
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
               <div className="max-h-48 overflow-y-auto rounded-lg border p-4 space-y-2.5">
-                {students.length === 0 ? <p className="text-sm text-muted-foreground">No hay estudiantes</p> : students.map((s) => (
+                {students.length === 0 ? <p className="text-sm text-muted-foreground">No hay estudiantes</p> : students
+                  .filter(s => 
+                    s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                    (s.cedula && s.cedula.includes(studentSearch))
+                  )
+                  .map((s) => (
                   <div key={s.id} className="flex items-center gap-2.5">
                     <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
                     <span className="text-sm">{s.name} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module}</span></span>
