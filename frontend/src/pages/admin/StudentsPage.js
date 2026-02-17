@@ -22,7 +22,7 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', estado: 'activo' });
+  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, estado: 'activo' });
   const [saving, setSaving] = useState(false);
   const [filterProgram, setFilterProgram] = useState('all');
   const [filterModule, setFilterModule] = useState('all');
@@ -55,8 +55,26 @@ export default function StudentsPage() {
 
   const filtered = students.filter(s => {
     const matchesSearch = (s.name || '').toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search);
-    const matchesProgram = filterProgram === 'all' || String(s.program_id) === String(filterProgram);
-    const matchesModule = filterModule === 'all' || String(s.module) === filterModule;
+    
+    // For program filter: check if student has this program
+    let matchesProgram = filterProgram === 'all';
+    if (!matchesProgram) {
+      const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
+      matchesProgram = studentProgramIds.includes(filterProgram);
+    }
+    
+    // For module filter: check if student has this module in any of their programs
+    let matchesModule = filterModule === 'all';
+    if (!matchesModule) {
+      if (s.program_modules) {
+        // New structure: check if any program has this module
+        matchesModule = Object.values(s.program_modules).some(m => String(m) === filterModule);
+      } else if (s.module) {
+        // Old structure: fallback to global module
+        matchesModule = String(s.module) === filterModule;
+      }
+    }
+    
     const matchesEstado = filterEstado === 'all' || (s.estado || 'activo') === filterEstado;
     return matchesSearch && matchesProgram && matchesModule && matchesEstado;
   });
@@ -92,7 +110,7 @@ export default function StudentsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], module: '', estado: 'activo' });
+    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, estado: 'activo' });
     setProgramSearch('');
     setCourseSearch('');
     setDialogOpen(true);
@@ -102,6 +120,16 @@ export default function StudentsPage() {
     setEditing(student);
     // Support both single program_id and multiple program_ids
     const studentProgramIds = student.program_ids || (student.program_id ? [student.program_id] : []);
+    
+    // Initialize program_modules from student data or create empty object
+    const programModules = student.program_modules || {};
+    // If student has old 'module' field but no program_modules, migrate it
+    if (!student.program_modules && student.module && studentProgramIds.length > 0) {
+      studentProgramIds.forEach(progId => {
+        programModules[progId] = student.module;
+      });
+    }
+    
     setForm({
       name: student.name,
       cedula: student.cedula || '',
@@ -110,7 +138,7 @@ export default function StudentsPage() {
       program_id: student.program_id || '',
       program_ids: studentProgramIds,
       course_ids: getStudentCourseIds(student.id),
-      module: student.module || '',
+      program_modules: programModules,
       estado: student.estado || 'activo'
     });
     setProgramSearch('');
@@ -133,11 +161,25 @@ export default function StudentsPage() {
   const toggleProgram = (programId) => {
     setForm(prev => {
       const programIds = prev.program_ids || [];
+      const programModules = prev.program_modules || {};
+      const isAdding = !programIds.includes(programId);
+      
+      const newProgramIds = isAdding
+        ? [...programIds, programId]
+        : programIds.filter(id => id !== programId);
+      
+      // Initialize module to 1 when adding a new program, remove when removing program
+      const newProgramModules = { ...programModules };
+      if (isAdding) {
+        newProgramModules[programId] = 1; // Default to module 1
+      } else {
+        delete newProgramModules[programId];
+      }
+      
       return {
         ...prev,
-        program_ids: programIds.includes(programId)
-          ? programIds.filter(id => id !== programId)
-          : [...programIds, programId]
+        program_ids: newProgramIds,
+        program_modules: newProgramModules
       };
     });
   };
@@ -178,7 +220,7 @@ export default function StudentsPage() {
           phone: form.phone, 
           program_id: form.program_id || null,
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
-          module: form.module ? parseInt(form.module) : null,
+          program_modules: form.program_modules && Object.keys(form.program_modules).length > 0 ? form.program_modules : null,
           estado: form.estado || 'activo'
         };
         // Include password only if provided (optional when editing)
@@ -193,7 +235,7 @@ export default function StudentsPage() {
           ...form, 
           role: 'estudiante',
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
-          module: form.module ? parseInt(form.module) : null,
+          program_modules: form.program_modules && Object.keys(form.program_modules).length > 0 ? form.program_modules : null,
           estado: form.estado || 'activo'
         };
         const res = await api.post('/users', createData);
@@ -362,7 +404,34 @@ export default function StudentsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs font-mono">{s.module ? `Módulo ${s.module}` : '-'}</Badge>
+                        {(() => {
+                          const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
+                          if (studentProgramIds.length === 0) {
+                            return <Badge variant="outline" className="text-xs font-mono">-</Badge>;
+                          }
+                          
+                          // Use program_modules if available, otherwise fall back to global module
+                          if (s.program_modules && Object.keys(s.program_modules).length > 0) {
+                            return (
+                              <div className="flex flex-col gap-1">
+                                {studentProgramIds.map(progId => {
+                                  const module = s.program_modules[progId];
+                                  const progName = getProgramShortName(progId);
+                                  return (
+                                    <Badge key={progId} variant="outline" className="text-xs font-mono whitespace-nowrap">
+                                      {progName}: Módulo {module || 1}
+                                    </Badge>
+                                  );
+                                })}
+                              </div>
+                            );
+                          } else if (s.module) {
+                            // Fallback to old structure
+                            return <Badge variant="outline" className="text-xs font-mono">Módulo {s.module}</Badge>;
+                          } else {
+                            return <Badge variant="outline" className="text-xs font-mono">-</Badge>;
+                          }
+                        })()}
                       </TableCell>
                       <TableCell>
                         {(() => {
@@ -529,14 +598,47 @@ export default function StudentsPage() {
               </p>
             </div>
             <div className="space-y-2">
-              <Label>Módulo</Label>
-              <Select value={form.module} onValueChange={(v) => setForm({ ...form, module: v })}>
-                <SelectTrigger><SelectValue placeholder="Seleccionar módulo" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Módulo 1</SelectItem>
-                  <SelectItem value="2">Módulo 2</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className="text-base">Módulos por Programa Técnico</Label>
+              {form.program_ids && form.program_ids.length > 0 ? (
+                <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
+                  {form.program_ids.map(progId => {
+                    const program = programs.find(p => p.id === progId);
+                    const currentModule = (form.program_modules && form.program_modules[progId]) || 1;
+                    return (
+                      <div key={progId} className="flex items-center justify-between gap-3 p-2 rounded bg-background">
+                        <span className="text-sm font-medium flex-1">{program?.name || 'Programa'}</span>
+                        <Select 
+                          value={String(currentModule)} 
+                          onValueChange={(v) => {
+                            setForm(prev => ({
+                              ...prev,
+                              program_modules: {
+                                ...prev.program_modules,
+                                [progId]: parseInt(v)
+                              }
+                            }));
+                          }}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">Módulo 1</SelectItem>
+                            <SelectItem value="2">Módulo 2</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground p-3 rounded-lg border bg-muted/20">
+                  Selecciona al menos un programa técnico para asignar módulos
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Cada estudiante puede estar en diferentes módulos según el programa técnico
+              </p>
             </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
             <div className="space-y-2">
