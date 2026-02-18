@@ -46,9 +46,11 @@ export function validateBackendUrl() {
   const trimmedUrl = backendUrl.trim();
   
   // Validate URL format using URL constructor for robust validation
+  // Note: If no protocol is specified, we assume https:// for validation
+  // Runtime behavior will depend on how ensureProtocol() handles the URL
   try {
     // Try to construct URL - will throw if invalid
-    // Add https if no protocol specified
+    // Add https if no protocol specified (matches ensureProtocol behavior)
     const urlToTest = trimmedUrl.startsWith('http') ? trimmedUrl : `https://${trimmedUrl}`;
     new URL(urlToTest);
   } catch (error) {
