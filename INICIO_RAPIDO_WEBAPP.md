@@ -20,21 +20,23 @@ Presiona Enter para usar los valores predeterminados.
 
 #### Opción B: Variables de Entorno
 
+**Nota**: Reemplaza `USUARIO:PASSWORD` con tus credenciales reales (ver `CREDENCIALES_PRIVADAS.md` si tienes acceso)
+
 **Linux/Mac:**
 ```bash
-export MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+export MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
 export DB_NAME="webApp"
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+$env:MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
 $env:DB_NAME="webApp"
 ```
 
 **Windows (CMD):**
 ```cmd
-set MONGO_URL=mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
+set MONGO_URL=mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
 set DB_NAME=webApp
 ```
 
@@ -155,7 +157,7 @@ Busca estos mensajes al iniciar:
 
 **Solución**: 
 1. Ve a MongoDB Atlas → **Database Access**
-2. Verifica el usuario `insonest2106_db_user`
+2. Verifica tu usuario de base de datos
 3. Debe tener rol "Read and write to any database"
 
 ### No puedo iniciar sesión en la app

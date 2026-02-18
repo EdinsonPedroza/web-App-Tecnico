@@ -10,22 +10,22 @@ echo "Este script creará un archivo backend/.env.local con tus credenciales."
 echo "Este archivo NO se subirá a Git (está en .gitignore)"
 echo ""
 
-# Valores por defecto
-DEFAULT_MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
-DEFAULT_DB_NAME="webApp"
-
-echo "Configuración para la base de datos webApp en Cluster0"
-echo ""
-echo "Presiona Enter para usar los valores predeterminados, o ingresa nuevos valores:"
+echo "Ingresa las credenciales de tu base de datos MongoDB Atlas:"
 echo ""
 
 # Pedir MongoDB URL
-read -p "MongoDB URL [$DEFAULT_MONGO_URL]: " MONGO_URL
-MONGO_URL=${MONGO_URL:-$DEFAULT_MONGO_URL}
+echo "MongoDB Connection String:"
+echo "Formato: mongodb+srv://usuario:password@cluster.mongodb.net/webApp?appName=Cluster0"
+read -p "URL: " MONGO_URL
+
+if [ -z "$MONGO_URL" ]; then
+    echo "❌ Error: Debes proporcionar un MongoDB URL"
+    exit 1
+fi
 
 # Pedir DB Name
-read -p "Nombre de la base de datos [$DEFAULT_DB_NAME]: " DB_NAME
-DB_NAME=${DB_NAME:-$DEFAULT_DB_NAME}
+read -p "Nombre de la base de datos [webApp]: " DB_NAME
+DB_NAME=${DB_NAME:-webApp}
 
 # Crear archivo .env.local en backend
 ENV_LOCAL_FILE="backend/.env.local"

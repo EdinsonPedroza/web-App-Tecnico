@@ -24,9 +24,11 @@ El script te preguntará por tu connection string y creará `backend/.env.local`
 
 Configura las variables antes de iniciar la aplicación:
 
+**Nota**: Las credenciales reales están en el archivo `CREDENCIALES_PRIVADAS.md` (no incluido en el repositorio público)
+
 **Linux/Mac:**
 ```bash
-export MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+export MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
 export DB_NAME="webApp"
 cd backend
 uvicorn server:app --reload
@@ -34,7 +36,7 @@ uvicorn server:app --reload
 
 **Windows (PowerShell):**
 ```powershell
-$env:MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+$env:MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
 $env:DB_NAME="webApp"
 cd backend
 uvicorn server:app --reload
@@ -42,7 +44,7 @@ uvicorn server:app --reload
 
 **Windows (CMD):**
 ```cmd
-set MONGO_URL=mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
+set MONGO_URL=mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
 set DB_NAME=webApp
 cd backend
 uvicorn server:app --reload
@@ -54,17 +56,19 @@ Crea un archivo `backend/.env.local` (este archivo NO se sube a Git):
 
 ```bash
 # backend/.env.local
-MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
 DB_NAME="webApp"
 CORS_ORIGINS="*"
 ```
+
+**Reemplaza `USUARIO:PASSWORD` con tus credenciales reales** (ver `CREDENCIALES_PRIVADAS.md` si tienes acceso)
 
 ## 📊 Detalles de Conexión
 
 - **Cluster**: Cluster0
 - **Base de datos**: webApp
 - **Collection**: App (se creará automáticamente)
-- **Usuario**: insonest2106_db_user
+- **Credenciales**: Ver archivo `CREDENCIALES_PRIVADAS.md` (no incluido en repositorio público)
 
 ## 🔧 Configuración en MongoDB Atlas
 
@@ -91,12 +95,9 @@ La causa más común de errores de conexión es la restricción de IP. Sigue est
 ### Paso 3: Verificar el Usuario de Base de Datos
 
 1. En MongoDB Atlas, ve a **Database Access**
-2. Verifica que existe el usuario: `insonest2106_db_user`
+2. Verifica que existe tu usuario de base de datos
 3. Asegúrate que tiene rol **"Read and write to any database"** o **"Atlas admin"**
-4. Si no existe o no tiene permisos, créalo/edítalo:
-   - Username: `insonest2106_db_user`
-   - Password: (la que configuraste)
-   - Database User Privileges: **"Read and write to any database"**
+4. Si no existe o no tiene permisos, créalo/edítalo con los permisos necesarios
 
 ## 🚀 Qué Hará la Aplicación al Iniciar
 
@@ -213,7 +214,7 @@ DB_NAME=webApp
 **Causa**: Usuario o contraseña incorrectos  
 **Solución**: 
 1. Ve a MongoDB Atlas → Database Access
-2. Edita el usuario `insonest2106_db_user`
+2. Edita tu usuario de base de datos
 3. Resetea la contraseña si es necesario
 4. Actualiza tu configuración local
 

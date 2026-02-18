@@ -19,6 +19,9 @@
 **/.env.production.local
 **/.env.private
 
+# Private credential files
+CREDENCIALES_PRIVADAS.md
+
 # Logs
 *.log
 npm-debug.log*
