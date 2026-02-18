@@ -21,6 +21,9 @@ from collections import defaultdict
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
+# Load .env.local first (for local development with real credentials)
+# Then load .env (for default/example values)
+load_dotenv(ROOT_DIR / '.env.local')
 load_dotenv(ROOT_DIR / '.env')
 
 # Configure logging

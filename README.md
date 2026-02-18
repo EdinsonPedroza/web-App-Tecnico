@@ -2,6 +2,17 @@
 
 Aplicación web full-stack para gestión educativa con React (frontend), FastAPI (backend) y MongoDB.
 
+## 🎉 BASE DE DATOS CONFIGURADA
+
+✅ **La aplicación ya está conectada a MongoDB Atlas (Cluster0 → Base de datos: webApp)**
+
+📖 **Inicio Rápido:** [INICIO_RAPIDO_WEBAPP.md](INICIO_RAPIDO_WEBAPP.md) - ¡Empieza aquí en 5 minutos!  
+📚 **Guía Completa:** [CONFIGURACION_MONGODB.md](CONFIGURACION_MONGODB.md) - Todos los detalles
+
+**⚡ Acción requerida:** Configura Network Access en MongoDB Atlas para permitir conexiones ([ver guía](INICIO_RAPIDO_WEBAPP.md#1-configurar-acceso-en-mongodb-atlas-importante))
+
+---
+
 ## 🆘 ¿LAS CREDENCIALES NO FUNCIONAN?
 
 ### 🚨 Si estás frustrado porque no puedes iniciar sesión:
