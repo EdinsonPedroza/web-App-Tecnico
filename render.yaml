@@ -17,6 +17,8 @@ services:
         value: WebApp
       - key: PASSWORD_STORAGE_MODE
         value: plain
+      - key: CORS_ORIGINS
+        value: "*"
       - key: JWT_SECRET
         generateValue: true
       - key: PORT
@@ -39,12 +41,12 @@ services:
         fromService:
           type: web
           name: educando-backend
-          property: host
+          property: hostWithScheme
       - key: BACKEND_URL
         fromService:
           type: web
           name: educando-backend
-          property: host
+          property: hostWithScheme
       - key: PORT
         value: 10000
     autoDeploy: true
