@@ -61,6 +61,9 @@ JWT_ALGORITHM = "HS256"
 # Password hashing with bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Password storage mode: 'plain' for plain text, 'bcrypt' for hashed (default: 'plain' for compatibility)
+PASSWORD_STORAGE_MODE = os.environ.get('PASSWORD_STORAGE_MODE', 'plain').lower()
+
 # Rate limiting: track login attempts per IP
 # NOTE: This is in-memory storage. For production with multiple instances,
 # consider using Redis or another distributed cache for rate limiting.
@@ -330,16 +333,25 @@ def sanitize_string(input_str: str, max_length: int = 500) -> str:
     return sanitized[:max_length]
 
 def hash_password(password: str) -> str:
-    """Hash password using bcrypt"""
-    return pwd_context.hash(password)
+    """Store password based on PASSWORD_STORAGE_MODE (plain or bcrypt)"""
+    if PASSWORD_STORAGE_MODE == 'plain':
+        # Store password as plain text (for backwards compatibility with existing data)
+        return password
+    else:
+        # Hash password using bcrypt
+        return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against bcrypt hash, with fallback for legacy SHA256 hashes"""
+    """Verify password against bcrypt hash, SHA256, or plain text"""
+    # First, try plain text comparison (for backwards compatibility with existing data)
+    if plain_password == hashed_password:
+        return True
+    
     try:
-        # Try bcrypt first (new format)
+        # Try bcrypt (new format)
         return pwd_context.verify(plain_password, hashed_password)
     except (ValueError, UnknownHashError):
-        # Only fall back to SHA256 for legacy passwords that don't have bcrypt format
+        # Fall back to SHA256 for legacy passwords that don't have bcrypt format
         # bcrypt hashes start with $2a$, $2b$, or $2y$
         if not hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
             try:
