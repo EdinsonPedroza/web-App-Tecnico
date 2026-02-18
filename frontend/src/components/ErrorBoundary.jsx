@@ -82,14 +82,23 @@ class ErrorBoundary extends React.Component {
   handleReload = () => {
     // Clear cache and reload
     if (this.state.isChunkError) {
-      // For chunk errors, try to clear cache
+      // For chunk errors, try to clear cache before reloading
       if ('caches' in window) {
         caches.keys().then(names => {
-          names.forEach(name => caches.delete(name));
+          return Promise.all(names.map(name => caches.delete(name)));
+        }).then(() => {
+          window.location.reload();
+        }).catch(() => {
+          // If cache clearing fails, reload anyway
+          window.location.reload();
         });
+      } else {
+        // No cache API, just reload
+        window.location.reload();
       }
+    } else {
+      window.location.reload();
     }
-    window.location.reload();
   };
 
   handleGoHome = () => {

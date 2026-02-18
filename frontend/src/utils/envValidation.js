@@ -25,10 +25,13 @@ export function validateBackendUrl() {
   // Check if URL seems valid
   const trimmedUrl = backendUrl.trim();
   
-  // Basic validation - check if it looks like a URL
-  const hasValidFormat = /^(https?:\/\/)?[\w.-]+(:\d+)?/.test(trimmedUrl);
-  
-  if (!hasValidFormat) {
+  // Validate URL format using URL constructor for robust validation
+  try {
+    // Try to construct URL - will throw if invalid
+    // Add https if no protocol specified
+    const urlToTest = trimmedUrl.startsWith('http') ? trimmedUrl : `https://${trimmedUrl}`;
+    new URL(urlToTest);
+  } catch (error) {
     return {
       isValid: false,
       message: `REACT_APP_BACKEND_URL has invalid format: "${trimmedUrl}"`,

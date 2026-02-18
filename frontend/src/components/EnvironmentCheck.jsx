@@ -19,8 +19,8 @@ function EnvironmentCheck({ children }) {
 
   // If environment is invalid, show configuration error
   const errorMessages = Object.entries(validation.results)
-    .filter(([_, result]) => !result.isValid)
-    .map(([key, result]) => result.message);
+    .filter(([, result]) => !result.isValid)
+    .map(([, result]) => result.message);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-4">

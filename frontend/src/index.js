@@ -18,9 +18,16 @@ window.addEventListener('error', (event) => {
     error: event.error,
   });
 
-  // Check if it's a chunk loading error
-  if (event.message?.toLowerCase().includes('chunk') || 
-      event.message?.toLowerCase().includes('loading')) {
+  // Check if it's a chunk loading error by examining error properties
+  const isChunkError = event.error?.name === 'ChunkLoadError' ||
+                       (event.error?.message && (
+                         event.error.message.toLowerCase().includes('chunk') ||
+                         event.error.message.toLowerCase().includes('loading css') ||
+                         event.error.message.toLowerCase().includes('loading js')
+                       )) ||
+                       event.filename?.includes('chunk');
+
+  if (isChunkError) {
     console.warn('Chunk loading error detected. This usually means the app was updated. Please refresh the page.');
   }
 });
