@@ -7,6 +7,7 @@
 # Testing
 **/coverage/
 **/test_reports/
+**/tests/
 
 # Production builds
 **/build/
@@ -56,3 +57,7 @@ backend/uploads/*
 *.tmp
 *.temp
 /tmp/
+
+# Tool artifacts
+.emergent/
+memory/
