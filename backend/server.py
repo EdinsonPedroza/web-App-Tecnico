@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -30,9 +31,24 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ.get('DB_NAME', 'educando_db')]
+# Use environment variable or default to localhost for local development
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+# Log connection without exposing sensitive information (credentials, ports, etc.)
+def redact_mongo_url(url: str) -> str:
+    """Redact sensitive information from MongoDB URL for logging"""
+    if 'localhost' in url or '127.0.0.1' in url:
+        return "localhost"
+    # For remote URLs, just indicate it's remote without showing host/credentials
+    return "cloud/remote"
+
+logger.info(f"Connecting to MongoDB at: {redact_mongo_url(mongo_url)}")
+try:
+    client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+    db = client[os.environ.get('DB_NAME', 'educando_db')]
+    logger.info(f"MongoDB client initialized for database: {os.environ.get('DB_NAME', 'educando_db')}")
+except Exception as e:
+    logger.error(f"Failed to initialize MongoDB client: {e}")
+    raise
 
 # JWT Secret
 JWT_SECRET = os.environ.get('JWT_SECRET', 'educando_secret_key_2025')
@@ -61,6 +77,22 @@ def validate_module_number(module_num, field_name="module"):
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    # Only expose detailed error in development (when DEBUG env var is set)
+    debug_mode = os.environ.get('DEBUG', 'false').lower() == 'true'
+    if debug_mode:
+        logger.warning("DEBUG mode is enabled - detailed errors are exposed to clients")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "error": str(exc) if debug_mode else "An unexpected error occurred"
+        }
+    )
+
 # File upload directory
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -68,11 +100,20 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # --- Startup Event - Crear datos iniciales ---
 @app.on_event("startup")
 async def startup_event():
-    await create_initial_data()
+    try:
+        logger.info("Starting application initialization...")
+        # Test MongoDB connection
+        await db.command('ping')
+        logger.info("MongoDB connection successful")
+        await create_initial_data()
+        logger.info("Application startup completed successfully")
+    except Exception as e:
+        logger.error(f"Startup failed: {e}", exc_info=True)
+        raise RuntimeError(f"Application startup failed: {e}") from e
 
 async def create_initial_data():
     """Crea los usuarios y datos iniciales si no existen"""
-    print("Verificando y creando datos iniciales...")
+    logger.info("Verificando y creando datos iniciales...")
     
     # Crear programas con sus módulos y materias (siempre se verifican y crean si no existen)
     programs = [
@@ -1910,16 +1951,43 @@ async def get_stats(user=Depends(get_current_user)):
         "activities": activities
     }
 
+@api_router.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring and Railway deployment"""
+    try:
+        # Test MongoDB connection
+        await db.command('ping')
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "database": "disconnected",
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
+
 @api_router.get("/")
 async def root():
     return {"message": "Corporación Social Educando API"}
 
 app.include_router(api_router)
 
+# Configure CORS origins
+cors_origins_str = os.environ.get('CORS_ORIGINS', '*')
+cors_origins = cors_origins_str.split(',') if ',' in cors_origins_str else [cors_origins_str]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
