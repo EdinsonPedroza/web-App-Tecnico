@@ -13,8 +13,11 @@ services:
     depends_on:
       - mongodb
     environment:
-      - MONGO_URL=mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
-      - DB_NAME=WebApp
+      # Use local MongoDB in Docker or set MONGO_URL env var for remote MongoDB
+      - MONGO_URL=${MONGO_URL:-mongodb://mongodb:27017}
+      - DB_NAME=${DB_NAME:-WebApp}
+      - PASSWORD_STORAGE_MODE=${PASSWORD_STORAGE_MODE:-plain}
+      - JWT_SECRET=${JWT_SECRET:-educando_secret_key_2025}
     volumes:
       - uploads_data:/app/uploads
 
