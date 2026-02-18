@@ -94,7 +94,7 @@ Autenticación/Login:
 │ Rol:             estudiante                                             │
 │ Usuario/Cédula:  1001234567                                             │
 │ Contraseña:      Estud2026*SM                                           │
-│ Nombre:          Sofia Morales                                          │
+│ Nombre:          Sofía Morales                                          │
 │ Teléfono:        3006667788                                             │
 │ Programa:        Administración de Empresas                             │
 │ Módulo:          1                                                      │
@@ -110,7 +110,7 @@ Autenticación/Login:
 │ Rol:             estudiante                                             │
 │ Usuario/Cédula:  1002345678                                             │
 │ Contraseña:      Estud2026*AL                                           │
-│ Nombre:          Andres Lopez                                           │
+│ Nombre:          Andrés Lopez                                           │
 │ Teléfono:        3007778899                                             │
 │ Programa:        Administración de Empresas                             │
 │ Módulo:          1                                                      │

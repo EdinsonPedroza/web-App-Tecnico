@@ -231,9 +231,14 @@ async def create_initial_data():
                     upsert=True
                 )
     
-    # Eliminar todos los usuarios existentes
-    print("Eliminando todos los usuarios existentes...")
-    await db.users.delete_many({})
+    # Eliminar todos los usuarios existentes (solo en primera ejecución)
+    # Verificar si necesitamos recrear usuarios
+    existing_user_count = await db.users.count_documents({})
+    if existing_user_count > 0:
+        print(f"Ya existen {existing_user_count} usuarios en la base de datos.")
+        print("Para recrear todos los usuarios, elimina manualmente la colección users de MongoDB.")
+        # Solo verificamos/actualizamos programas y materias
+        return
     
     # Crear nuevos usuarios
     print("Creando nuevos usuarios...")
@@ -250,11 +255,11 @@ async def create_initial_data():
         {"id": "user-prof-2", "name": "Miguel Castro", "email": "miguel.castro@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*MC"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3005556677", "active": True, "module": None, "grupo": None},
         
         # 2 Estudiantes
-        {"id": "user-est-1", "name": "Sofia Morales", "email": None, "cedula": "1001234567", "password_hash": hash_password("Estud2026*SM"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3006667788", "active": True, "module": 1, "grupo": "Febrero 2026"},
-        {"id": "user-est-2", "name": "Andres Lopez", "email": None, "cedula": "1002345678", "password_hash": hash_password("Estud2026*AL"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3007778899", "active": True, "module": 1, "grupo": "Febrero 2026"},
+        {"id": "user-est-1", "name": "Sofía Morales", "email": None, "cedula": "1001234567", "password_hash": hash_password("Estud2026*SM"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3006667788", "active": True, "module": 1, "grupo": "Febrero 2026"},
+        {"id": "user-est-2", "name": "Andrés Lopez", "email": None, "cedula": "1002345678", "password_hash": hash_password("Estud2026*AL"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3007778899", "active": True, "module": 1, "grupo": "Febrero 2026"},
     ]
     for u in users:
-        await db.users.insert_one(u)
+        await db.users.update_one({"id": u["id"]}, {"$set": u}, upsert=True)
     
     # Crear curso de ejemplo
     admin_subjects = await db.subjects.find({"program_id": "prog-admin", "module_number": 1}, {"_id": 0}).to_list(10)
@@ -304,14 +309,8 @@ async def create_initial_data():
             await db.activities.update_one({"id": a["id"]}, {"$set": a}, upsert=True)
     
     print("Datos iniciales creados exitosamente")
-    print("Credenciales:")
-    print("  Editor: carlos.mendez@educando.com / Editor2026*CM")
-    print("  Admin 1: laura.torres@educando.com / Admin2026*LT")
-    print("  Admin 2: roberto.ramirez@educando.com / Admin2026*RR")
-    print("  Profesor 1: diana.silva@educando.com / Profe2026*DS")
-    print("  Profesor 2: miguel.castro@educando.com / Profe2026*MC")
-    print("  Estudiante 1: 1001234567 / Estud2026*SM")
-    print("  Estudiante 2: 1002345678 / Estud2026*AL")
+    print("Credenciales creadas para 7 usuarios.")
+    print("Ver archivo USUARIOS_Y_CONTRASEÑAS.txt para detalles de acceso.")
 
 # --- Utility Functions ---
 def sanitize_string(input_str: str, max_length: int = 500) -> str:
