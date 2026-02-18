@@ -33,7 +33,11 @@ logger = logging.getLogger(__name__)
 # MongoDB connection
 # Use environment variable or default to localhost for local development
 mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-logger.info(f"Connecting to MongoDB at: {mongo_url.split('@')[-1] if '@' in mongo_url else mongo_url}")
+# Log connection without exposing sensitive information
+if 'localhost' in mongo_url or '127.0.0.1' in mongo_url:
+    logger.info("Connecting to MongoDB at: localhost")
+else:
+    logger.info("Connecting to MongoDB (cloud/remote)")
 try:
     client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
     db = client[os.environ.get('DB_NAME', 'educando_db')]
@@ -73,9 +77,14 @@ api_router = APIRouter(prefix="/api")
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    # Only expose detailed error in development (when DEBUG env var is set)
+    debug_mode = os.environ.get('DEBUG', 'false').lower() == 'true'
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "error": str(exc)}
+        content={
+            "detail": "Internal server error",
+            "error": str(exc) if debug_mode else "An unexpected error occurred"
+        }
     )
 
 # File upload directory
