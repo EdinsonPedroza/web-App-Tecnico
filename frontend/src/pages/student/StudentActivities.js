@@ -11,8 +11,9 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { toast } from 'sonner';
 import { Loader2, FileText, Calendar, Clock, Lock, Unlock, Send, Download, File, TimerOff, Upload, Trash2, Image } from 'lucide-react';
 import api from '@/lib/api';
+import { ensureProtocol } from '@/utils/url';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 
 export default function StudentActivities() {
   const { user } = useAuth();
