@@ -1,21 +1,70 @@
 # Configuración MongoDB - Base de Datos webApp
 
-## ✅ Configuración Completada
+## ✅ Resumen
 
-Se ha configurado la aplicación para conectarse a tu base de datos MongoDB Atlas:
+La aplicación está lista para conectarse a tu base de datos **webApp** en MongoDB Atlas (Cluster0).
 
-### Detalles de Conexión
+### 🔒 Seguridad Importante
+
+**Este repositorio es PÚBLICO.** Por seguridad, las credenciales de MongoDB **NO están incluidas** en los archivos rastreados por Git.
+
+Debes configurar las credenciales localmente usando una de estas opciones:
+
+## 🚀 Opción 1: Script Automático (Más Fácil)
+
+Usa el script de configuración que crea un archivo seguro `.env.local`:
+
+```bash
+./configurar_mongodb.sh
+```
+
+El script te preguntará por tu connection string y creará `backend/.env.local` (que NO se sube a Git).
+
+## 🔧 Opción 2: Variables de Entorno del Sistema
+
+Configura las variables antes de iniciar la aplicación:
+
+**Linux/Mac:**
+```bash
+export MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+export DB_NAME="webApp"
+cd backend
+uvicorn server:app --reload
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+$env:DB_NAME="webApp"
+cd backend
+uvicorn server:app --reload
+```
+
+**Windows (CMD):**
+```cmd
+set MONGO_URL=mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
+set DB_NAME=webApp
+cd backend
+uvicorn server:app --reload
+```
+
+## 📝 Opción 3: Crear .env.local Manualmente
+
+Crea un archivo `backend/.env.local` (este archivo NO se sube a Git):
+
+```bash
+# backend/.env.local
+MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+DB_NAME="webApp"
+CORS_ORIGINS="*"
+```
+
+## 📊 Detalles de Conexión
 
 - **Cluster**: Cluster0
 - **Base de datos**: webApp
 - **Collection**: App (se creará automáticamente)
-- **Connection String**: Configurado en `backend/.env`
-
-### Archivos Modificados
-
-1. **`backend/.env`**
-   - Se agregó la variable `MONGO_URL` con tu connection string
-   - Se cambió `DB_NAME` de "test_database" a "webApp"
+- **Usuario**: insonest2106_db_user
 
 ## 🔧 Configuración en MongoDB Atlas
 
@@ -95,26 +144,23 @@ Una vez que la aplicación inicie correctamente, podrás iniciar sesión con:
 
 ## 🧪 Cómo Probar la Conexión
 
-### Opción 1: Usando Docker (Recomendado)
+### Opción 1: Verificar con el Script
 
 ```bash
-cd /home/runner/work/web-App-Tecnico/web-App-Tecnico
+python verificar_webapp.py
+```
+
+Si ves el mensaje **"✅ Conexión exitosa!"**, la configuración es correcta.
+
+### Opción 2: Usando Docker (Recomendado)
+
+```bash
 docker compose -f docker-compose.dev.yml up --build
 ```
 
 Luego abre: http://localhost:3000
 
-### Opción 2: Desarrollo Local con Python
-
-```bash
-cd backend
-pip install -r requirements.txt
-python verify_mongodb.py
-```
-
-Si ves el mensaje **"✅ Conexión exitosa!"**, la configuración es correcta.
-
-### Opción 3: Iniciar el Servidor Directamente
+### Opción 3: Desarrollo Local con Python
 
 ```bash
 cd backend
@@ -128,23 +174,32 @@ Busca en los logs:
 ✅ Credenciales creadas para 7 usuarios
 ```
 
-## 🔒 Seguridad
+## 🔒 Seguridad para Producción
 
-⚠️ **IMPORTANTE**: El archivo `backend/.env` ahora contiene credenciales sensibles.
+### Para Despliegue en Railway, Render, Heroku, etc.
 
-### Para Desarrollo Local:
-- El archivo `.env` está en `.gitignore`, así que no se subirá a GitHub
-- Está bien tener las credenciales aquí para desarrollo
+**NO uses archivos .env en producción**. Configura las variables de entorno en tu plataforma:
 
-### Para Producción (Railway, Render, etc.):
-**NO uses el archivo .env en producción**. En su lugar:
+**Railway:**
+```
+Settings → Variables → Add Variable
+MONGO_URL=mongodb+srv://...
+DB_NAME=webApp
+```
 
-1. Ve al dashboard de tu plataforma (Railway/Render)
-2. Agrega las variables de entorno:
-   - `MONGO_URL`: `mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0`
-   - `DB_NAME`: `webApp`
-   - `CORS_ORIGINS`: Tu dominio de frontend (ej: `https://tu-app.render.com`)
-   - `JWT_SECRET`: Una clave secreta segura (genera una nueva)
+**Render:**
+```
+Environment → Add Environment Variable
+MONGO_URL=mongodb+srv://...
+DB_NAME=webApp
+```
+
+**Heroku:**
+```
+Settings → Config Vars → Add
+MONGO_URL=mongodb+srv://...
+DB_NAME=webApp
+```
 
 ## 🐛 Solución de Problemas
 
@@ -160,7 +215,7 @@ Busca en los logs:
 1. Ve a MongoDB Atlas → Database Access
 2. Edita el usuario `insonest2106_db_user`
 3. Resetea la contraseña si es necesario
-4. Actualiza `backend/.env` con la nueva contraseña
+4. Actualiza tu configuración local
 
 ### Error: "ServerSelectionTimeoutError"
 
@@ -181,15 +236,18 @@ Busca en los logs:
 ## 📚 Recursos Adicionales
 
 - [Documentación MongoDB Atlas](https://docs.atlas.mongodb.com/)
-- [Guía de Conexión String](https://docs.mongodb.com/manual/reference/connection-string/)
+- [Guía de Connection String](https://docs.mongodb.com/manual/reference/connection-string/)
 - [README del Proyecto](./README.md)
-- [Guía de Usuarios y Contraseñas](./USUARIOS_Y_CONTRASEÑAS.txt)
+- [Inicio Rápido](./INICIO_RAPIDO_WEBAPP.md)
 
-## ✨ Estado Actual
+## ✨ Checklist
 
-✅ **Backend configurado** con la connection string correcta  
-✅ **Base de datos configurada** (webApp)  
-✅ **Inicialización automática** lista para crear datos  
-⏳ **Pendiente**: Configurar Network Access en MongoDB Atlas (acción del usuario)
+- [ ] Configurar credenciales localmente (Opción 1, 2 o 3)
+- [ ] Configurar Network Access en MongoDB Atlas
+- [ ] Verificar que el usuario tenga permisos correctos
+- [ ] Ejecutar el script de verificación
+- [ ] Iniciar la aplicación
+- [ ] Verificar que se crearon los usuarios y colecciones
+- [ ] Probar el inicio de sesión
 
-Una vez que configures Network Access en MongoDB Atlas, todo funcionará automáticamente.
+Una vez completado el checklist, ¡todo funcionará perfectamente! 🎉

@@ -1,12 +1,44 @@
-# 🚀 Inicio Rápido - Base de Datos webApp Configurada
+# 🚀 Inicio Rápido - Base de Datos webApp
 
-## ✅ ¡Todo Está Configurado!
+## ✅ Todo Está Listo
 
-Tu aplicación ya está conectada a la base de datos **webApp** en MongoDB Atlas (Cluster0).
+Tu aplicación está configurada para conectarse a la base de datos **webApp** en MongoDB Atlas (Cluster0).
 
-## ⚡ Pasos para Iniciar (5 minutos)
+## ⚡ Configuración en 3 Pasos (5 minutos)
 
-### 1. Configurar Acceso en MongoDB Atlas (IMPORTANTE)
+### Paso 1: Configurar Credenciales (2 minutos)
+
+Elige UNA de estas opciones:
+
+#### Opción A: Script Automático (Más Fácil) ⭐
+
+```bash
+./configurar_mongodb.sh
+```
+
+Presiona Enter para usar los valores predeterminados.
+
+#### Opción B: Variables de Entorno
+
+**Linux/Mac:**
+```bash
+export MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+export DB_NAME="webApp"
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:MONGO_URL="mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
+$env:DB_NAME="webApp"
+```
+
+**Windows (CMD):**
+```cmd
+set MONGO_URL=mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
+set DB_NAME=webApp
+```
+
+### Paso 2: Configurar MongoDB Atlas (2 minutos)
 
 🔓 **Permitir conexión desde cualquier IP:**
 
@@ -18,11 +50,9 @@ Tu aplicación ya está conectada a la base de datos **webApp** en MongoDB Atlas
 6. Click **"Confirm"**
 7. ⏱️ Espera 1-2 minutos
 
-✅ Listo! Ahora tu aplicación puede conectarse.
+### Paso 3: Iniciar la Aplicación (1 minuto)
 
-### 2. Iniciar la Aplicación
-
-#### Con Docker (Más Fácil):
+#### Con Docker (Recomendado):
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
@@ -48,7 +78,17 @@ npm start
 
 Abre: http://localhost:3000
 
-### 3. Iniciar Sesión
+## 🔍 Verificar la Configuración
+
+Antes de iniciar la aplicación, verifica que todo esté bien:
+
+```bash
+python verificar_webapp.py
+```
+
+Deberías ver: **"✅ CONEXIÓN EXITOSA!"**
+
+## 🎉 Iniciar Sesión
 
 Usa cualquiera de estas credenciales:
 
@@ -64,7 +104,7 @@ Usa cualquiera de estas credenciales:
 - Cédula: `1001234567`
 - Password: `Estud2026*SM`
 
-## 🎉 Qué Se Creará Automáticamente
+## 🎊 Qué Se Creará Automáticamente
 
 Al iniciar la aplicación por primera vez:
 
@@ -76,7 +116,7 @@ Al iniciar la aplicación por primera vez:
 
 ## 🔍 Verificar que Todo Funciona
 
-### Opción 1: Logs del Backend
+### En los Logs del Backend
 
 Busca estos mensajes al iniciar:
 
@@ -86,7 +126,7 @@ Busca estos mensajes al iniciar:
 ✅ Application startup completed successfully
 ```
 
-### Opción 2: MongoDB Atlas
+### En MongoDB Atlas
 
 1. Ve a MongoDB Atlas → **Database** → **Browse Collections**
 2. Selecciona la base de datos **webApp**
@@ -101,7 +141,15 @@ Busca estos mensajes al iniciar:
 
 ### "Cannot connect to MongoDB"
 
-**Solución**: Revisa el Paso 1 - Configurar Network Access
+**Solución**: 
+1. Revisa el Paso 2 - Configurar Network Access
+2. Espera 2 minutos después de configurarlo
+
+### "MONGO_URL not configured"
+
+**Solución**: 
+1. Vuelve al Paso 1
+2. Asegúrate de ejecutar el script o configurar las variables
 
 ### "Authentication failed"
 
@@ -110,7 +158,7 @@ Busca estos mensajes al iniciar:
 2. Verifica el usuario `insonest2106_db_user`
 3. Debe tener rol "Read and write to any database"
 
-### No puedo iniciar sesión
+### No puedo iniciar sesión en la app
 
 **Solución**: 
 1. Revisa los logs del backend
@@ -120,19 +168,26 @@ Busca estos mensajes al iniciar:
 ## 📚 Más Información
 
 - 📖 [Guía Completa de Configuración](./CONFIGURACION_MONGODB.md)
-- 📋 [Lista de Todos los Usuarios](./USUARIOS_Y_CONTRASEÑAS.txt)
 - 🛠️ [README Principal](./README.md)
 
-## 🆘 Necesitas Ayuda?
+## 🎯 Resumen Rápido
 
-Si algo no funciona:
+```bash
+# 1. Configurar credenciales
+./configurar_mongodb.sh
 
-1. **Primero**: Lee [CONFIGURACION_MONGODB.md](./CONFIGURACION_MONGODB.md)
-2. **Logs**: Revisa los logs del backend para ver el error específico
-3. **MongoDB**: Verifica en MongoDB Atlas que el cluster esté activo
+# 2. Configurar MongoDB Atlas (en navegador)
+# https://cloud.mongodb.com/ → Network Access → Allow from anywhere
+
+# 3. Verificar
+python verificar_webapp.py
+
+# 4. Iniciar
+docker compose -f docker-compose.dev.yml up --build
+```
 
 ---
 
 **¡Listo para empezar!** 🎉
 
-Todo está configurado. Solo necesitas permitir el acceso en MongoDB Atlas (Paso 1) y tu aplicación funcionará perfectamente.
+Si tienes problemas, revisa la [Guía Completa](./CONFIGURACION_MONGODB.md) para más detalles.
