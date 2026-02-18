@@ -1716,7 +1716,7 @@ async def seed_data():
             "name": "Administrador General",
             "email": "admin@educando.com",
             "cedula": None,
-            "password_hash": hash_password("admin123"),
+            "password_hash": hash_password("Admin2026*Seed"),
             "role": "admin",
             "program_id": None,
             "phone": "3001234567",
@@ -1728,7 +1728,7 @@ async def seed_data():
             "name": "María García López",
             "email": "profesor@educando.com",
             "cedula": None,
-            "password_hash": hash_password("profesor123"),
+            "password_hash": hash_password("Profe2026*Seed1"),
             "role": "profesor",
             "program_id": None,
             "phone": "3007654321",
@@ -1740,7 +1740,7 @@ async def seed_data():
             "name": "Carlos Rodríguez Pérez",
             "email": "profesor2@educando.com",
             "cedula": None,
-            "password_hash": hash_password("profesor123"),
+            "password_hash": hash_password("Profe2026*Seed2"),
             "role": "profesor",
             "program_id": None,
             "phone": "3009876543",
@@ -1752,7 +1752,7 @@ async def seed_data():
             "name": "Juan Martínez Ruiz",
             "email": None,
             "cedula": "1234567890",
-            "password_hash": hash_password("estudiante123"),
+            "password_hash": hash_password("Estud2026*Seed1"),
             "role": "estudiante",
             "program_id": "prog-admin",
             "phone": "3101234567",
@@ -1764,7 +1764,7 @@ async def seed_data():
             "name": "Ana Sofía Hernández",
             "email": None,
             "cedula": "0987654321",
-            "password_hash": hash_password("estudiante123"),
+            "password_hash": hash_password("Estud2026*Seed2"),
             "role": "estudiante",
             "program_id": "prog-infancia",
             "phone": "3207654321",
@@ -1776,7 +1776,7 @@ async def seed_data():
             "name": "Pedro López Castro",
             "email": None,
             "cedula": "1122334455",
-            "password_hash": hash_password("estudiante123"),
+            "password_hash": hash_password("Estud2026*Seed3"),
             "role": "estudiante",
             "program_id": "prog-sst",
             "phone": "3159876543",
@@ -1918,15 +1918,9 @@ async def seed_data():
     
     return {
         "message": "Datos iniciales creados exitosamente",
-        "credentials": {
-            "editor": {"email": "editorgeneral@educando.com", "password": "EditorSeguro2025"},
-            "admin": {"email": "admin@educando.com", "password": "admin123"},
-            "profesor": {"email": "profesor@educando.com", "password": "profesor123"},
-            "profesor2": {"email": "profesor2@educando.com", "password": "profesor123"},
-            "estudiante1": {"cedula": "1234567890", "password": "estudiante123"},
-            "estudiante2": {"cedula": "0987654321", "password": "estudiante123"},
-            "estudiante3": {"cedula": "1122334455", "password": "estudiante123"}
-        }
+        "users_created": 7,
+        "programs_created": 3,
+        "note": "Las credenciales de acceso están documentadas en el archivo USUARIOS_Y_CONTRASEÑAS.txt del repositorio"
     }
 
 # --- Stats Route ---
