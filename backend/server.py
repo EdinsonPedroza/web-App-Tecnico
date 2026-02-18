@@ -33,11 +33,15 @@ logger = logging.getLogger(__name__)
 # MongoDB connection
 # Use environment variable or default to localhost for local development
 mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-# Log connection without exposing sensitive information
-if 'localhost' in mongo_url or '127.0.0.1' in mongo_url:
-    logger.info("Connecting to MongoDB at: localhost")
-else:
-    logger.info("Connecting to MongoDB (cloud/remote)")
+# Log connection without exposing sensitive information (credentials, ports, etc.)
+def redact_mongo_url(url: str) -> str:
+    """Redact sensitive information from MongoDB URL for logging"""
+    if 'localhost' in url or '127.0.0.1' in url:
+        return "localhost"
+    # For remote URLs, just indicate it's remote without showing host/credentials
+    return "cloud/remote"
+
+logger.info(f"Connecting to MongoDB at: {redact_mongo_url(mongo_url)}")
 try:
     client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
     db = client[os.environ.get('DB_NAME', 'educando_db')]
@@ -79,6 +83,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     # Only expose detailed error in development (when DEBUG env var is set)
     debug_mode = os.environ.get('DEBUG', 'false').lower() == 'true'
+    if debug_mode:
+        logger.warning("DEBUG mode is enabled - detailed errors are exposed to clients")
     return JSONResponse(
         status_code=500,
         content={
@@ -1974,10 +1980,14 @@ async def root():
 
 app.include_router(api_router)
 
+# Configure CORS origins
+cors_origins_str = os.environ.get('CORS_ORIGINS', '*')
+cors_origins = cors_origins_str.split(',') if ',' in cors_origins_str else [cors_origins_str]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(',') if ',' in os.environ.get('CORS_ORIGINS', '*') else [os.environ.get('CORS_ORIGINS', '*')],
+    allow_origins=cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
