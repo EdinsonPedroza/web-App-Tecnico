@@ -38,10 +38,7 @@ services:
         - frontend/**
     envVars:
       - key: REACT_APP_BACKEND_URL
-        fromService:
-          type: web
-          name: educando-backend
-          property: hostWithScheme
+        value: ""
       - key: BACKEND_URL
         fromService:
           type: web
