@@ -9,12 +9,13 @@ from passlib.context import CryptContext
 # Configuración de bcrypt (igual que en server.py)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Contraseñas de prueba
+# Contraseñas de prueba - NOTA: Estas son las contraseñas del sistema
+# Ver USUARIOS_Y_CONTRASEÑAS.txt para credenciales completas
 passwords_to_test = {
-    "editor": "editor123",
-    "admin": "admin123",
-    "profesor": "profesor123",
-    "estudiante": "estudiante123"
+    "editor": "Editor2026*CM",
+    "admin": "Admin2026*LT",
+    "profesor": "Profe2026*DS",
+    "estudiante": "Estud2026*SM"
 }
 
 print("=" * 70)
@@ -26,7 +27,7 @@ print("1. Verificando que bcrypt está funcionando correctamente:")
 print("-" * 70)
 
 # Probar hash y verificación
-test_password = "editor123"
+test_password = "Editor2026*CM"
 test_hash = pwd_context.hash(test_password)
 
 print(f"   Contraseña de prueba: {test_password}")
@@ -56,7 +57,7 @@ print("3. Verificación de hash específico del editor en el código:")
 print("-" * 70)
 
 # Este es el hash que debería estar en la base de datos para el editor
-editor_password = "editor123"
+editor_password = "Editor2026*CM"
 # Simular lo que hace el sistema al crear el usuario
 editor_hash_from_code = pwd_context.hash(editor_password)
 
@@ -65,11 +66,11 @@ print(f"   Hash generado: {editor_hash_from_code[:50]}...")
 print()
 
 # Verificar que funciona
-verification_result = pwd_context.verify("editor123", editor_hash_from_code)
-print(f"   ✓ Verificación con 'editor123': {verification_result}")
+verification_result = pwd_context.verify("Editor2026*CM", editor_hash_from_code)
+print(f"   ✓ Verificación con 'Editor2026*CM': {verification_result}")
 
-wrong_verification = pwd_context.verify("editor1234", editor_hash_from_code)
-print(f"   ✓ Verificación con 'editor1234' (incorrecta): {wrong_verification}")
+wrong_verification = pwd_context.verify("wrongpassword", editor_hash_from_code)
+print(f"   ✓ Verificación con 'wrongpassword' (incorrecta): {wrong_verification}")
 print()
 
 print("4. Resumen:")
@@ -80,13 +81,14 @@ print("   ✓ La verificación de contraseñas funciona")
 print()
 print("   Credenciales para probar el login:")
 print("   - Pestaña: PROFESOR")
-print("   - Email: editor@educando.com")
-print("   - Contraseña: editor123")
+print("   - Email: carlos.mendez@educando.com")
+print("   - Contraseña: Editor2026*CM")
 print()
 print("=" * 70)
 print("NOTA: Si el login falla, verifica:")
 print("  1. Que estés usando la pestaña 'PROFESOR' (no 'Estudiante')")
-print("  2. Que el email sea exactamente: editor@educando.com")
-print("  3. Que la contraseña sea exactamente: editor123")
+print("  2. Que el email sea exactamente: carlos.mendez@educando.com")
+print("  3. Que la contraseña sea exactamente: Editor2026*CM")
 print("  4. Que los datos iniciales se hayan creado en la base de datos")
+print("  5. Ver USUARIOS_Y_CONTRASEÑAS.txt para todas las credenciales")
 print("=" * 70)
