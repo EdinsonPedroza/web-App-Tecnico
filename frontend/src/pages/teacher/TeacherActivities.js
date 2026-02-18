@@ -12,12 +12,9 @@ import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock, Upload, Download, File, Eye, Image, Check } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
+import { ensureProtocol } from '@/utils/url';
 
-// Ensure the backend URL has a protocol
-const rawBackendUrl = process.env.REACT_APP_BACKEND_URL;
-const BACKEND_URL = rawBackendUrl && !rawBackendUrl.startsWith('http') 
-  ? `https://${rawBackendUrl}` 
-  : rawBackendUrl;
+const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 
 export default function TeacherActivities() {
   const { courseId } = useParams();
