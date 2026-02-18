@@ -40,10 +40,7 @@ services:
       - key: REACT_APP_BACKEND_URL
         value: ""
       - key: BACKEND_URL
-        fromService:
-          type: web
-          name: educando-backend
-          property: hostWithScheme
+        value: "http://educando-backend:10000"
       - key: PORT
         value: 10000
     autoDeploy: true
