@@ -4,7 +4,10 @@
  * @returns {string} - The URL with protocol (https:// if missing)
  */
 export function ensureProtocol(url) {
-  if (!url || url.toLowerCase().startsWith('http')) {
+  if (!url) {
+    return url;
+  }
+  if (url.toLowerCase().startsWith('http')) {
     return url;
   }
   return `https://${url}`;
