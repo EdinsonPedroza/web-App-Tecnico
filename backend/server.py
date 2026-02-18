@@ -17,6 +17,7 @@ import json
 import shutil
 import re
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 from collections import defaultdict
 import asyncio
 
@@ -332,16 +333,24 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against bcrypt hash"""
+    """Verify password against bcrypt hash, with fallback for legacy SHA256 hashes"""
     try:
         # Try bcrypt first (new format)
         return pwd_context.verify(plain_password, hashed_password)
-    except Exception:
-        # Fallback to SHA256 for legacy passwords
-        try:
-            return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
-        except Exception:
-            return False
+    except (ValueError, UnknownHashError):
+        # Only fall back to SHA256 for legacy passwords that don't have bcrypt format
+        # bcrypt hashes start with $2a$, $2b$, or $2y$
+        if not hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
+            try:
+                return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+            except Exception:
+                return False
+        # If it's a bcrypt hash but verification failed, password is wrong
+        return False
+    except Exception as e:
+        # Log unexpected errors
+        logger.error(f"Unexpected error during password verification: {e}")
+        return False
 
 def create_token(user_id: str, role: str) -> str:
     payload = {
