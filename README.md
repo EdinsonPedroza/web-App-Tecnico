@@ -43,35 +43,53 @@ Aplicación web full-stack para gestión educativa con React (frontend), FastAPI
 
 ## 🌐 ¿Quieres Subir Esto a la Web?
 
-### 🎯 LA FORMA MÁS FÁCIL: Render.com (15 minutos) ⭐
+### 🎯 Despliegue en Render.com (Recomendado) ⭐
 
-**¿Railway no funcionó? ¡Render es la solución!**
+**La forma más fácil de llevar tu aplicación a producción**
 
-1. **📖 Lee:** [INICIO_RAPIDO_RENDER.md](INICIO_RAPIDO_RENDER.md) ⭐ **Empieza aquí**
+1. **📖 Lee:** [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md) - Guía paso a paso
 2. **🚀 Ve a:** https://render.com
-3. **⏱️ Tiempo:** 15 minutos
-4. **💰 Costo:** Desde $0 (gratuito) hasta ~$14/mes
+3. **⏱️ Tiempo:** 15-30 minutos
+4. **💰 Costo:** Desde $0 (gratuito para desarrollo)
 5. **🎉 Resultado:** Tu app online con HTTPS automático
 
-### 📚 Todas las Guías Disponibles:
+### 📚 Guías de Despliegue Disponibles:
 
-#### Despliegue en Render (Recomendado ✅)
-- **🚀 [Inicio Rápido - Render](INICIO_RAPIDO_RENDER.md)** ⭐ **La forma MÁS FÁCIL** (20 min)
-- **📖 [Guía Completa - Render](GUIA_RENDER.md)** - Documentación completa paso a paso
-- **✅ [Checklist de Despliegue - Render](CHECKLIST_RENDER.md)** - Lista verificable para imprimir
-- **🔄 [Comparación Railway vs Render](COMPARACION_RAILWAY_VS_RENDER.md)** - Por qué cambiamos
+- **[RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)** - Configurar MongoDB Atlas y Render paso a paso
+- **[DESPLIEGUE.md](DESPLIEGUE.md)** - Guía técnica completa de despliegue
+- **[GUIA_PRODUCCION_3000_USUARIOS.md](GUIA_PRODUCCION_3000_USUARIOS.md)** - Escalamiento para producción (3000+ usuarios)
 
-#### Otras Opciones de Despliegue
-- **🚂 [Paso a Paso con Railway](PASO_A_PASO_RAILWAY.md)** - Si prefieres Railway (no recomendado)
-- **📱 [Guía Rápida - Comparación](GUIA_RAPIDA_DESPLIEGUE.md)** - Railway vs Render vs VPS
-- **📋 [Tarjeta de Referencia](REFERENCIA_RAPIDA.md)** - Para imprimir o consulta rápida
-- **📚 [Guía Completa Técnica](DESPLIEGUE.md)** - Documentación completa y detallada
-- **✅ [Checklist Post-Deploy](CHECKLIST_POST_DEPLOY.md)** - Verifica en 5 minutos que todo quedó bien
-- **🚀 [Para 3000+ Usuarios](DEPLOYMENT_RECOMMENDATIONS.md)** - Escalamiento profesional
+**¿Primera vez desplegando?** → Comienza con RENDER_MONGODB_SETUP.md  
+**¿Necesitas soportar muchos usuarios?** → Lee GUIA_PRODUCCION_3000_USUARIOS.md  
+**¿Quieres entender todo el proceso?** → Lee DESPLIEGUE.md
 
-**Railway no funcionó? → Usa Render.com (recomendado)** ✅  
-**Quieres ahorrar? → Usa VPS (~$5/mes, más técnico)**  
-**Primera vez desplegando? → Sigue el tutorial de Render paso a paso**
+---
+
+## 🏭 ¿Necesitas la Plataforma para 3000 Usuarios?
+
+### 🚀 GUÍA DE PRODUCCIÓN COMPLETA
+
+**¿La plataforma se va a caer con muchos usuarios? ¿Qué servidor necesito? ¿Cuánto cuesta?**
+
+📖 **Lee la Guía Completa:** [GUIA_PRODUCCION_3000_USUARIOS.md](GUIA_PRODUCCION_3000_USUARIOS.md)
+
+Esta guía incluye:
+- ✅ Todo lo que necesitas para soportar 3000 usuarios simultáneos
+- ✅ Configuración paso a paso del servidor y base de datos
+- ✅ Costos estimados ($30-310/mes según escala)
+- ✅ Arquitectura recomendada con escalamiento horizontal
+- ✅ Monitoreo y troubleshooting
+- ✅ Checklist completo de implementación
+
+**Resumen Rápido:**
+- **MongoDB:** Upgrade a M10 ($57/mes) - 3000+ conexiones
+- **Backend:** 4-8 instancias con múltiples workers ($28/mes)
+- **Redis:** Para sesiones distribuidas ($15/mes)
+- **CDN:** Cloudflare (gratis) para archivos estáticos
+- **Monitoreo:** New Relic o DataDog (opcional, $15/mes)
+
+**Configuración Actual:** Soporta ~200-500 usuarios simultáneos (gratis)  
+**Configuración 3000 usuarios:** ~$107/mes (M10 + 4 backends + Redis)
 
 ---
 

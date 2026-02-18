@@ -10,9 +10,11 @@ services:
     envVars:
       - key: MONGO_URL
         sync: false
-        # IMPORTANTE: Esta variable DEBE ser configurada manualmente en Render
+        # ⚠️ IMPORTANTE: sync: false significa que esta variable NO se sincroniza desde Git
+        # Razón: La connection string contiene credenciales sensibles (usuario/password)
+        # Esta variable DEBE ser configurada manualmente en el Dashboard de Render
         # Ver archivo RENDER_MONGODB_SETUP.md para instrucciones completas
-        # Ejemplo: mongodb+srv://usuario:password@cluster.mongodb.net/educando_db?retryWrites=true&w=majority
+        # Ejemplo: mongodb+srv://usuario:password@cluster.mongodb.net/WebApp?retryWrites=true&w=majority
       - key: DB_NAME
         value: WebApp
       - key: PASSWORD_STORAGE_MODE
