@@ -32,7 +32,7 @@ async def main():
     
     # Verificar variables de entorno
     mongo_url = os.environ.get('MONGO_URL')
-    db_name = os.environ.get('DB_NAME', 'educando_db')
+    db_name = os.environ.get('DB_NAME', 'webApp')
     
     print("📋 Variables de entorno:")
     print(f"   ✅ MONGO_URL: {'Configurada' if mongo_url else '❌ NO CONFIGURADA'}")
