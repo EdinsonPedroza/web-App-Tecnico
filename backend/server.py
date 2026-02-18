@@ -348,8 +348,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         # If it's a bcrypt hash but verification failed, password is wrong
         return False
     except Exception as e:
-        # Log unexpected errors
-        logger.error(f"Unexpected error during password verification: {e}")
+        # Log unexpected errors without exposing sensitive details
+        logger.error(f"Unexpected error during password verification: {type(e).__name__}")
         return False
 
 def create_token(user_id: str, role: str) -> str:
