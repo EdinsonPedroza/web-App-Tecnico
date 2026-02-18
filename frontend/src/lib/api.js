@@ -2,9 +2,8 @@ import axios from 'axios';
 import { ensureProtocol } from '@/utils/url';
 
 // If REACT_APP_BACKEND_URL is empty, use relative URLs (nginx will proxy to backend)
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL 
-  ? ensureProtocol(process.env.REACT_APP_BACKEND_URL)
-  : '';
+const backendUrlEnv = process.env.REACT_APP_BACKEND_URL || '';
+const BACKEND_URL = backendUrlEnv.trim() ? ensureProtocol(backendUrlEnv) : '';
 const API_BASE = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 
 const api = axios.create({
