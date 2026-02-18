@@ -10,7 +10,8 @@ import os
 from pathlib import Path
 
 # Configurar path para importar desde backend
-backend_dir = Path(__file__).parent / "backend"
+# Este script está en scripts/, por lo que backend está en el directorio padre
+backend_dir = Path(__file__).parent.parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
 try:

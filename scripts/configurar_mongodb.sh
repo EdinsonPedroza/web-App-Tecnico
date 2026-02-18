@@ -62,7 +62,7 @@ if [ -f "$ENV_LOCAL_FILE" ]; then
     echo "   - Sin Docker: cd backend && uvicorn server:app --reload"
     echo ""
     echo "3. Verifica la conexión:"
-    echo "   python verificar_webapp.py"
+    echo "   python scripts/verificar_webapp.py"
     echo ""
     echo "📖 Guía completa: CONFIGURACION_MONGODB.md"
     echo "🚀 Inicio rápido: INICIO_RAPIDO_WEBAPP.md"

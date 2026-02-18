@@ -76,20 +76,20 @@ Aplicación web full-stack para gestión educativa con React (frontend), FastAPI
 Esta guía incluye:
 - ✅ Todo lo que necesitas para soportar 3000 usuarios simultáneos
 - ✅ Configuración paso a paso del servidor y base de datos
-- ✅ Costos estimados ($40-150/mes)
+- ✅ Costos estimados ($30-310/mes según escala)
 - ✅ Arquitectura recomendada con escalamiento horizontal
 - ✅ Monitoreo y troubleshooting
 - ✅ Checklist completo de implementación
 
 **Resumen Rápido:**
 - **MongoDB:** Upgrade a M10 ($57/mes) - 3000+ conexiones
-- **Backend:** 4-8 instancias con múltiples workers
+- **Backend:** 4-8 instancias con múltiples workers ($28/mes)
 - **Redis:** Para sesiones distribuidas ($15/mes)
 - **CDN:** Cloudflare (gratis) para archivos estáticos
-- **Monitoreo:** New Relic o DataDog (opcional)
+- **Monitoreo:** New Relic o DataDog (opcional, $15/mes)
 
 **Configuración Actual:** Soporta ~200-500 usuarios simultáneos (gratis)  
-**Configuración Producción:** Soporta 3000+ usuarios (~$100/mes)
+**Configuración 3000 usuarios:** ~$107/mes (M10 + 4 backends + Redis)
 
 ---
 

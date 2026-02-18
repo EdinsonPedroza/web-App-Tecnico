@@ -82,7 +82,7 @@ https://cloud.mongodb.com/
 | Tier | Storage | RAM | Conexiones | Usuarios | Costo |
 |------|---------|-----|------------|----------|-------|
 | M0 | 512MB | 0.5GB | 500 | 500 | Gratis |
-| M2 | 10GB | 2GB | 1000+ | 1500 | $9/mes |
+| M2 | 2GB | 2GB | 1000+ | 1000-1500 | $9/mes |
 | M10 | 10GB | 2GB | 3000+ | 3000+ | $57/mes |
 
 **Para 3000 usuarios:** Usar M10 o superior
@@ -367,7 +367,7 @@ envVars:
 
 ## 💰 Costos Mensuales Estimados
 
-### Configuración Mínima (1500 usuarios)
+### Configuración Mínima (500-1000 usuarios)
 
 | Servicio | Tier | Costo |
 |----------|------|-------|
