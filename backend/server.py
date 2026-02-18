@@ -333,37 +333,50 @@ def sanitize_string(input_str: str, max_length: int = 500) -> str:
     return sanitized[:max_length]
 
 def hash_password(password: str) -> str:
-    """Store password based on PASSWORD_STORAGE_MODE (plain or bcrypt)"""
+    """Store password based on PASSWORD_STORAGE_MODE (plain or bcrypt)
+    
+    WARNING: Plain text storage is insecure and should only be used for
+    backwards compatibility with existing data. Set PASSWORD_STORAGE_MODE='bcrypt'
+    for production systems.
+    """
     if PASSWORD_STORAGE_MODE == 'plain':
         # Store password as plain text (for backwards compatibility with existing data)
+        # WARNING: This is insecure! Only use for compatibility with existing data.
+        logger.warning("Storing password as plain text (PASSWORD_STORAGE_MODE='plain'). "
+                      "This is insecure. Consider using PASSWORD_STORAGE_MODE='bcrypt' for production.")
         return password
     else:
-        # Hash password using bcrypt
+        # Hash password using bcrypt (secure)
         return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against bcrypt hash, SHA256, or plain text"""
-    # First, try plain text comparison (for backwards compatibility with existing data)
-    if plain_password == hashed_password:
-        return True
+    # Check format first to avoid timing attacks
+    # bcrypt hashes start with $2a$, $2b$, or $2y$
+    if hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
+        # Stored as bcrypt hash
+        try:
+            return pwd_context.verify(plain_password, hashed_password)
+        except Exception as e:
+            logger.error(f"Bcrypt verification error: {type(e).__name__}")
+            return False
     
-    try:
-        # Try bcrypt (new format)
-        return pwd_context.verify(plain_password, hashed_password)
-    except (ValueError, UnknownHashError):
-        # Fall back to SHA256 for legacy passwords that don't have bcrypt format
-        # bcrypt hashes start with $2a$, $2b$, or $2y$
-        if not hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
-            try:
-                return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
-            except Exception:
-                return False
-        # If it's a bcrypt hash but verification failed, password is wrong
-        return False
-    except Exception as e:
-        # Log unexpected errors without exposing sensitive details
-        logger.error(f"Unexpected error during password verification: {type(e).__name__}")
-        return False
+    # Check if it's a SHA256 hash (64 hex characters)
+    elif len(hashed_password) == 64 and all(c in '0123456789abcdef' for c in hashed_password.lower()):
+        # Stored as SHA256 hash
+        try:
+            return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+        except Exception:
+            return False
+    
+    # Otherwise, try plain text comparison (for backwards compatibility)
+    else:
+        # Log warning for security audit
+        if PASSWORD_STORAGE_MODE == 'plain':
+            logger.debug("Plain text password comparison used (PASSWORD_STORAGE_MODE='plain')")
+        else:
+            logger.warning(f"Plain text password detected in database for backwards compatibility")
+        return plain_password == hashed_password
 
 def create_token(user_id: str, role: str) -> str:
     payload = {
