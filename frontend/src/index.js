@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "@/index.css";
 import App from "@/App";
-import { logEnvironmentInfo } from "@/utils/envValidation";
+import { logEnvironmentInfo, isChunkError } from "@/utils/envValidation";
 
 // Log environment configuration for debugging
 logEnvironmentInfo();
@@ -18,16 +18,8 @@ window.addEventListener('error', (event) => {
     error: event.error,
   });
 
-  // Check if it's a chunk loading error by examining error properties
-  const isChunkError = event.error?.name === 'ChunkLoadError' ||
-                       (event.error?.message && (
-                         event.error.message.toLowerCase().includes('chunk') ||
-                         event.error.message.toLowerCase().includes('loading css') ||
-                         event.error.message.toLowerCase().includes('loading js')
-                       )) ||
-                       event.filename?.includes('chunk');
-
-  if (isChunkError) {
+  // Check if it's a chunk loading error using shared utility
+  if (isChunkError(event.error) || event.filename?.includes('chunk')) {
     console.warn('Chunk loading error detected. This usually means the app was updated. Please refresh the page.');
   }
 });

@@ -6,6 +6,26 @@
  */
 
 /**
+ * Detects if an error is a chunk loading error
+ * @param {Error} error - The error to check
+ * @returns {boolean} True if it's a chunk loading error
+ */
+export function isChunkError(error) {
+  if (!error) return false;
+
+  // Check error name
+  if (error.name === 'ChunkLoadError') {
+    return true;
+  }
+
+  // Check error message for chunk-related keywords
+  const message = error.message?.toLowerCase() || '';
+  return message.includes('chunk') ||
+         message.includes('loading css') ||
+         message.includes('loading js');
+}
+
+/**
  * Validates the backend URL configuration
  * @returns {Object} Validation result with isValid flag and optional error message
  */

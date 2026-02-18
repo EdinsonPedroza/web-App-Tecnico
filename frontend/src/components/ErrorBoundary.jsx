@@ -2,6 +2,7 @@ import React from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { isChunkError } from '@/utils/envValidation';
 
 /**
  * ErrorBoundary Component
@@ -27,14 +28,12 @@ class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
-    // Check if it's a chunk loading error (common with React lazy loading and outdated cache)
-    const isChunkError = error?.message?.toLowerCase().includes('chunk') ||
-                         error?.message?.toLowerCase().includes('loading') ||
-                         error?.name === 'ChunkLoadError';
+    // Check if it's a chunk loading error using shared utility
+    const chunkError = isChunkError(error);
 
     return {
       hasError: true,
-      isChunkError,
+      isChunkError: chunkError,
     };
   }
 
