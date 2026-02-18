@@ -254,9 +254,10 @@ async def create_initial_data():
         {"id": "user-admin-1", "name": "Laura Torres", "email": "laura.torres@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*LT"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3002223344", "active": True, "module": None, "grupo": None},
         {"id": "user-admin-2", "name": "Roberto Ramirez", "email": "roberto.ramirez@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*RR"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3003334455", "active": True, "module": None, "grupo": None},
         
-        # 2 Profesores
+        # 3 Profesores
         {"id": "user-prof-1", "name": "Diana Silva", "email": "diana.silva@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*DS"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3004445566", "active": True, "module": None, "grupo": None},
         {"id": "user-prof-2", "name": "Miguel Castro", "email": "miguel.castro@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*MC"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3005556677", "active": True, "module": None, "grupo": None},
+        {"id": "user-prof-3", "name": "Profesor Sl", "email": "pr.o.fe.sorSl@educando.com", "cedula": None, "password_hash": hash_password("educador123"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3009998877", "active": True, "module": None, "grupo": None},
         
         # 2 Estudiantes
         {"id": "user-est-1", "name": "Sofía Morales", "email": None, "cedula": "1001234567", "password_hash": hash_password("Estud2026*SM"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3006667788", "active": True, "module": 1, "grupo": "Febrero 2026"},
