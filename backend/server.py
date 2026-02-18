@@ -231,40 +231,32 @@ async def create_initial_data():
                     upsert=True
                 )
     
-    # Siempre asegurar que el editor exista (independiente de otros usuarios)
-    editor = await db.users.find_one({"email": "editorgeneral@educando.com"})
-    if not editor:
-        print("Creando usuario editor...")
-        editor_user = {
-            "id": "user-editor-2",
-            "name": "Editor General",
-            "email": "editorgeneral@educando.com",
-            "cedula": None,
-            "password_hash": hash_password("EditorSeguro2025"),
-            "role": "editor",
-            "program_id": None,
-            "program_ids": [],
-            "subject_ids": [],
-            "phone": "3002222222",
-            "active": True,
-            "module": None,
-            "grupo": None
-        }
-        await db.users.update_one({"id": editor_user["id"]}, {"$set": editor_user}, upsert=True)
+    # Eliminar todos los usuarios existentes (solo en primera ejecución)
+    # Verificar si necesitamos recrear usuarios
+    existing_user_count = await db.users.count_documents({})
+    if existing_user_count > 0:
+        print(f"Ya existen {existing_user_count} usuarios en la base de datos.")
+        print("Para recrear todos los usuarios, elimina manualmente la colección users de MongoDB.")
+        # Solo verificamos/actualizamos programas y materias
+        return
     
-    # Crear usuarios solo si no existe el admin
-    admin = await db.users.find_one({"email": "admin@educando.com"})
-    if admin:
-        print("Los usuarios ya existen, solo se verificaron/actualizaron programas y materias")
-        return  # Los usuarios ya existen
-    
-    print("Creando usuarios iniciales...")
+    # Crear nuevos usuarios
+    print("Creando nuevos usuarios...")
     users = [
-        {"id": "user-editor", "name": "Editor Principal", "email": "editor@educando.com", "cedula": None, "password_hash": hash_password("editor123"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001111111", "active": True, "module": None, "grupo": None},
-        {"id": "user-admin", "name": "Administrador General", "email": "admin@educando.com", "cedula": None, "password_hash": hash_password("admin123"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001234567", "active": True, "module": None, "grupo": None},
-        {"id": "user-prof-1", "name": "María García López", "email": "profesor@educando.com", "cedula": None, "password_hash": hash_password("profesor123"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3009876543", "active": True, "module": None, "grupo": None},
-        {"id": "user-est-1", "name": "Juan Martínez Ruiz", "email": None, "cedula": "1234567890", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3101234567", "active": True, "module": 1, "grupo": "Enero 2025"},
-        {"id": "user-est-2", "name": "Ana Sofía Hernández", "email": None, "cedula": "0987654321", "password_hash": hash_password("estudiante123"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3207654321", "active": True, "module": 1, "grupo": "Enero 2025"},
+        # 1 Editor
+        {"id": "user-editor-1", "name": "Carlos Mendez", "email": "carlos.mendez@educando.com", "cedula": None, "password_hash": hash_password("Editor2026*CM"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001112233", "active": True, "module": None, "grupo": None},
+        
+        # 2 Administradores
+        {"id": "user-admin-1", "name": "Laura Torres", "email": "laura.torres@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*LT"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3002223344", "active": True, "module": None, "grupo": None},
+        {"id": "user-admin-2", "name": "Roberto Ramirez", "email": "roberto.ramirez@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*RR"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3003334455", "active": True, "module": None, "grupo": None},
+        
+        # 2 Profesores
+        {"id": "user-prof-1", "name": "Diana Silva", "email": "diana.silva@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*DS"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3004445566", "active": True, "module": None, "grupo": None},
+        {"id": "user-prof-2", "name": "Miguel Castro", "email": "miguel.castro@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*MC"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3005556677", "active": True, "module": None, "grupo": None},
+        
+        # 2 Estudiantes
+        {"id": "user-est-1", "name": "Sofía Morales", "email": None, "cedula": "1001234567", "password_hash": hash_password("Estud2026*SM"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3006667788", "active": True, "module": 1, "grupo": "Febrero 2026"},
+        {"id": "user-est-2", "name": "Andrés Lopez", "email": None, "cedula": "1002345678", "password_hash": hash_password("Estud2026*AL"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3007778899", "active": True, "module": 1, "grupo": "Febrero 2026"},
     ]
     for u in users:
         await db.users.update_one({"id": u["id"]}, {"$set": u}, upsert=True)
@@ -275,11 +267,11 @@ async def create_initial_data():
         first_subject = admin_subjects[0]
         course = {
             "id": "course-1", 
-            "name": f"{first_subject['name']} - Enero 2025", 
+            "name": f"{first_subject['name']} - Febrero 2026", 
             "program_id": "prog-admin", 
             "subject_id": first_subject["id"], 
             "teacher_id": "user-prof-1", 
-            "year": 2025, 
+            "year": 2026, 
             "student_ids": ["user-est-1", "user-est-2"], 
             "active": True
         }
@@ -317,12 +309,8 @@ async def create_initial_data():
             await db.activities.update_one({"id": a["id"]}, {"$set": a}, upsert=True)
     
     print("Datos iniciales creados exitosamente")
-    print("Credenciales:")
-    print("  Editor: editorgeneral@educando.com / EditorSeguro2025")
-    print("  Editor (legacy): editor@educando.com / editor123")
-    print("  Admin: admin@educando.com / admin123")
-    print("  Profesor: profesor@educando.com / profesor123")
-    print("  Estudiante: 1234567890 / estudiante123")
+    print("Credenciales creadas para 7 usuarios.")
+    print("Ver archivo USUARIOS_Y_CONTRASEÑAS.txt para detalles de acceso.")
 
 # --- Utility Functions ---
 def sanitize_string(input_str: str, max_length: int = 500) -> str:

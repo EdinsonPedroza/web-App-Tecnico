@@ -7,100 +7,117 @@
 
 Los usuarios se crean automáticamente en el archivo:
   📁 Archivo: backend/server.py
-  📍 Líneas: 190-196
+  📍 Líneas: 234-262
 
 Función que los crea: create_initial_data()
-  📍 Líneas: 74-252
+  📍 Líneas: 124-327
 
 Autenticación/Login:
   📍 Líneas: 530-615 (función login)
-  📍 Líneas: 266-280 (funciones de hash y verificación de contraseñas)
+  📍 Líneas: 339-355 (funciones de hash y verificación de contraseñas)
 
 ═══════════════════════════════════════════════════════════════════════════
   CREDENCIALES DE USUARIOS DISPONIBLES
 ═══════════════════════════════════════════════════════════════════════════
 
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 1. EDITOR PRINCIPAL                                                     │
+│ 1. EDITOR                                                               │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Rol:             editor                                                 │
-│ Usuario/Email:   editor@educando.com                                    │
-│ Contraseña:      editor123                                              │
-│ Nombre:          Editor Principal                                       │
-│ Teléfono:        3001111111                                             │
+│ Usuario/Email:   carlos.mendez@educando.com                             │
+│ Contraseña:      Editor2026*CM                                          │
+│ Nombre:          Carlos Mendez                                          │
+│ Teléfono:        3001112233                                             │
 │ Acceso:          Gestión de contenido educativo                         │
 │                                                                          │
 │ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "PROFESOR"             │
 │     (Admin y Editor inician sesión desde la pestaña de Profesor)        │
-│                                                                          │
-│ 📝 Código: backend/server.py - Línea 191                               │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 2. ADMINISTRADOR GENERAL                                                │
+│ 2. ADMINISTRADOR 1                                                      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Rol:             admin                                                  │
-│ Usuario/Email:   admin@educando.com                                     │
-│ Contraseña:      admin123                                               │
-│ Nombre:          Administrador General                                  │
-│ Teléfono:        3001234567                                             │
+│ Usuario/Email:   laura.torres@educando.com                              │
+│ Contraseña:      Admin2026*LT                                           │
+│ Nombre:          Laura Torres                                           │
+│ Teléfono:        3002223344                                             │
 │ Acceso:          Control total del sistema                              │
 │                                                                          │
 │ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "PROFESOR"             │
 │     (Admin y Editor inician sesión desde la pestaña de Profesor)        │
-│                                                                          │
-│ 📝 Código: backend/server.py - Línea 192                               │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 3. PROFESOR DE EJEMPLO                                                  │
+│ 3. ADMINISTRADOR 2                                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Rol:             admin                                                  │
+│ Usuario/Email:   roberto.ramirez@educando.com                           │
+│ Contraseña:      Admin2026*RR                                           │
+│ Nombre:          Roberto Ramirez                                        │
+│ Teléfono:        3003334455                                             │
+│ Acceso:          Control total del sistema                              │
+│                                                                          │
+│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "PROFESOR"             │
+│     (Admin y Editor inician sesión desde la pestaña de Profesor)        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 4. PROFESOR 1                                                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Rol:             profesor                                               │
-│ Usuario/Email:   profesor@educando.com                                  │
-│ Contraseña:      profesor123                                            │
-│ Nombre:          María García López                                     │
-│ Teléfono:        3009876543                                             │
+│ Usuario/Email:   diana.silva@educando.com                               │
+│ Contraseña:      Profe2026*DS                                           │
+│ Nombre:          Diana Silva                                            │
+│ Teléfono:        3004445566                                             │
 │ Acceso:          Gestión de cursos y actividades                        │
 │                                                                          │
 │ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "PROFESOR"             │
-│                                                                          │
-│ 📝 Código: backend/server.py - Línea 193                               │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 4. ESTUDIANTE 1                                                         │
+│ 5. PROFESOR 2                                                           │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ Rol:             estudiante                                             │
-│ Usuario/Cédula:  1234567890                                             │
-│ Contraseña:      estudiante123                                          │
-│ Nombre:          Juan Martínez Ruiz                                     │
-│ Teléfono:        3101234567                                             │
-│ Programa:        Administración de Empresas                             │
-│ Módulo:          1                                                      │
-│ Grupo:           Enero 2025                                             │
+│ Rol:             profesor                                               │
+│ Usuario/Email:   miguel.castro@educando.com                             │
+│ Contraseña:      Profe2026*MC                                           │
+│ Nombre:          Miguel Castro                                          │
+│ Teléfono:        3005556677                                             │
+│ Acceso:          Gestión de cursos y actividades                        │
 │                                                                          │
-│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "ESTUDIANTE"           │
-│     (Los estudiantes usan su número de cédula, no email)                │
-│                                                                          │
-│ 📝 Código: backend/server.py - Línea 194                               │
+│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "PROFESOR"             │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 5. ESTUDIANTE 2                                                         │
+│ 6. ESTUDIANTE 1                                                         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ Rol:             estudiante                                             │
-│ Usuario/Cédula:  0987654321                                             │
-│ Contraseña:      estudiante123                                          │
-│ Nombre:          Ana Sofía Hernández                                    │
-│ Teléfono:        3207654321                                             │
+│ Usuario/Cédula:  1001234567                                             │
+│ Contraseña:      Estud2026*SM                                           │
+│ Nombre:          Sofía Morales                                          │
+│ Teléfono:        3006667788                                             │
 │ Programa:        Administración de Empresas                             │
 │ Módulo:          1                                                      │
-│ Grupo:           Enero 2025                                             │
+│ Grupo:           Febrero 2026                                           │
 │                                                                          │
 │ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "ESTUDIANTE"           │
 │     (Los estudiantes usan su número de cédula, no email)                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 7. ESTUDIANTE 2                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Rol:             estudiante                                             │
+│ Usuario/Cédula:  1002345678                                             │
+│ Contraseña:      Estud2026*AL                                           │
+│ Nombre:          Andrés Lopez                                           │
+│ Teléfono:        3007778899                                             │
+│ Programa:        Administración de Empresas                             │
+│ Módulo:          1                                                      │
+│ Grupo:           Febrero 2026                                           │
 │                                                                          │
-│ 📝 Código: backend/server.py - Línea 195                               │
+│ ⚠️  IMPORTANTE: Inicia sesión usando la pestaña "ESTUDIANTE"           │
+│     (Los estudiantes usan su número de cédula, no email)                │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ═══════════════════════════════════════════════════════════════════════════
@@ -132,8 +149,8 @@ Autenticación/Login:
 Sistema de Autenticación:
 ─────────────────────────────────────────────────────────────────────────
   • Librería de hash: bcrypt (passlib)
-  • Función de hash: hash_password() - Línea 266-268
-  • Función de verificación: verify_password() - Línea 270-280
+  • Función de hash: hash_password() - Línea 339-341
+  • Función de verificación: verify_password() - Línea 343-355
   • Autenticación JWT con token
   • Límite de intentos de login: 5 intentos cada 5 minutos
   • Compatibilidad con hashes SHA256 legacy
@@ -174,34 +191,25 @@ Base de Datos:
 Interfaz de Usuario (frontend):
 ─────────────────────────────────────────────────────────────────────────
   • Archivo: frontend/src/pages/LoginPage.js
-  • Líneas: 1-198
   • Dos pestañas: "Estudiante" y "Profesor"
-  • Nota visible (línea 118): "Admin y Editor inician sesión usando Profesor"
 
 ═══════════════════════════════════════════════════════════════════════════
   SOLUCIÓN DE PROBLEMAS
 ═══════════════════════════════════════════════════════════════════════════
 
-❌ Problema: "Credenciales incorrectas" con usuario Editor
+❌ Problema: "Credenciales incorrectas"
 ─────────────────────────────────────────────────────────────────────────
 Solución:
-  1. Asegúrate de usar la pestaña "PROFESOR" (NO "Estudiante")
-  2. Usa el email: editor@educando.com
-  3. Usa la contraseña: editor123
-  4. Verifica que los datos fueron creados correctamente
+  1. Asegúrate de usar la pestaña correcta ("PROFESOR" o "ESTUDIANTE")
+  2. Verifica que estés usando el email o cédula correcta
+  3. Verifica que no haya espacios antes o después
+  4. Verifica que estés escribiendo correctamente la contraseña (mayúsculas, minúsculas y caracteres especiales)
 
 Verificar si el usuario existe:
   docker exec -it educando_mongodb mongosh
   use educando_db
-  db.users.findOne({email: "editor@educando.com"})
+  db.users.find({})
   exit
-
-❌ Problema: La contraseña no coincide
-─────────────────────────────────────────────────────────────────────────
-Solución:
-  1. Verifica que estés escribiendo correctamente: editor123 (todo minúsculas)
-  2. Verifica que no haya espacios antes o después
-  3. Si cambiaste la contraseña, usa la nueva
 
 ❌ Problema: No se crearon los usuarios iniciales
 ─────────────────────────────────────────────────────────────────────────
@@ -222,8 +230,8 @@ Solución:
 Estas son contraseñas de PRUEBA. Después de hacer el primer despliegue
 en producción, DEBES cambiar todas las contraseñas, especialmente:
 
-  1. admin@educando.com
-  2. editor@educando.com
+  1. Editor
+  2. Ambos administradores
   3. Cualquier otro usuario que vayas a usar en producción
 
 Cómo cambiar contraseñas:
@@ -237,7 +245,7 @@ Cómo cambiar contraseñas:
 
 ═══════════════════════════════════════════════════════════════════════════
 
-📅 Última actualización: 2026-02-17
+📅 Última actualización: 2026-02-18
 📧 Sistema: Plataforma Educando
 🔐 Seguridad: Contraseñas hasheadas con bcrypt
 
