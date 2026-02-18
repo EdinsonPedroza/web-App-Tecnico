@@ -2,10 +2,13 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { Toaster } from '@/components/ui/sonner';
+import ErrorBoundary from '@/components/ErrorBoundary';
+import EnvironmentCheck from '@/components/EnvironmentCheck';
 import '@/App.css';
 
 // Pages
 import LoginPage from '@/pages/LoginPage';
+import NotFoundPage from '@/pages/NotFoundPage';
 import EditorPage from '@/pages/editor/EditorPage';
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import ProgramsPage from '@/pages/admin/ProgramsPage';
@@ -69,50 +72,54 @@ function PublicRoute({ children }) {
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public */}
-          <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
+    <ErrorBoundary>
+      <EnvironmentCheck>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* Public */}
+              <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
 
-          {/* Editor Route */}
-          <Route path="/editor" element={<ProtectedRoute allowedRoles={['editor']}><EditorPage /></ProtectedRoute>} />
+              {/* Editor Route */}
+              <Route path="/editor" element={<ProtectedRoute allowedRoles={['editor']}><EditorPage /></ProtectedRoute>} />
 
-          {/* Admin Routes */}
-          <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
-          <Route path="/admin/programs" element={<ProtectedRoute allowedRoles={['admin']}><ProgramsPage /></ProtectedRoute>} />
-          <Route path="/admin/subjects" element={<ProtectedRoute allowedRoles={['admin']}><SubjectsPage /></ProtectedRoute>} />
-          <Route path="/admin/teachers" element={<ProtectedRoute allowedRoles={['admin']}><TeachersPage /></ProtectedRoute>} />
-          <Route path="/admin/students" element={<ProtectedRoute allowedRoles={['admin']}><StudentsPage /></ProtectedRoute>} />
-          <Route path="/admin/courses" element={<ProtectedRoute allowedRoles={['admin']}><CoursesPage /></ProtectedRoute>} />
+              {/* Admin Routes */}
+              <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+              <Route path="/admin/programs" element={<ProtectedRoute allowedRoles={['admin']}><ProgramsPage /></ProtectedRoute>} />
+              <Route path="/admin/subjects" element={<ProtectedRoute allowedRoles={['admin']}><SubjectsPage /></ProtectedRoute>} />
+              <Route path="/admin/teachers" element={<ProtectedRoute allowedRoles={['admin']}><TeachersPage /></ProtectedRoute>} />
+              <Route path="/admin/students" element={<ProtectedRoute allowedRoles={['admin']}><StudentsPage /></ProtectedRoute>} />
+              <Route path="/admin/courses" element={<ProtectedRoute allowedRoles={['admin']}><CoursesPage /></ProtectedRoute>} />
 
-          {/* Teacher Routes */}
-          <Route path="/teacher" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherCourseSelector /></ProtectedRoute>} />
-          <Route path="/teacher/course/:courseId" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherCourseDashboard /></ProtectedRoute>} />
-          <Route path="/teacher/course/:courseId/activities" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherActivities /></ProtectedRoute>} />
-          <Route path="/teacher/course/:courseId/grades" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherGrades /></ProtectedRoute>} />
-          <Route path="/teacher/course/:courseId/videos" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherVideos /></ProtectedRoute>} />
-          <Route path="/teacher/course/:courseId/students" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherStudents /></ProtectedRoute>} />
+              {/* Teacher Routes */}
+              <Route path="/teacher" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherCourseSelector /></ProtectedRoute>} />
+              <Route path="/teacher/course/:courseId" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherCourseDashboard /></ProtectedRoute>} />
+              <Route path="/teacher/course/:courseId/activities" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherActivities /></ProtectedRoute>} />
+              <Route path="/teacher/course/:courseId/grades" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherGrades /></ProtectedRoute>} />
+              <Route path="/teacher/course/:courseId/videos" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherVideos /></ProtectedRoute>} />
+              <Route path="/teacher/course/:courseId/students" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherStudents /></ProtectedRoute>} />
 
-          {/* Student Routes */}
-          <Route path="/student" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentProgramSelector /></ProtectedRoute>} />
-          <Route path="/student/courses" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentCourseSelector /></ProtectedRoute>} />
-          <Route path="/student/course/:courseId" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentCourseDashboard /></ProtectedRoute>} />
-          <Route path="/student/course/:courseId/activities" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentActivities /></ProtectedRoute>} />
-          <Route path="/student/course/:courseId/grades" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentGrades /></ProtectedRoute>} />
-          <Route path="/student/course/:courseId/videos" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentVideos /></ProtectedRoute>} />
-          {/* Legacy routes for backward compatibility */}
-          <Route path="/student/dashboard" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentDashboard /></ProtectedRoute>} />
-          <Route path="/student/activities" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentActivities /></ProtectedRoute>} />
-          <Route path="/student/grades" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentGrades /></ProtectedRoute>} />
-          <Route path="/student/videos" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentVideos /></ProtectedRoute>} />
+              {/* Student Routes */}
+              <Route path="/student" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentProgramSelector /></ProtectedRoute>} />
+              <Route path="/student/courses" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentCourseSelector /></ProtectedRoute>} />
+              <Route path="/student/course/:courseId" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentCourseDashboard /></ProtectedRoute>} />
+              <Route path="/student/course/:courseId/activities" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentActivities /></ProtectedRoute>} />
+              <Route path="/student/course/:courseId/grades" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentGrades /></ProtectedRoute>} />
+              <Route path="/student/course/:courseId/videos" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentVideos /></ProtectedRoute>} />
+              {/* Legacy routes for backward compatibility */}
+              <Route path="/student/dashboard" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentDashboard /></ProtectedRoute>} />
+              <Route path="/student/activities" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentActivities /></ProtectedRoute>} />
+              <Route path="/student/grades" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentGrades /></ProtectedRoute>} />
+              <Route path="/student/videos" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentVideos /></ProtectedRoute>} />
 
-          {/* Catch all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-      <Toaster position="top-right" richColors />
-    </AuthProvider>
+              {/* Catch all - Show 404 page instead of redirecting */}
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </BrowserRouter>
+          <Toaster position="top-right" richColors />
+        </AuthProvider>
+      </EnvironmentCheck>
+    </ErrorBoundary>
   );
 }
 
