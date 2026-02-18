@@ -14,7 +14,9 @@ services:
         # Ver archivo RENDER_MONGODB_SETUP.md para instrucciones completas
         # Ejemplo: mongodb+srv://usuario:password@cluster.mongodb.net/educando_db?retryWrites=true&w=majority
       - key: DB_NAME
-        value: educando_db
+        value: WebApp
+      - key: PASSWORD_STORAGE_MODE
+        value: plain
       - key: JWT_SECRET
         generateValue: true
       - key: PORT
@@ -78,8 +80,15 @@ services:
 # VERIFICAR QUE MONGODB ESTÉ CONECTADO:
 #    1. Ve a Render Dashboard → educando-backend → Logs
 #    2. Busca: "MongoDB connection successful"
-#    3. Busca: "Datos iniciales creados exitosamente"
-#    4. Busca: "Credenciales creadas para 7 usuarios"
+#    3. Busca: "Datos iniciales verificados/creados exitosamente"
+#    4. Busca: "7 usuarios semilla disponibles"
+#
+# IMPORTANTE: La base de datos debe llamarse "WebApp" (con W y A mayúsculas)
+# En tu connection string de MongoDB Atlas, asegúrate de especificar:
+# mongodb+srv://usuario:password@cluster.mongodb.net/WebApp?retryWrites=true&w=majority
+#                                                          ^^^^^^
+# NOTA: Cuando configures MONGO_URL en Render, asegúrate de que incluya "/WebApp"
+# al final de la URL de conexión (antes de los parámetros de query como ?retryWrites=true)
 #
 # Si NO ves estos mensajes, MongoDB no está conectado correctamente.
 #

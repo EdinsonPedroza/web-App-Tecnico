@@ -238,17 +238,16 @@ async def create_initial_data():
                     upsert=True
                 )
     
-    # Eliminar todos los usuarios existentes (solo en primera ejecución)
-    # Verificar si necesitamos recrear usuarios
+    # Verificar y crear/actualizar usuarios iniciales
+    # En lugar de saltarse la creación si existen usuarios, actualizamos los usuarios semilla
+    # para asegurar que siempre existan con las credenciales correctas
     existing_user_count = await db.users.count_documents({})
     if existing_user_count > 0:
-        print(f"Ya existen {existing_user_count} usuarios en la base de datos.")
-        print("Para recrear todos los usuarios, elimina manualmente la colección users de MongoDB.")
-        # Solo verificamos/actualizamos programas y materias
-        return
+        logger.info(f"Base de datos tiene {existing_user_count} usuarios. Verificando usuarios semilla...")
+    else:
+        logger.info("Base de datos vacía. Creando usuarios iniciales...")
     
-    # Crear nuevos usuarios
-    print("Creando nuevos usuarios...")
+    # Crear/actualizar usuarios iniciales (usando upsert para idempotencia)
     users = [
         # 1 Editor
         {"id": "user-editor-1", "name": "Carlos Mendez", "email": "carlos.mendez@educando.com", "cedula": None, "password_hash": hash_password("Editor2026*CM"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001112233", "active": True, "module": None, "grupo": None},
@@ -316,9 +315,9 @@ async def create_initial_data():
         for a in activities:
             await db.activities.update_one({"id": a["id"]}, {"$set": a}, upsert=True)
     
-    print("Datos iniciales creados exitosamente")
-    print("Credenciales creadas para 7 usuarios.")
-    print("Ver archivo USUARIOS_Y_CONTRASEÑAS.txt para detalles de acceso.")
+    logger.info("Datos iniciales verificados/creados exitosamente")
+    logger.info("7 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
+    logger.info(f"Modo de almacenamiento de contraseñas: {PASSWORD_STORAGE_MODE}")
 
 # --- Utility Functions ---
 def sanitize_string(input_str: str, max_length: int = 500) -> str:
