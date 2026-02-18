@@ -22,6 +22,7 @@ except ImportError:
     sys.exit(1)
 
 # Cargar variables de entorno
+load_dotenv(backend_dir / '.env.local')
 load_dotenv(backend_dir / '.env')
 
 async def main():

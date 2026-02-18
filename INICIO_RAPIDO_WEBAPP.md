@@ -16,7 +16,7 @@ Elige UNA de estas opciones:
 ./configurar_mongodb.sh
 ```
 
-Presiona Enter para usar los valores predeterminados.
+El script te preguntará por tu MongoDB URL y nombre de base de datos.
 
 #### Opción B: Variables de Entorno
 
