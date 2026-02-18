@@ -1,0 +1,43 @@
+services:
+  # Backend API Service
+  - type: web
+    name: educando-backend
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        value: educando_db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+    autoDeploy: true
+
+  # Frontend Web Service
+  - type: web
+    name: educando-frontend
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    buildFilter:
+      paths:
+        - frontend/**
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        fromService:
+          type: web
+          name: educando-backend
+          property: url
+    autoDeploy: true
+
+# Note: MongoDB should be added manually in Render Dashboard
+# Option 1: Add MongoDB as a Private Service in Render
+# Option 2: Use MongoDB Atlas (recommended) at https://www.mongodb.com/cloud/atlas
+# After creating MongoDB, update the MONGO_URL environment variable in the backend service
