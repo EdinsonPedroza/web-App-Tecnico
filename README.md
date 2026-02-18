@@ -2,6 +2,34 @@
 
 Aplicación web full-stack para gestión educativa con React (frontend), FastAPI (backend) y MongoDB.
 
+## 🆘 ¿LAS CREDENCIALES NO FUNCIONAN?
+
+### 🚨 Si estás frustrado porque no puedes iniciar sesión:
+
+**LEE PRIMERO:** [🚀 INICIO_RAPIDO_MONGO.md](INICIO_RAPIDO_MONGO.md) ⭐ **EMPIEZA AQUÍ** (Diagnóstico en 30 segundos)
+
+**Causa más común:** MongoDB NO está conectado en Render.
+
+### 📚 Guías Completas para Resolver el Problema:
+
+1. **[🚀 INICIO_RAPIDO_MONGO.md](INICIO_RAPIDO_MONGO.md)** ⭐ **EMPIEZA AQUÍ** - Diagnóstico rápido en 30 segundos
+2. **[🔍 QUE_VER_EN_MONGO.md](QUE_VER_EN_MONGO.md)** - Guía visual: Qué DEBE verse dentro de MongoDB
+3. **[📖 RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)** - Configurar MongoDB Atlas paso a paso
+4. **[📋 USUARIOS_Y_CONTRASEÑAS.txt](USUARIOS_Y_CONTRASEÑAS.txt)** - Lista completa de credenciales
+5. **[📝 TARJETA_REFERENCIA_MONGODB.md](TARJETA_REFERENCIA_MONGODB.md)** - Referencia rápida
+
+### ✅ Credenciales de Prueba (para después de configurar MongoDB):
+
+| Rol | Pestaña | Usuario | Contraseña |
+|-----|---------|---------|------------|
+| Admin | PROFESOR | laura.torres@educando.com | Admin2026*LT |
+| Profesor | PROFESOR | diana.silva@educando.com | Profe2026*DS |
+| Estudiante | ESTUDIANTE | 1001234567 | Estud2026*SM |
+
+⚠️ **RECUERDA:** Admins y Editores usan la pestaña "PROFESOR", NO "ESTUDIANTE"
+
+---
+
 ## 🌐 ¿Quieres Subir Esto a la Web?
 
 ### 🎯 LA FORMA MÁS FÁCIL: Render.com (15 minutos) ⭐
@@ -220,20 +248,28 @@ docker compose -f docker-compose.dev.yml down -v
 docker compose -f docker-compose.dev.yml down -v  # ⚠️ Esto borrará los datos
 ```
 
-### Problemas con autenticación en producción (Render)
+### Problemas con autenticación o credenciales
 
-**Problema**: Las credenciales no funcionan después de desplegar en Render.
+**❌ Problema**: Las credenciales no funcionan, no puedo iniciar sesión.
 
-**Causa más común**: MongoDB no está conectado o configurado correctamente.
+**🎯 Solución Rápida**: Lee [INICIO_RAPIDO_MONGO.md](INICIO_RAPIDO_MONGO.md) para diagnóstico en 30 segundos.
 
-**Solución**: Ver la guía completa en [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)
+**📖 Solución Completa**:
 
-Pasos rápidos:
-1. Crear cuenta en MongoDB Atlas (gratis)
-2. Crear un cluster y usuario de base de datos
-3. Configurar `MONGO_URL` en Render
-4. Verificar los logs del backend: debe decir "MongoDB connection successful"
-5. Usar las credenciales de [USUARIOS_Y_CONTRASEÑAS.txt](USUARIOS_Y_CONTRASEÑAS.txt)
+1. **Diagnóstico rápido:** [INICIO_RAPIDO_MONGO.md](INICIO_RAPIDO_MONGO.md) - Identifica el problema en 30 seg
+2. **Ver qué hay en MongoDB:** [QUE_VER_EN_MONGO.md](QUE_VER_EN_MONGO.md) - Guía visual completa
+3. **Configurar MongoDB:** [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md) - Setup paso a paso
+4. **Credenciales de prueba:** [USUARIOS_Y_CONTRASEÑAS.txt](USUARIOS_Y_CONTRASEÑAS.txt) - Lista completa
+
+**Causa más común en Render**: MongoDB no está conectado
+
+Pasos esenciales:
+1. ✅ Crear cuenta en MongoDB Atlas (gratis): https://www.mongodb.com/cloud/atlas/register
+2. ✅ Crear cluster M0 (512MB gratis) y usuario de base de datos
+3. ✅ Configurar `MONGO_URL` en Render → educando-backend → Environment
+4. ✅ Re-desplegar el backend
+5. ✅ Verificar logs: "MongoDB connection successful" y "Credenciales creadas para 7 usuarios"
+6. ✅ Probar login con credenciales de USUARIOS_Y_CONTRASEÑAS.txt
 
 ## 🔧 Verificar Conexión a MongoDB
 
