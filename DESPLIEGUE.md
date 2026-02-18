@@ -118,10 +118,13 @@ curl http://localhost/api/health || curl http://localhost:8001/health
 Visita `http://TU_IP_DEL_SERVIDOR` en tu navegador.
 
 **Credenciales iniciales:**
-- Email: `admin@educando.com`
-- Contraseña: `admin123`
+Consulta el archivo `USUARIOS_Y_CONTRASEÑAS.txt` para las credenciales completas del sistema.
 
-⚠️ **IMPORTANTE:** Cambia estas credenciales inmediatamente después del primer acceso.
+Ejemplo de credenciales de administrador:
+- Email: `laura.torres@educando.com`
+- Contraseña: Ver USUARIOS_Y_CONTRASEÑAS.txt
+
+⚠️ **IMPORTANTE:** En producción, cambia todas las contraseñas inmediatamente después del primer acceso.
 
 ---
 
@@ -175,7 +178,7 @@ Visita `http://TU_IP_DEL_SERVIDOR` en tu navegador.
 
 7. **¡Listo!**
    - Visita la URL que te dio Railway
-   - Usa las credenciales iniciales (admin@educando.com / admin123)
+   - Usa las credenciales del archivo USUARIOS_Y_CONTRASEÑAS.txt (por ejemplo: laura.torres@educando.com)
 
 **Costos estimados en Railway:**
 - Plan gratuito: $5 de crédito gratis/mes (suficiente para pruebas)
@@ -475,8 +478,12 @@ Cuando inicias la aplicación por primera vez, se crean automáticamente:
 - ✅ Cursos de ejemplo
 
 **Credenciales iniciales del administrador:**
-- Email: `admin@educando.com`
-- Contraseña: `admin123`
+
+Consulta el archivo `USUARIOS_Y_CONTRASEÑAS.txt` en la raíz del proyecto para todas las credenciales.
+
+Ejemplo de credenciales de administrador:
+- Email: `laura.torres@educando.com`
+- Contraseña: Ver USUARIOS_Y_CONTRASEÑAS.txt
 
 ### ⚠️ IMPORTANTE - Cambiar credenciales de admin:
 
@@ -484,7 +491,7 @@ Cuando inicias la aplicación por primera vez, se crean automáticamente:
 
 1. **Inicia sesión como admin**
    - Ve a tu sitio web
-   - Inicia sesión con admin@educando.com / admin123
+   - Inicia sesión con las credenciales del archivo USUARIOS_Y_CONTRASEÑAS.txt
 
 2. **Cambia la contraseña inmediatamente**
    - Ve a tu perfil o configuración
@@ -765,7 +772,7 @@ exit
 
 ### No puedo iniciar sesión como admin
 
-**Síntomas:** Las credenciales admin@educando.com / admin123 no funcionan
+**Síntomas:** Las credenciales de admin no funcionan
 
 **Soluciones:**
 ```bash

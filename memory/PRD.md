@@ -60,9 +60,12 @@ El usuario solicitó una aplicación web para una escuela técnica virtual con t
 - [x] Videos de clase con enlaces de YouTube
 
 ## Credenciales de Prueba
-- **Admin:** admin@educando.com / admin123
-- **Profesor:** profesor@educando.com / profesor123
-- **Estudiante:** Cédula 1234567890 / estudiante123
+**NOTA:** Ver el archivo `USUARIOS_Y_CONTRASEÑAS.txt` en la raíz del proyecto para todas las credenciales actuales.
+
+Las credenciales reales del sistema son:
+- **Admin:** laura.torres@educando.com / Admin2026*LT
+- **Profesor:** diana.silva@educando.com / Profe2026*DS
+- **Estudiante:** Cédula 1001234567 / Estud2026*SM (Ver USUARIOS_Y_CONTRASEÑAS.txt para todas las credenciales)
 
 ## Backlog
 
