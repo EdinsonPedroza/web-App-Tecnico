@@ -61,11 +61,13 @@ JWT_ALGORITHM = "HS256"
 # Password hashing with bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Password storage mode: 'plain' for plain text, 'bcrypt' for hashed (default: 'plain' for compatibility)
-PASSWORD_STORAGE_MODE = os.environ.get('PASSWORD_STORAGE_MODE', 'plain').lower()
+# Password storage mode: 'plain' for plain text, 'bcrypt' for hashed (default: 'bcrypt' for security)
+# For backwards compatibility with existing plain text passwords, set PASSWORD_STORAGE_MODE='plain'
+PASSWORD_STORAGE_MODE = os.environ.get('PASSWORD_STORAGE_MODE', 'bcrypt').lower()
 
 # Rate limiting: track login attempts per IP
-# NOTE: This is in-memory storage. For production with multiple instances,
+# WARNING: This is in-memory storage and will be reset on server restart.
+# For production with multiple instances or persistence across restarts,
 # consider using Redis or another distributed cache for rate limiting.
 login_attempts = defaultdict(list)
 MAX_LOGIN_ATTEMPTS = 5
@@ -101,14 +103,41 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # File upload directory
+# WARNING: Files are stored on local disk, which is ephemeral in containerized environments
+# like Render, Railway, or Docker. Uploaded files will be LOST on redeployment or restart.
+# For production, migrate to persistent storage like Cloudinary, AWS S3, or similar services.
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# Check if we're in a production environment and warn about ephemeral storage
+if os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DYNO'):
+    logger.warning(
+        "⚠️  PRODUCTION WARNING: Files are stored on ephemeral disk storage. "
+        "Uploaded files will be LOST on redeployment. "
+        "Consider migrating to Cloudinary, AWS S3, or similar persistent storage services."
+    )
 
 # --- Startup Event - Crear datos iniciales ---
 @app.on_event("startup")
 async def startup_event():
     try:
         logger.info("Starting application initialization...")
+        
+        # Log production warnings
+        if PASSWORD_STORAGE_MODE == 'plain':
+            logger.warning(
+                "⚠️  SECURITY WARNING: Password storage mode is set to 'plain'. "
+                "Passwords are stored in plain text, which is INSECURE. "
+                "Set PASSWORD_STORAGE_MODE='bcrypt' in your environment variables for production."
+            )
+        
+        # Warn about in-memory rate limiting
+        if os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DYNO'):
+            logger.warning(
+                "⚠️  PRODUCTION NOTICE: Rate limiting is in-memory and will reset on server restart. "
+                "For distributed deployments, consider using Redis for persistent rate limiting."
+            )
+        
         # Test MongoDB connection
         await db.command('ping')
         logger.info("MongoDB connection successful")
@@ -238,17 +267,17 @@ async def create_initial_data():
                     upsert=True
                 )
     
-    # Verificar y crear/actualizar usuarios iniciales
-    # En lugar de saltarse la creación si existen usuarios, actualizamos los usuarios semilla
-    # para asegurar que siempre existan con las credenciales correctas
+    # Verificar y crear usuarios iniciales (seed users)
+    # IMPORTANTE: Solo creamos usuarios semilla si NO EXISTEN. No los sobrescribimos.
+    # Esto permite que los cambios hechos desde el panel de admin sean permanentes.
     existing_user_count = await db.users.count_documents({})
     if existing_user_count > 0:
         logger.info(f"Base de datos tiene {existing_user_count} usuarios. Verificando usuarios semilla...")
     else:
         logger.info("Base de datos vacía. Creando usuarios iniciales...")
     
-    # Crear/actualizar usuarios iniciales (usando upsert para idempotencia)
-    users = [
+    # Definir usuarios semilla (seed users) - solo se crean si no existen
+    seed_users = [
         # 1 Editor
         {"id": "user-editor-1", "name": "Carlos Mendez", "email": "carlos.mendez@educando.com", "cedula": None, "password_hash": hash_password("Editor2026*CM"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001112233", "active": True, "module": None, "grupo": None},
         
@@ -265,8 +294,23 @@ async def create_initial_data():
         {"id": "user-est-1", "name": "Sofía Morales", "email": None, "cedula": "1001234567", "password_hash": hash_password("Estud2026*SM"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3006667788", "active": True, "module": 1, "grupo": "Febrero 2026"},
         {"id": "user-est-2", "name": "Andrés Lopez", "email": None, "cedula": "1002345678", "password_hash": hash_password("Estud2026*AL"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3007778899", "active": True, "module": 1, "grupo": "Febrero 2026"},
     ]
-    for u in users:
-        await db.users.update_one({"id": u["id"]}, {"$set": u}, upsert=True)
+    
+    # Insertar usuarios semilla solo si no existen (setOnInsert)
+    # Esto preserva los cambios hechos desde el admin panel
+    created_count = 0
+    for u in seed_users:
+        result = await db.users.update_one(
+            {"id": u["id"]},
+            {"$setOnInsert": u},
+            upsert=True
+        )
+        if result.upserted_id:
+            created_count += 1
+    
+    if created_count > 0:
+        logger.info(f"Creados {created_count} usuarios semilla nuevos")
+    else:
+        logger.info("Todos los usuarios semilla ya existen - no se sobrescribieron")
     
     # Crear curso de ejemplo
     admin_subjects = await db.subjects.find({"program_id": "prog-admin", "module_number": 1}, {"_id": 0}).to_list(10)
