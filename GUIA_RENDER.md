@@ -75,36 +75,131 @@ Render puede leer el archivo `render.yaml` y crear todos los servicios automáti
 
 ### 3.2 Render Creará Automáticamente:
 
-- 🗄️ **MongoDB Database** (`educando-mongodb`)
 - 🔧 **Backend API** (`educando-backend`)
 - 🎨 **Frontend** (`educando-frontend`)
 
-### 3.3 Esperar el Despliegue
+⚠️ **Importante**: MongoDB no se crea automáticamente. Lo configuraremos en el siguiente paso.
 
-1. **Render comenzará a construir** todos los servicios
+### 3.3 Esperar el Despliegue Inicial
+
+1. **Render comenzará a construir** los servicios
 2. **Verás el progreso** en tiempo real (logs)
-3. **Esto toma 10-15 minutos** la primera vez
-4. **Espera hasta que veas** ✅ "Live" en cada servicio
+3. **Por ahora los servicios fallarán** porque falta MongoDB
+4. **No te preocupes**, lo arreglaremos en el siguiente paso
 
 ---
 
-## ⚙️ PASO 4: Configurar Variables de Entorno (Si es necesario)
+## 🗄️ PASO 4: Configurar MongoDB
 
-El archivo `render.yaml` ya tiene la mayoría de variables configuradas, pero puedes verificar:
+Tienes 2 opciones para la base de datos. **Recomendamos la Opción 1** (más fácil):
 
-### 4.1 Backend
+### Opción 1: MongoDB Atlas (Recomendado - Gratis) ✅
+
+MongoDB Atlas es el servicio en la nube de MongoDB, tiene un tier gratuito generoso.
+
+#### 4.1 Crear Cuenta en MongoDB Atlas
+
+1. **Ve a**: https://www.mongodb.com/cloud/atlas/register
+2. **Crea una cuenta** (puedes usar Google o email)
+3. **Selecciona el plan gratuito** (M0 Sandbox - Free forever)
+
+#### 4.2 Crear un Cluster
+
+1. **MongoDB te preguntará**: "¿Qué tipo de aplicación vas a construir?"
+   - Selecciona cualquier opción (no importa)
+2. **Selecciona el plan "M0 FREE"**
+3. **Elige un proveedor y región**:
+   - Provider: AWS
+   - Region: Oregon (us-west-2) - Mismo que Render
+4. **Nombre del cluster**: `educando-cluster` (o el que prefieras)
+5. **Haz clic en "Create"**
+
+#### 4.3 Configurar Acceso a la Base de Datos
+
+1. **Crear un usuario de base de datos**:
+   - Username: `educando_admin`
+   - Password: Genera una contraseña segura (guárdala, la necesitarás)
+   - Haz clic en "Create User"
+
+2. **Configurar acceso desde cualquier IP**:
+   - En "Where would you like to connect from?"
+   - Haz clic en "Add IP Address"
+   - Haz clic en "Allow Access from Anywhere"
+   - IP: `0.0.0.0/0` (permitir todas las IPs)
+   - Haz clic en "Add Entry"
+
+3. **Haz clic en "Finish and Close"**
+
+#### 4.4 Obtener la URL de Conexión
+
+1. **En el dashboard de MongoDB Atlas**, haz clic en "Connect"
+2. **Selecciona "Connect your application"**
+3. **Copia la connection string**, se verá así:
+   ```
+   mongodb+srv://educando_admin:<password>@educando-cluster.xxxxx.mongodb.net/?retryWrites=true&w=majority
+   ```
+4. **Reemplaza `<password>`** con la contraseña que creaste en el paso 4.3
+5. **Guarda esta URL**, la necesitarás en el siguiente paso
+
+#### 4.5 Configurar en Render
+
+1. **Ve al Dashboard de Render**: https://dashboard.render.com
+2. **Haz clic en el servicio "educando-backend"**
+3. **Ve a "Environment"** en el menú izquierdo
+4. **Busca la variable `MONGO_URL`**
+5. **Pega la URL de MongoDB Atlas** que copiaste (con la contraseña reemplazada)
+6. **Haz clic en "Save Changes"**
+7. **Render desplegará automáticamente** el backend con la nueva configuración
+
+### Opción 2: Private Service en Render (Más Complejo)
+
+Si prefieres tener MongoDB dentro de Render:
+
+1. **Ve al Dashboard de Render**
+2. **Haz clic en "New +"** → "Private Service"
+3. **Conecta tu repositorio**
+4. **Configuración**:
+   - Name: `educando-mongodb`
+   - Environment: `Docker`
+   - Dockerfile Path: `mongodb.Dockerfile`
+   - Plan: `Standard` ($7/mes - Disk incluido)
+5. **Agrega un disco persistente**:
+   - Haz clic en "Add Disk"
+   - Mount Path: `/data/db`
+   - Size: 10 GB
+6. **Haz clic en "Create Private Service"**
+7. **Una vez que esté "Live"**, ve a "Connect"
+8. **Copia la "Internal Connection String"**, algo como:
+   ```
+   mongodb://educando-mongodb:27017
+   ```
+9. **Configura en el backend**:
+   - Ve al servicio "educando-backend"
+   - Ve a "Environment"
+   - Edita `MONGO_URL` con la URL interna de MongoDB
+   - Guarda los cambios
+
+---
+
+## ⚙️ PASO 5: Verificar Variables de Entorno
+
+## ⚙️ PASO 5: Verificar Variables de Entorno
+
+El archivo `render.yaml` ya tiene la mayoría de variables configuradas. Verifica que todo esté correcto:
+
+### 5.1 Backend
 
 1. **Haz clic en el servicio "educando-backend"**
 2. **Ve a "Environment"** en el menú izquierdo
-3. **Verifica que existan**:
+3. **Verifica que existan estas variables**:
    ```
-   MONGO_URL=<Render lo configura automáticamente>
+   MONGO_URL=<La URL de MongoDB Atlas o Private Service que configuraste>
    DB_NAME=educando_db
    JWT_SECRET=<Render lo genera automáticamente>
    PORT=8001
    ```
 
-### 4.2 Frontend
+### 5.2 Frontend
 
 1. **Haz clic en el servicio "educando-frontend"**
 2. **Ve a "Environment"**
@@ -114,11 +209,18 @@ El archivo `render.yaml` ya tiene la mayoría de variables configuradas, pero pu
    PORT=80
    ```
 
+Si `REACT_APP_BACKEND_URL` no existe o está vacía:
+1. Ve al servicio "educando-backend"
+2. Copia su URL pública (ej: `https://educando-backend.onrender.com`)
+3. Vuelve al frontend → "Environment"
+4. Agrega `REACT_APP_BACKEND_URL` con el valor de la URL del backend
+5. Guarda los cambios
+
 ---
 
-## 🌐 PASO 5: Obtener tu URL Pública
+## 🌐 PASO 6: Obtener tu URL Pública
 
-### 5.1 Encontrar la URL del Frontend
+### 6.1 Encontrar la URL del Frontend
 
 1. **Ve al Dashboard de Render**
 2. **Haz clic en el servicio "educando-frontend"**
@@ -128,7 +230,7 @@ El archivo `render.yaml` ya tiene la mayoría de variables configuradas, pero pu
    ```
 4. **Copia esta URL** y ábrela en tu navegador
 
-### 5.2 Primer Acceso
+### 6.2 Primer Acceso
 
 **Credenciales iniciales del administrador:**
 - Email: `admin@educando.com`
@@ -138,11 +240,11 @@ El archivo `render.yaml` ya tiene la mayoría de variables configuradas, pero pu
 
 ---
 
-## 🎯 PASO 6: Configurar Dominio Personalizado (Opcional)
+## 🎯 PASO 7: Configurar Dominio Personalizado (Opcional)
 
 Si tienes un dominio propio (ej: `www.mieducando.com`):
 
-### 6.1 En Render
+### 7.1 En Render
 
 1. **Ve al servicio "educando-frontend"**
 2. **Haz clic en "Settings"** en el menú izquierdo
@@ -151,7 +253,7 @@ Si tienes un dominio propio (ej: `www.mieducando.com`):
 5. **Ingresa tu dominio**: `www.mieducando.com`
 6. **Render te dará instrucciones de DNS**
 
-### 6.2 En tu Proveedor de Dominio
+### 7.2 En tu Proveedor de Dominio
 
 1. **Ve a tu proveedor de dominios** (GoDaddy, Namecheap, etc.)
 2. **Busca la configuración de DNS**
@@ -176,12 +278,16 @@ Si tienes un dominio propio (ej: `www.mieducando.com`):
 
 **Ideal para**: Pruebas, demos, proyectos personales
 
+⚠️ **Nota sobre MongoDB**: El plan gratuito de Render no incluye bases de datos. Usa MongoDB Atlas (también gratis) como se explica en el PASO 4.
+
 ### Opción 2: Plan Starter (Recomendado)
 
-**Costo**: ~$14/mes
+**Costo**: ~$7/mes (Backend + Frontend en Starter)
+**MongoDB**: Gratis con MongoDB Atlas M0, o $7/mes con Private Service en Render
+**Total**: $7-14/mes
+
 **Incluye**:
 - ✅ Servicios siempre activos (no se duermen)
-- ✅ Base de datos MongoDB con 1GB de almacenamiento
 - ✅ SSL/HTTPS automático
 - ✅ Deploy automático desde GitHub
 - ✅ Logs completos
@@ -191,10 +297,11 @@ Si tienes un dominio propio (ej: `www.mieducando.com`):
 
 ### Opción 3: Plan Standard
 
-**Costo**: ~$25/mes
+**Costo**: ~$25/mes (Backend + Frontend en Standard)
+**MongoDB**: Gratis con MongoDB Atlas M0/M2, o incluido si usas Private Service
+
 **Incluye**:
 - ✅ Todo lo del plan Starter
-- ✅ 10GB de almacenamiento para MongoDB
 - ✅ Más recursos de CPU y RAM
 - ✅ Mejor rendimiento
 

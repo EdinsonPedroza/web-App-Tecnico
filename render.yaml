@@ -1,23 +1,4 @@
 services:
-  # MongoDB Database
-  - type: pserv
-    name: educando-mongodb
-    env: docker
-    region: oregon
-    plan: standard
-    dockerfilePath: ./mongodb.Dockerfile
-    envVars:
-      - key: MONGO_INITDB_ROOT_USERNAME
-        value: educando_admin
-      - key: MONGO_INITDB_ROOT_PASSWORD
-        generateValue: true
-      - key: MONGO_INITDB_DATABASE
-        value: educando_db
-    disk:
-      name: mongodb-data
-      mountPath: /data/db
-      sizeGB: 10
-
   # Backend API Service
   - type: web
     name: educando-backend
@@ -28,10 +9,7 @@ services:
     dockerContext: ./backend
     envVars:
       - key: MONGO_URL
-        fromService:
-          type: pserv
-          name: educando-mongodb
-          envVarKey: MONGO_URL
+        sync: false
       - key: DB_NAME
         value: educando_db
       - key: JWT_SECRET
@@ -41,7 +19,7 @@ services:
     healthCheckPath: /
     autoDeploy: true
 
-  # Frontend Static Site
+  # Frontend Web Service
   - type: web
     name: educando-frontend
     env: docker
@@ -62,3 +40,8 @@ services:
         value: 80
     healthCheckPath: /
     autoDeploy: true
+
+# Note: MongoDB should be added manually in Render Dashboard
+# Option 1: Add MongoDB as a Private Service in Render
+# Option 2: Use MongoDB Atlas (recommended) at https://www.mongodb.com/cloud/atlas
+# After creating MongoDB, update the MONGO_URL environment variable in the backend service
