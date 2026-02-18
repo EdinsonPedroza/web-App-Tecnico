@@ -109,7 +109,17 @@ async def startup_event():
         logger.info("Application startup completed successfully")
     except Exception as e:
         logger.error(f"Startup failed: {e}", exc_info=True)
-        raise RuntimeError(f"Application startup failed: {e}") from e
+        if "auth" in str(e).lower() or "connection" in str(e).lower() or "ServerSelectionTimeoutError" in type(e).__name__:
+            logger.error(
+                "MongoDB connection failed. Please check your MONGO_URL environment variable. "
+                "Common causes: invalid credentials, IP not whitelisted in MongoDB Atlas, "
+                "or incorrect connection string format. "
+                "See backend/.env.example for configuration examples."
+            )
+        logger.warning(
+            "Application started WITHOUT database connection. "
+            "API endpoints requiring MongoDB will not work until the connection is restored."
+        )
 
 async def create_initial_data():
     """Crea los usuarios y datos iniciales si no existen"""

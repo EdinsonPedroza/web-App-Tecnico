@@ -18,7 +18,7 @@ MONGO_URL=mongodb://mongo:CONTRASEÑA@monorail.proxy.rlwy.net:PORT
 **Síntoma:** Crashes silenciosos sin logs descriptivos
 **Causa:** La función `startup_event()` no tenía try/catch, causando crashes sin información.
 
-**✅ Solución:** Agregado manejo de errores con logs detallados:
+**✅ Solución:** Agregado manejo de errores con degradación elegante:
 ```python
 @app.on_event("startup")
 async def startup_event():
@@ -30,8 +30,20 @@ async def startup_event():
         logger.info("Application startup completed successfully")
     except Exception as e:
         logger.error(f"Startup failed: {e}", exc_info=True)
-        raise RuntimeError(f"Application startup failed: {e}") from e
+        if "auth" in str(e).lower() or "connection" in str(e).lower() or "ServerSelectionTimeoutError" in type(e).__name__:
+            logger.error(
+                "MongoDB connection failed. Please check your MONGO_URL environment variable. "
+                "Common causes: invalid credentials, IP not whitelisted in MongoDB Atlas, "
+                "or incorrect connection string format. "
+                "See backend/.env.example for configuration examples."
+            )
+        logger.warning(
+            "Application started WITHOUT database connection. "
+            "API endpoints requiring MongoDB will not work until the connection is restored."
+        )
 ```
+
+> **Nota:** El backend ahora NO se cae si MongoDB no está disponible. Inicia en modo degradado y muestra mensajes de error claros en los logs para ayudarte a diagnosticar el problema. Consulta `PASO_A_PASO_RAILWAY.md` (Paso 3A) para instrucciones detalladas de configuración de MongoDB Atlas.
 
 ### 3. **Sin manejador global de excepciones**
 **Síntoma:** Errores inesperados causan crashes

@@ -60,19 +60,132 @@ Si te aparece un servicio raíz `web-App-Tecnico`, puedes conservarlo solo de re
 
 ## 📍 PASO 3: Configurar MongoDB
 
-Railway puede crear MongoDB automáticamente o puedes usar el del docker-compose.
+Tienes dos opciones: usar MongoDB Atlas (gratis, recomendado) o MongoDB de Railway.
 
-### Opción A: Usar MongoDB de Railway (Recomendado)
+### Opción A: Usar MongoDB Atlas (GRATIS - Recomendado) ⭐
 
-1. **Click en "+ New"** en tu proyecto
+MongoDB Atlas es la opción más confiable y tiene un plan gratuito permanente (512 MB).
+
+#### 3A.1 — Crear Cuenta en MongoDB Atlas
+
+1. Abre tu navegador y ve a:
+   ```
+   🌐 https://www.mongodb.com/cloud/atlas/register
+   ```
+2. Haz clic en **"Try Free"** (Probar Gratis)
+3. Llena el formulario:
+   - **Email:** tu correo
+   - **First Name:** tu nombre
+   - **Last Name:** tu apellido
+   - **Password:** crea una contraseña segura
+4. Haz clic en **"Create your Atlas account"**
+5. Verifica tu email (te llega un correo, haz clic en el enlace)
+6. ✅ ¡Cuenta creada!
+
+#### 3A.2 — Crear un Cluster (Base de Datos)
+
+Después de registrarte, Atlas te guía para crear tu primer cluster:
+
+1. Selecciona **"M0 FREE"** (el plan gratuito)
+   - Dice: **"Free forever"** — No te cobra nada
+2. **Provider:** Selecciona **AWS** (Amazon Web Services)
+3. **Region:** Selecciona la más cercana a ti, por ejemplo:
+   - Si estás en Colombia: `us-east-1 (Virginia)` o `sa-east-1 (São Paulo)`
+   - Si estás en México: `us-east-1 (Virginia)` o `us-west-2 (Oregon)`
+   - Si estás en España: `eu-west-1 (Ireland)`
+4. **Cluster Name:** Déjalo como está o ponle `EducandoCluster`
+5. Haz clic en **"Create Deployment"** (o "Create Cluster")
+6. ⏳ Espera 1-3 minutos mientras se crea
+7. ✅ ¡Cluster listo!
+
+#### 3A.3 — Crear un Usuario de Base de Datos
+
+Atlas te pedirá crear un usuario para conectarte a la base de datos:
+
+1. **Authentication Method:** Selecciona **"Username and Password"**
+2. **Username:** escribe un nombre de usuario, por ejemplo:
+   ```
+   educando_user
+   ```
+3. **Password:** haz clic en **"Autogenerate Secure Password"**
+   - ⚠️ **MUY IMPORTANTE:** Copia esta contraseña y guárdala en un lugar seguro (bloc de notas, etc.)
+   - La vas a necesitar en el paso siguiente
+   - Ejemplo de contraseña generada: `aB3xK9mPqR2wZ7n`
+4. Haz clic en **"Create Database User"**
+5. ✅ ¡Usuario creado!
+
+> ⚠️ **NOTA:** Si la contraseña tiene caracteres especiales como `@`, `#`, `%`, `!`, etc., debes codificarlos en la URL (por ejemplo `@` se escribe como `%40`). Para evitar complicaciones, lo más fácil es generar una contraseña que solo tenga letras y números.
+
+#### 3A.4 — Permitir Conexiones desde Cualquier IP (Whitelist)
+
+Esto es **OBLIGATORIO** para que Railway pueda conectarse a tu base de datos:
+
+1. En el menú izquierdo de Atlas, haz clic en **"Network Access"**
+   - Si no lo ves, busca en **"Security"** → **"Network Access"**
+2. Haz clic en el botón **"+ Add IP Address"** (verde)
+3. Haz clic en **"ALLOW ACCESS FROM ANYWHERE"**
+   - Esto pone automáticamente: `0.0.0.0/0`
+   - Significa: cualquier servidor puede conectarse (necesario para Railway)
+4. En el campo **"Comment"** (opcional) escribe: `Railway deployment`
+5. Haz clic en **"Confirm"**
+6. ⏳ Espera 1 minuto a que se active
+7. ✅ ¡IP configurada!
+
+> 💡 **¿Es seguro?** Sí, porque tu base de datos sigue protegida por el usuario y contraseña que creaste en el paso anterior. Solo quien tenga las credenciales puede acceder.
+
+#### 3A.5 — Obtener la URL de Conexión (Connection String)
+
+1. En el menú izquierdo de Atlas, haz clic en **"Database"** (o "Clusters")
+2. Encuentra tu cluster y haz clic en **"Connect"**
+3. Selecciona **"Drivers"** (o "Connect your application")
+4. En **"Driver"** selecciona: **Python** versión **3.12 or later**
+5. Verás una URL como esta:
+   ```
+   mongodb+srv://educando_user:<password>@educandocluster.abc123.mongodb.net/?retryWrites=true&w=majority&appName=EducandoCluster
+   ```
+6. **Copia esa URL completa**
+7. Ahora **reemplaza `<password>`** con la contraseña real que guardaste en el paso 3A.3
+   - Por ejemplo, si tu contraseña es `aB3xK9mPqR2wZ7n`, la URL queda:
+   ```
+   mongodb+srv://educando_user:aB3xK9mPqR2wZ7n@educandocluster.abc123.mongodb.net/?retryWrites=true&w=majority&appName=EducandoCluster
+   ```
+8. **Agrega el nombre de la base de datos** antes del `?`:
+   ```
+   mongodb+srv://educando_user:aB3xK9mPqR2wZ7n@educandocluster.abc123.mongodb.net/educando_db?retryWrites=true&w=majority&appName=EducandoCluster
+   ```
+9. ✅ **¡Esta es tu MONGO_URL!** Guárdala, la usarás en el Paso 4.
+
+> ⚠️ **Errores comunes:**
+> - ❌ Dejar `<password>` sin reemplazar — debes poner tu contraseña real
+> - ❌ Poner espacios en la URL — no debe tener espacios
+> - ❌ Olvidar agregar `/educando_db` — sin esto usa la base de datos por defecto
+> - ❌ Usar contraseña con `@` o `#` — estos caracteres rompen la URL
+
+#### 3A.6 — Verificar que Todo Está Bien en Atlas
+
+Antes de continuar, verifica:
+- [ ] ¿Creaste el cluster? (debe decir "Active" en verde)
+- [ ] ¿Creaste el usuario de base de datos?
+- [ ] ¿Guardaste la contraseña?
+- [ ] ¿Agregaste `0.0.0.0/0` en Network Access?
+- [ ] ¿Copiaste la URL de conexión y reemplazaste `<password>`?
+
+Si todas son ✅, continúa al Paso 4.
+
+---
+
+### Opción B: Usar MongoDB de Railway
+
+Si prefieres no crear una cuenta de Atlas, Railway puede crear un MongoDB por ti:
+
+1. **Click en "+ New"** en tu proyecto de Railway
 2. **Selecciona "Database"**
 3. **Selecciona "MongoDB"**
-4. Railway lo configura automáticamente
-5. ✅ MongoDB listo
+4. Railway lo configura automáticamente y te da una `MONGO_URL`
+5. Copia esa URL para usarla en el Paso 4
+6. ✅ MongoDB listo
 
-### Opción B: Usar MongoDB del docker-compose
-
-Si Railway ya detectó MongoDB de tu docker-compose, perfecto. No hagas nada.
+> **Nota:** MongoDB de Railway no tiene plan gratuito. Se cobra por uso.
 
 ---
 
@@ -93,12 +206,18 @@ Si Railway ya detectó MongoDB de tu docker-compose, perfecto. No hagas nada.
 
 Haz clic en **"+ New Variable"** y agrega cada una:
 
-**Variable 1:**
+**Variable 1 (OBLIGATORIA):**
 ```
 Nombre: MONGO_URL
-Valor:  mongodb://mongodb:27017
+Valor:  <TU_URL_DE_MONGODB_ATLAS_DEL_PASO_3A.5>
 ```
-*(O si usas MongoDB de Railway, usa la URL que te dieron)*
+
+Ejemplo completo:
+```
+MONGO_URL=mongodb+srv://educando_user:aB3xK9mPqR2wZ7n@educandocluster.abc123.mongodb.net/educando_db?retryWrites=true&w=majority&appName=EducandoCluster
+```
+
+> ⚠️ **SIN esta variable, el backend no podrá conectarse a la base de datos.**
 
 **Variable 2:**
 ```
@@ -385,6 +504,29 @@ Para una escuela pequeña-mediana (hasta 500 estudiantes):
 2. Ve a los logs del backend
 3. Verifica que `MONGO_URL` esté correcta
 4. Reinicia el servicio backend en Railway
+
+### ❌ Error "bad auth : authentication failed"
+
+Este error significa que la contraseña o usuario en tu `MONGO_URL` es incorrecto.
+
+**Solución paso a paso:**
+1. Ve a **MongoDB Atlas** → **Database Access** (menú izquierdo)
+2. Encuentra tu usuario (ej: `educando_user`)
+3. Haz clic en **"Edit"** (botón de lápiz)
+4. Haz clic en **"Edit Password"**
+5. Genera una nueva contraseña **sin caracteres especiales** (solo letras y números)
+6. **Copia la nueva contraseña**
+7. Haz clic en **"Update User"**
+8. Ve a **Railway Dashboard** → **Backend Service** → **Variables**
+9. Actualiza `MONGO_URL` reemplazando la contraseña vieja por la nueva
+10. Railway re-desplegará automáticamente
+11. Espera 2-3 minutos
+12. ✅ ¡Listo!
+
+**También verifica:**
+- En MongoDB Atlas → **Network Access**: debe tener `0.0.0.0/0`
+- La URL no debe tener `<password>` literal — reemplázalo por tu contraseña real
+- No uses `mongodb://localhost:27017` en Railway — eso solo funciona en tu computadora
 
 ### ❌ La App No Carga
 
