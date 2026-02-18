@@ -34,11 +34,13 @@ RUN mkdir -p uploads
 # Copy the built frontend into nginx's html directory
 COPY --from=frontend-build /app/build /usr/share/nginx/html
 
-# Copy nginx and supervisord configuration
-COPY nginx.single-container.conf /etc/nginx/conf.d/default.conf
+# Copy nginx config as template (will be processed at runtime to inject $PORT)
+COPY nginx.single-container.conf /etc/nginx/conf.d/default.conf.template
 RUN rm -f /etc/nginx/sites-enabled/default
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-EXPOSE 80
+# Copy startup script that handles dynamic PORT
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
-CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/app/start.sh"]
