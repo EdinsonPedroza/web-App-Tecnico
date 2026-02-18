@@ -12,7 +12,11 @@ import { toast } from 'sonner';
 import { Loader2, FileText, Calendar, Clock, Lock, Unlock, Send, Download, File, TimerOff, Upload, Trash2, Image } from 'lucide-react';
 import api from '@/lib/api';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Ensure the backend URL has a protocol
+const rawBackendUrl = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = rawBackendUrl && !rawBackendUrl.startsWith('http') 
+  ? `https://${rawBackendUrl}` 
+  : rawBackendUrl;
 
 export default function StudentActivities() {
   const { user } = useAuth();

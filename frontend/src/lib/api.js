@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Ensure the backend URL has a protocol
+const rawBackendUrl = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = rawBackendUrl && !rawBackendUrl.startsWith('http') 
+  ? `https://${rawBackendUrl}` 
+  : rawBackendUrl;
 const API_BASE = `${BACKEND_URL}/api`;
 
 const api = axios.create({

@@ -13,7 +13,11 @@ import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock,
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Ensure the backend URL has a protocol
+const rawBackendUrl = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = rawBackendUrl && !rawBackendUrl.startsWith('http') 
+  ? `https://${rawBackendUrl}` 
+  : rawBackendUrl;
 
 export default function TeacherActivities() {
   const { courseId } = useParams();
