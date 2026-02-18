@@ -4,29 +4,33 @@ Aplicación web full-stack para gestión educativa con React (frontend), FastAPI
 
 ## 🌐 ¿Quieres Subir Esto a la Web?
 
-### 🎯 LA FORMA MÁS FÁCIL: Railway (15 minutos) ⭐
+### 🎯 LA FORMA MÁS FÁCIL: Render.com (15 minutos) ⭐
 
-**¿Todo está perfecto y quieres subirlo YA?**
+**¿Railway no funcionó? ¡Render es la solución!**
 
-1. **📖 Lee:** [PASO_A_PASO_RAILWAY.md](PASO_A_PASO_RAILWAY.md) ⭐ **Empieza aquí**
-2. **🚂 Ve a:** https://railway.app
+1. **📖 Lee:** [INICIO_RAPIDO_RENDER.md](INICIO_RAPIDO_RENDER.md) ⭐ **Empieza aquí**
+2. **🚀 Ve a:** https://render.com
 3. **⏱️ Tiempo:** 15 minutos
-4. **💰 Costo:** ~$15/mes
+4. **💰 Costo:** Desde $0 (gratuito) hasta ~$14/mes
 5. **🎉 Resultado:** Tu app online con HTTPS automático
 
 ### 📚 Todas las Guías Disponibles:
 
-- **🎯 [RESPUESTA: La Forma MÁS FÁCIL](RESPUESTA_DEPLOYMENT.md)** - Respuesta directa a tu pregunta
-- **🚂 [Paso a Paso con Railway](PASO_A_PASO_RAILWAY.md)** ⭐ Tutorial detallado (15 min)
+#### Despliegue en Render (Recomendado ✅)
+- **🚀 [Inicio Rápido - Render](INICIO_RAPIDO_RENDER.md)** ⭐ **La forma MÁS FÁCIL** (15 min)
+- **📖 [Guía Completa - Render](GUIA_RENDER.md)** - Documentación completa paso a paso
+
+#### Otras Opciones de Despliegue
+- **🚂 [Paso a Paso con Railway](PASO_A_PASO_RAILWAY.md)** - Si prefieres Railway
 - **📱 [Guía Rápida - Comparación](GUIA_RAPIDA_DESPLIEGUE.md)** - Railway vs Render vs VPS
 - **📋 [Tarjeta de Referencia](REFERENCIA_RAPIDA.md)** - Para imprimir o consulta rápida
 - **📚 [Guía Completa Técnica](DESPLIEGUE.md)** - Documentación completa y detallada
 - **✅ [Checklist Post-Deploy](CHECKLIST_POST_DEPLOY.md)** - Verifica en 5 minutos que todo quedó bien
 - **🚀 [Para 3000+ Usuarios](DEPLOYMENT_RECOMMENDATIONS.md)** - Escalamiento profesional
 
-**No importa el precio? → Usa Railway (lo más fácil)**  
+**Railway no funcionó? → Usa Render.com (recomendado)**  
 **Quieres ahorrar? → Usa VPS (~$5/mes, más técnico)**  
-**Primera vez desplegando? → Sigue el tutorial de Railway paso a paso**
+**Primera vez desplegando? → Sigue el tutorial de Render paso a paso**
 
 ---
 

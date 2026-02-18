@@ -1,0 +1,64 @@
+services:
+  # MongoDB Database
+  - type: pserv
+    name: educando-mongodb
+    env: docker
+    region: oregon
+    plan: standard
+    dockerfilePath: ./mongodb.Dockerfile
+    envVars:
+      - key: MONGO_INITDB_ROOT_USERNAME
+        value: educando_admin
+      - key: MONGO_INITDB_ROOT_PASSWORD
+        generateValue: true
+      - key: MONGO_INITDB_DATABASE
+        value: educando_db
+    disk:
+      name: mongodb-data
+      mountPath: /data/db
+      sizeGB: 10
+
+  # Backend API Service
+  - type: web
+    name: educando-backend
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: MONGO_URL
+        fromService:
+          type: pserv
+          name: educando-mongodb
+          envVarKey: MONGO_URL
+      - key: DB_NAME
+        value: educando_db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 8001
+    healthCheckPath: /
+    autoDeploy: true
+
+  # Frontend Static Site
+  - type: web
+    name: educando-frontend
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    buildFilter:
+      paths:
+        - frontend/**
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        fromService:
+          type: web
+          name: educando-backend
+          property: url
+      - key: PORT
+        value: 80
+    healthCheckPath: /
+    autoDeploy: true
