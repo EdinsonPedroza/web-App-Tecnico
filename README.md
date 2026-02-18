@@ -220,6 +220,44 @@ docker compose -f docker-compose.dev.yml down -v
 docker compose -f docker-compose.dev.yml down -v  # ⚠️ Esto borrará los datos
 ```
 
+### Problemas con autenticación en producción (Render)
+
+**Problema**: Las credenciales no funcionan después de desplegar en Render.
+
+**Causa más común**: MongoDB no está conectado o configurado correctamente.
+
+**Solución**: Ver la guía completa en [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)
+
+Pasos rápidos:
+1. Crear cuenta en MongoDB Atlas (gratis)
+2. Crear un cluster y usuario de base de datos
+3. Configurar `MONGO_URL` en Render
+4. Verificar los logs del backend: debe decir "MongoDB connection successful"
+5. Usar las credenciales de [USUARIOS_Y_CONTRASEÑAS.txt](USUARIOS_Y_CONTRASEÑAS.txt)
+
+## 🔧 Verificar Conexión a MongoDB
+
+Si tienes problemas conectándote a MongoDB (especialmente en producción), usa el script de verificación:
+
+```bash
+# Opción 1: Pasar la connection string directamente
+python backend/verify_mongodb.py "mongodb+srv://user:pass@cluster.mongodb.net/educando_db"
+
+# Opción 2: Configurar MONGO_URL en backend/.env y ejecutar
+python backend/verify_mongodb.py
+```
+
+El script verificará:
+- ✅ Que la connection string sea válida
+- ✅ Que puedas conectarte a MongoDB
+- ✅ Que los usuarios estén creados correctamente
+- ✅ El estado de las colecciones y documentos
+
+**Requisitos:**
+```bash
+pip install motor python-dotenv
+```
+
 ## 📚 Documentación Adicional
 
 - [Documentación de React](https://react.dev/)

@@ -10,6 +10,9 @@ services:
     envVars:
       - key: MONGO_URL
         sync: false
+        # IMPORTANTE: Esta variable DEBE ser configurada manualmente en Render
+        # Ver archivo RENDER_MONGODB_SETUP.md para instrucciones completas
+        # Ejemplo: mongodb+srv://usuario:password@cluster.mongodb.net/educando_db?retryWrites=true&w=majority
       - key: DB_NAME
         value: educando_db
       - key: JWT_SECRET
@@ -44,7 +47,43 @@ services:
         value: 10000
     autoDeploy: true
 
-# Note: MongoDB should be added manually in Render Dashboard
-# Option 1: Add MongoDB as a Private Service in Render
-# Option 2: Use MongoDB Atlas (recommended) at https://www.mongodb.com/cloud/atlas
-# After creating MongoDB, update the MONGO_URL environment variable in the backend service
+################################################################################
+# CONFIGURACIÓN DE MONGODB - ¡MUY IMPORTANTE!
+################################################################################
+#
+# ⚠️  RENDER NO INCLUYE MONGODB AUTOMÁTICAMENTE ⚠️
+#
+# Debes configurar MongoDB manualmente antes de que la aplicación funcione.
+# Sin MongoDB, las credenciales NO FUNCIONARÁN y verás errores de autenticación.
+#
+# 📖 GUÍA COMPLETA: Ver archivo RENDER_MONGODB_SETUP.md
+#
+# OPCIONES PARA MONGODB:
+#
+# ✅ Opción 1: MongoDB Atlas (RECOMENDADO - Gratis hasta 512MB)
+#    1. Crea cuenta en: https://www.mongodb.com/cloud/atlas/register
+#    2. Crea un cluster gratuito (M0)
+#    3. Crea un usuario de base de datos
+#    4. Permite acceso desde cualquier IP (0.0.0.0/0)
+#    5. Copia la connection string
+#    6. En Render Dashboard → educando-backend → Environment
+#       Agrega MONGO_URL con tu connection string
+#
+# ✅ Opción 2: Render Private Services (MongoDB)
+#    1. En Render Dashboard → New + → Private Service → MongoDB
+#    2. Copia la Internal Connection String
+#    3. En educando-backend → Environment
+#       Agrega MONGO_URL con la connection string interna
+#
+# VERIFICAR QUE MONGODB ESTÉ CONECTADO:
+#    1. Ve a Render Dashboard → educando-backend → Logs
+#    2. Busca: "MongoDB connection successful"
+#    3. Busca: "Datos iniciales creados exitosamente"
+#    4. Busca: "Credenciales creadas para 7 usuarios"
+#
+# Si NO ves estos mensajes, MongoDB no está conectado correctamente.
+#
+# CREDENCIALES DE USUARIOS:
+#    Ver archivo: USUARIOS_Y_CONTRASEÑAS.txt
+#
+################################################################################
