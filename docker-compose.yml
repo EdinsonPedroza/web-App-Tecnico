@@ -25,6 +25,9 @@ services:
     restart: always
     depends_on:
       - backend
+    environment:
+      - BACKEND_URL=http://backend:8001
+      - PORT=80
     ports:
       - "80:80"
 
