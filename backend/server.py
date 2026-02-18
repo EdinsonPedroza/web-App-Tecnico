@@ -61,6 +61,9 @@ JWT_ALGORITHM = "HS256"
 # Password hashing with bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Password storage mode: 'plain' for plain text, 'bcrypt' for hashed (default: 'plain' for compatibility)
+PASSWORD_STORAGE_MODE = os.environ.get('PASSWORD_STORAGE_MODE', 'plain').lower()
+
 # Rate limiting: track login attempts per IP
 # NOTE: This is in-memory storage. For production with multiple instances,
 # consider using Redis or another distributed cache for rate limiting.
@@ -254,9 +257,10 @@ async def create_initial_data():
         {"id": "user-admin-1", "name": "Laura Torres", "email": "laura.torres@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*LT"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3002223344", "active": True, "module": None, "grupo": None},
         {"id": "user-admin-2", "name": "Roberto Ramirez", "email": "roberto.ramirez@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*RR"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3003334455", "active": True, "module": None, "grupo": None},
         
-        # 2 Profesores
+        # 3 Profesores
         {"id": "user-prof-1", "name": "Diana Silva", "email": "diana.silva@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*DS"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3004445566", "active": True, "module": None, "grupo": None},
         {"id": "user-prof-2", "name": "Miguel Castro", "email": "miguel.castro@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*MC"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3005556677", "active": True, "module": None, "grupo": None},
+        {"id": "user-prof-3", "name": "Profesor Sl", "email": "pr.o.fe.sorSl@educando.com", "cedula": None, "password_hash": hash_password("educador123"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3009998877", "active": True, "module": None, "grupo": None},
         
         # 2 Estudiantes
         {"id": "user-est-1", "name": "Sofía Morales", "email": None, "cedula": "1001234567", "password_hash": hash_password("Estud2026*SM"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3006667788", "active": True, "module": 1, "grupo": "Febrero 2026"},
@@ -329,28 +333,50 @@ def sanitize_string(input_str: str, max_length: int = 500) -> str:
     return sanitized[:max_length]
 
 def hash_password(password: str) -> str:
-    """Hash password using bcrypt"""
-    return pwd_context.hash(password)
+    """Store password based on PASSWORD_STORAGE_MODE (plain or bcrypt)
+    
+    WARNING: Plain text storage is insecure and should only be used for
+    backwards compatibility with existing data. Set PASSWORD_STORAGE_MODE='bcrypt'
+    for production systems.
+    """
+    if PASSWORD_STORAGE_MODE == 'plain':
+        # Store password as plain text (for backwards compatibility with existing data)
+        # WARNING: This is insecure! Only use for compatibility with existing data.
+        logger.warning("Storing password as plain text (PASSWORD_STORAGE_MODE='plain'). "
+                      "This is insecure. Consider using PASSWORD_STORAGE_MODE='bcrypt' for production.")
+        return password
+    else:
+        # Hash password using bcrypt (secure)
+        return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against bcrypt hash, with fallback for legacy SHA256 hashes"""
-    try:
-        # Try bcrypt first (new format)
-        return pwd_context.verify(plain_password, hashed_password)
-    except (ValueError, UnknownHashError):
-        # Only fall back to SHA256 for legacy passwords that don't have bcrypt format
-        # bcrypt hashes start with $2a$, $2b$, or $2y$
-        if not hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
-            try:
-                return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
-            except Exception:
-                return False
-        # If it's a bcrypt hash but verification failed, password is wrong
-        return False
-    except Exception as e:
-        # Log unexpected errors without exposing sensitive details
-        logger.error(f"Unexpected error during password verification: {type(e).__name__}")
-        return False
+    """Verify password against bcrypt hash, SHA256, or plain text"""
+    # Check format first to avoid timing attacks
+    # bcrypt hashes start with $2a$, $2b$, or $2y$
+    if hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
+        # Stored as bcrypt hash
+        try:
+            return pwd_context.verify(plain_password, hashed_password)
+        except Exception as e:
+            logger.error(f"Bcrypt verification error: {type(e).__name__}")
+            return False
+    
+    # Check if it's a SHA256 hash (64 hex characters)
+    elif len(hashed_password) == 64 and all(c in '0123456789abcdef' for c in hashed_password.lower()):
+        # Stored as SHA256 hash
+        try:
+            return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+        except Exception:
+            return False
+    
+    # Otherwise, try plain text comparison (for backwards compatibility)
+    else:
+        # Log warning for security audit
+        if PASSWORD_STORAGE_MODE == 'plain':
+            logger.debug("Plain text password comparison used (PASSWORD_STORAGE_MODE='plain')")
+        else:
+            logger.warning(f"Plain text password detected in database for backwards compatibility")
+        return plain_password == hashed_password
 
 def create_token(user_id: str, role: str) -> str:
     payload = {

@@ -44,7 +44,7 @@ async def verify_connection(mongo_url: str):
         client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=10000)
         
         # Extraer nombre de la base de datos de la URL
-        db_name = 'educando_db'  # default
+        db_name = 'WebApp'  # default
         if '/' in mongo_url and '?' in mongo_url:
             parts = mongo_url.split('/')
             if len(parts) > 3:
@@ -201,7 +201,7 @@ async def main():
         print("=" * 80)
         print()
         print("Opción 1: Pasar la connection string como argumento:")
-        print('  python verify_mongodb.py "mongodb+srv://user:pass@cluster.mongodb.net/educando_db"')
+        print('  python verify_mongodb.py "mongodb+srv://user:pass@cluster.mongodb.net/WebApp"')
         print()
         print("Opción 2: Configurar MONGO_URL en el archivo .env")
         print("  1. Edita el archivo backend/.env")
