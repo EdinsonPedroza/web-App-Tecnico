@@ -34,12 +34,12 @@ services:
         fromService:
           type: web
           name: educando-backend
-          property: host
+          property: url
       - key: BACKEND_URL
         fromService:
           type: web
           name: educando-backend
-          property: host
+          property: url
       - key: PORT
         value: 10000
     autoDeploy: true
