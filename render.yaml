@@ -35,6 +35,13 @@ services:
           type: web
           name: educando-backend
           property: host
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: educando-backend
+          property: host
+      - key: PORT
+        value: 10000
     autoDeploy: true
 
 # Note: MongoDB should be added manually in Render Dashboard
