@@ -21,4 +21,4 @@ COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 EXPOSE 80
 
-CMD ["/bin/sh", "-c", "if ! echo \"$BACKEND_URL\" | grep -q '^http'; then export BACKEND_URL=\"https://$BACKEND_URL\"; fi && envsubst '$PORT $BACKEND_URL' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "if ! echo \"$BACKEND_URL\" | grep -Eq '^https?://'; then export BACKEND_URL=\"https://$BACKEND_URL\"; fi && envsubst '$PORT $BACKEND_URL' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
