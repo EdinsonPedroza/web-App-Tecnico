@@ -89,7 +89,7 @@
   - [ ] `MONGO_URL` = (pegué la URL de MongoDB Atlas o Private Service)
   - [ ] `DB_NAME` = `educando_db` (debería estar ya)
   - [ ] `JWT_SECRET` = (Render lo generó automáticamente)
-  - [ ] `PORT` = `8001` (debería estar ya)
+  - [ ] `PORT` = `10000` (Render lo configura automáticamente)
 - [ ] Hice clic en "Save Changes"
 - [ ] Esperé 2-3 minutos para que Render redesplegara
 
@@ -101,13 +101,14 @@
 - [ ] Fui a "Environment"
 - [ ] Verifiqué que exista:
   - [ ] `REACT_APP_BACKEND_URL` = (URL del backend, debería estar automático)
-  - [ ] `PORT` = `80` (debería estar ya)
 - [ ] Si `REACT_APP_BACKEND_URL` está vacío:
   - [ ] Fui al servicio "educando-backend"
   - [ ] Copié su URL pública (ej: `https://educando-backend.onrender.com`)
   - [ ] Volví al frontend → Environment
   - [ ] Agregué `REACT_APP_BACKEND_URL` con la URL del backend
   - [ ] Guardé los cambios
+
+Nota: El puerto se configura automáticamente en Render, no necesitas configurarlo manualmente.
 
 ---
 

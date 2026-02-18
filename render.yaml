@@ -15,8 +15,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: PORT
-        value: 8001
-    healthCheckPath: /
+        value: 10000
     autoDeploy: true
 
   # Frontend Web Service
@@ -36,9 +35,6 @@ services:
           type: web
           name: educando-backend
           property: url
-      - key: PORT
-        value: 80
-    healthCheckPath: /
     autoDeploy: true
 
 # Note: MongoDB should be added manually in Render Dashboard

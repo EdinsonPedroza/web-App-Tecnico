@@ -183,8 +183,6 @@ Si prefieres tener MongoDB dentro de Render:
 
 ## ⚙️ PASO 5: Verificar Variables de Entorno
 
-## ⚙️ PASO 5: Verificar Variables de Entorno
-
 El archivo `render.yaml` ya tiene la mayoría de variables configuradas. Verifica que todo esté correcto:
 
 ### 5.1 Backend
@@ -196,7 +194,7 @@ El archivo `render.yaml` ya tiene la mayoría de variables configuradas. Verific
    MONGO_URL=<La URL de MongoDB Atlas o Private Service que configuraste>
    DB_NAME=educando_db
    JWT_SECRET=<Render lo genera automáticamente>
-   PORT=8001
+   PORT=10000
    ```
 
 ### 5.2 Frontend
@@ -206,8 +204,9 @@ El archivo `render.yaml` ya tiene la mayoría de variables configuradas. Verific
 3. **Verifica que exista**:
    ```
    REACT_APP_BACKEND_URL=<URL del backend, Render lo configura automáticamente>
-   PORT=80
    ```
+   
+   Nota: El puerto para el frontend lo maneja automáticamente Render/nginx, no necesitas configurarlo.
 
 Si `REACT_APP_BACKEND_URL` no existe o está vacía:
 1. Ve al servicio "educando-backend"
