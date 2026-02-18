@@ -48,8 +48,8 @@ def redact_mongo_url(url: str) -> str:
 logger.info(f"Connecting to MongoDB at: {redact_mongo_url(mongo_url)}")
 try:
     client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
-    db = client[os.environ.get('DB_NAME', 'educando_db')]
-    logger.info(f"MongoDB client initialized for database: {os.environ.get('DB_NAME', 'educando_db')}")
+    db = client[os.environ.get('DB_NAME', 'WebApp')]
+    logger.info(f"MongoDB client initialized for database: {os.environ.get('DB_NAME', 'WebApp')}")
 except Exception as e:
     logger.error(f"Failed to initialize MongoDB client: {e}")
     raise

@@ -13,8 +13,8 @@ services:
     depends_on:
       - mongodb
     environment:
-      - MONGO_URL=mongodb://mongodb:27017
-      - DB_NAME=educando_db
+      - MONGO_URL=mongodb+srv://insonest2106_db_user:HLDVMjvKWHMg4Dg2@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
+      - DB_NAME=WebApp
     volumes:
       - uploads_data:/app/uploads
 
