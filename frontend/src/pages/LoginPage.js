@@ -114,9 +114,27 @@ export default function LoginPage() {
                     Profesor
                   </TabsTrigger>
                 </TabsList>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  Admin y Editor inician sesión usando Profesor
-                </p>
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100 text-center mb-2">
+                    ℹ️ Información de Acceso
+                  </p>
+                  <div className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
+                    {role === 'estudiante' ? (
+                      <div>
+                        <p className="font-semibold">Estudiantes:</p>
+                        <p>• Usuario: <span className="font-mono">1234567890</span></p>
+                        <p>• Contraseña: <span className="font-mono">estudiante123</span></p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-semibold">Admin/Editor/Profesor inician aquí:</p>
+                        <p>• Admin: <span className="font-mono">admin@educando.com</span> / <span className="font-mono">admin123</span></p>
+                        <p>• Editor: <span className="font-mono">editor@educando.com</span> / <span className="font-mono">editor123</span></p>
+                        <p>• Profesor: <span className="font-mono">profesor@educando.com</span> / <span className="font-mono">profesor123</span></p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </Tabs>
 
               <form onSubmit={handleSubmit} className="space-y-4">
