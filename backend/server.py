@@ -286,7 +286,8 @@ async def create_initial_data():
     """Crea los usuarios y datos iniciales si no existen"""
     logger.info("Verificando y creando datos iniciales...")
     
-    # Crear programas con sus módulos y materias (siempre se verifican y crean si no existen)
+    # Crear programas con sus módulos y materias SOLO si no existen
+    # Usar $setOnInsert para evitar sobrescribir cambios hechos desde el admin panel
     programs = [
         {
             "id": "prog-admin", 
@@ -371,16 +372,29 @@ async def create_initial_data():
             "active": True
         },
     ]
+    # Only insert programs if they don't already exist - never overwrite admin changes
+    programs_created = 0
     for p in programs:
-        await db.programs.update_one({"id": p["id"]}, {"$set": p}, upsert=True)
+        result = await db.programs.update_one(
+            {"id": p["id"]},
+            {"$setOnInsert": p},
+            upsert=True
+        )
+        if result.upserted_id:
+            programs_created += 1
+    if programs_created > 0:
+        logger.info(f"Creados {programs_created} programas nuevos")
+    else:
+        logger.info("Todos los programas ya existen - no se sobrescribieron")
     
     # Crear materias basadas en los módulos de los programas
-    # IMPORTANTE: Usar $setOnInsert para el ID para evitar que cambie en cada reinicio del servidor
-    # Esto previene que los cursos pierdan la referencia a las materias (mostrando "-" en el frontend)
+    # IMPORTANTE: Usar $setOnInsert para TODOS los campos para evitar sobrescribir cambios
+    # Esto previene que los cursos pierdan la referencia a las materias
     for prog in programs:
         for module in prog["modules"]:
             for subj_name in module["subjects"]:
-                subject_update = {
+                subject_data = {
+                    "id": str(uuid.uuid4()),
                     "name": subj_name,
                     "program_id": prog["id"],
                     "module_number": module["number"],
@@ -389,10 +403,7 @@ async def create_initial_data():
                 }
                 await db.subjects.update_one(
                     {"name": subj_name, "program_id": prog["id"], "module_number": module["number"]},
-                    {
-                        "$setOnInsert": {"id": str(uuid.uuid4())},  # Solo asignar ID si es nuevo
-                        "$set": subject_update  # Actualizar otros campos
-                    },
+                    {"$setOnInsert": subject_data},
                     upsert=True
                 )
     
@@ -797,6 +808,7 @@ class CourseUpdate(BaseModel):
 
 class ActivityCreate(BaseModel):
     course_id: str
+    subject_id: Optional[str] = None  # Specific subject within the course/group
     title: str
     description: Optional[str] = ""
     start_date: Optional[str] = None
@@ -812,11 +824,13 @@ class ActivityUpdate(BaseModel):
     files: Optional[list] = None
     active: Optional[bool] = None
     is_recovery: Optional[bool] = None
+    subject_id: Optional[str] = None
 
 class GradeCreate(BaseModel):
     student_id: str
     course_id: str
     activity_id: Optional[str] = None
+    subject_id: Optional[str] = None  # Specific subject within the course/group
     value: Optional[float] = None
     comments: Optional[str] = ""
     recovery_status: Optional[str] = None  # 'approved', 'rejected', or None
@@ -828,6 +842,7 @@ class GradeUpdate(BaseModel):
 
 class ClassVideoCreate(BaseModel):
     course_id: str
+    subject_id: Optional[str] = None  # Specific subject within the course/group
     title: str
     url: str
     description: Optional[str] = ""
@@ -1480,10 +1495,12 @@ async def delete_course(course_id: str, user=Depends(get_current_user)):
 
 # --- Activities Routes ---
 @api_router.get("/activities")
-async def get_activities(course_id: Optional[str] = None, user=Depends(get_current_user)):
+async def get_activities(course_id: Optional[str] = None, subject_id: Optional[str] = None, user=Depends(get_current_user)):
     query = {}
     if course_id:
         query["course_id"] = course_id
+    if subject_id:
+        query["subject_id"] = subject_id
     activities = await db.activities.find(query, {"_id": 0}).to_list(500)
     return activities
 
@@ -1491,12 +1508,13 @@ async def get_activities(course_id: Optional[str] = None, user=Depends(get_curre
 async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
-    # Auto-number: count existing activities for this course
+    # Auto-number: count existing activities for this course (course-wide numbering)
     count = await db.activities.count_documents({"course_id": req.course_id})
     activity_number = count + 1
     activity = {
         "id": str(uuid.uuid4()),
         "course_id": req.course_id,
+        "subject_id": req.subject_id,
         "activity_number": activity_number,
         "title": req.title,
         "description": req.description,
@@ -1537,12 +1555,16 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
 
 # --- Grades Routes ---
 @api_router.get("/grades")
-async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, user=Depends(get_current_user)):
+async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, user=Depends(get_current_user)):
     query = {}
     if course_id:
         query["course_id"] = course_id
     if student_id:
         query["student_id"] = student_id
+    if subject_id:
+        query["subject_id"] = subject_id
+    if activity_id:
+        query["activity_id"] = activity_id
     grades = await db.grades.find(query, {"_id": 0}).to_list(5000)
     return grades
 
@@ -1614,6 +1636,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
         "student_id": req.student_id,
         "course_id": req.course_id,
         "activity_id": req.activity_id,
+        "subject_id": req.subject_id,
         "value": grade_value if grade_value is not None else 0.0,
         "comments": req.comments,
         "recovery_status": req.recovery_status,
@@ -1639,10 +1662,12 @@ async def update_grade(grade_id: str, req: GradeUpdate, user=Depends(get_current
 
 # --- Class Videos Routes ---
 @api_router.get("/class-videos")
-async def get_class_videos(course_id: Optional[str] = None, user=Depends(get_current_user)):
+async def get_class_videos(course_id: Optional[str] = None, subject_id: Optional[str] = None, user=Depends(get_current_user)):
     query = {}
     if course_id:
         query["course_id"] = course_id
+    if subject_id:
+        query["subject_id"] = subject_id
     videos = await db.class_videos.find(query, {"_id": 0}).to_list(500)
     return videos
 
@@ -1653,6 +1678,7 @@ async def create_class_video(req: ClassVideoCreate, user=Depends(get_current_use
     video = {
         "id": str(uuid.uuid4()),
         "course_id": req.course_id,
+        "subject_id": req.subject_id,
         "title": req.title,
         "url": req.url,
         "description": req.description,

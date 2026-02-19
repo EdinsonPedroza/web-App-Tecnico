@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,8 @@ const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 
 export default function TeacherActivities() {
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -34,14 +36,16 @@ export default function TeacherActivities() {
 
   const fetchActivities = useCallback(async () => {
     try {
-      const res = await api.get(`/activities?course_id=${courseId}`);
+      let url = `/activities?course_id=${courseId}`;
+      if (subjectId) url += `&subject_id=${subjectId}`;
+      const res = await api.get(url);
       setActivities(res.data);
     } catch (err) {
       toast.error('Error cargando actividades');
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
@@ -92,6 +96,7 @@ export default function TeacherActivities() {
         student_id: studentId,
         course_id: courseId,
         activity_id: submissionsDialog.id,
+        subject_id: subjectId,
         value: value,
         recovery_status: recoveryStatus
       });
@@ -181,6 +186,7 @@ export default function TeacherActivities() {
       } else {
         await api.post('/activities', {
           course_id: courseId,
+          subject_id: subjectId,
           title: form.title,
           description: form.description,
           start_date: startDate,

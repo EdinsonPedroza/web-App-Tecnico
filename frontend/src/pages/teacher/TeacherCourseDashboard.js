@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,8 @@ import api from '@/lib/api';
 
 export default function TeacherCourseDashboard() {
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [course, setCourse] = useState(null);
   const [activities, setActivities] = useState([]);
   const [videos, setVideos] = useState([]);
@@ -15,10 +17,14 @@ export default function TeacherCourseDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
+      let activitiesUrl = `/activities?course_id=${courseId}`;
+      if (subjectId) activitiesUrl += `&subject_id=${subjectId}`;
+      let videosUrl = `/class-videos?course_id=${courseId}`;
+      if (subjectId) videosUrl += `&subject_id=${subjectId}`;
       const [cRes, aRes, vRes] = await Promise.all([
         api.get(`/courses/${courseId}`),
-        api.get(`/activities?course_id=${courseId}`),
-        api.get(`/class-videos?course_id=${courseId}`)
+        api.get(activitiesUrl),
+        api.get(videosUrl)
       ]);
       setCourse(cRes.data);
       setActivities(aRes.data);
@@ -28,7 +34,7 @@ export default function TeacherCourseDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

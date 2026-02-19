@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,8 @@ import api from '@/lib/api';
 
 export default function TeacherGrades() {
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [course, setCourse] = useState(null);
   const [students, setStudents] = useState([]);
   const [activities, setActivities] = useState([]);
@@ -23,10 +25,14 @@ export default function TeacherGrades() {
 
   const fetchData = useCallback(async () => {
     try {
+      let activitiesUrl = `/activities?course_id=${courseId}`;
+      if (subjectId) activitiesUrl += `&subject_id=${subjectId}`;
+      let gradesUrl = `/grades?course_id=${courseId}`;
+      if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
       const [cRes, aRes, gRes, uRes] = await Promise.all([
         api.get(`/courses/${courseId}`),
-        api.get(`/activities?course_id=${courseId}`),
-        api.get(`/grades?course_id=${courseId}`),
+        api.get(activitiesUrl),
+        api.get(gradesUrl),
         api.get('/users?role=estudiante')
       ]);
       setCourse(cRes.data);
@@ -39,7 +45,7 @@ export default function TeacherGrades() {
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -75,11 +81,14 @@ export default function TeacherGrades() {
         student_id: studentId,
         course_id: courseId,
         activity_id: activityId,
+        subject_id: subjectId,
         value,
         comments: ''
       });
       toast.success('Nota guardada');
-      const gRes = await api.get(`/grades?course_id=${courseId}`);
+      let gradesUrl = `/grades?course_id=${courseId}`;
+      if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
+      const gRes = await api.get(gradesUrl);
       setGrades(gRes.data);
       setEditedGrades(prev => {
         const next = { ...prev };

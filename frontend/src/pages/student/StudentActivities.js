@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,8 @@ const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 export default function StudentActivities() {
   const { user } = useAuth();
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [activities, setActivities] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,8 +31,12 @@ export default function StudentActivities() {
 
   const fetchData = useCallback(async () => {
     try {
-      const query = courseId ? `course_id=${courseId}` : '';
-      const aRes = await api.get(`/activities${query ? '?' + query : ''}`);
+      let url = '/activities';
+      const params = [];
+      if (courseId) params.push(`course_id=${courseId}`);
+      if (subjectId) params.push(`subject_id=${subjectId}`);
+      if (params.length > 0) url += '?' + params.join('&');
+      const aRes = await api.get(url);
       setActivities(aRes.data);
       const sRes = await api.get(`/submissions?student_id=${user.id}`);
       setSubmissions(sRes.data);
@@ -39,7 +45,7 @@ export default function StudentActivities() {
     } finally {
       setLoading(false);
     }
-  }, [user.id, courseId]);
+  }, [user.id, courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

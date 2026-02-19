@@ -5,7 +5,8 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, BookOpen, ChevronRight, ArrowLeft, Lock } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Loader2, BookOpen, ChevronRight, ArrowLeft, Lock, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -17,6 +18,7 @@ export default function StudentCourseSelector() {
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProgram, setSelectedProgram] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -88,6 +90,15 @@ export default function StudentCourseSelector() {
     });
   });
 
+  // Filter subject cards by search query
+  const filteredSubjectCards = searchQuery.trim()
+    ? subjectCards.filter(card =>
+        card.subjectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        card.groupName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        card.programName.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : subjectCards;
+
   const handleBackToPrograms = () => {
     sessionStorage.removeItem('selectedProgramId');
     navigate('/student');
@@ -133,8 +144,20 @@ export default function StudentCourseSelector() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {subjectCards.map((card) => (
+          <>
+            <div className="max-w-md mx-auto">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar materia o grupo..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredSubjectCards.map((card) => (
               card.isLocked ? (
                 <Card
                   key={`${card.courseId}-${card.subjectId}`}
@@ -170,7 +193,7 @@ export default function StudentCourseSelector() {
                 <Card
                   key={`${card.courseId}-${card.subjectId}`}
                   className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
-                  onClick={() => navigate(`/student/course/${card.courseId}`)}
+                  onClick={() => navigate(`/student/course/${card.courseId}?subjectId=${card.subjectId}`)}
                 >
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between mb-4">
@@ -205,6 +228,7 @@ export default function StudentCourseSelector() {
               )
             ))}
           </div>
+          </>
         )}
       </div>
     </DashboardLayout>
