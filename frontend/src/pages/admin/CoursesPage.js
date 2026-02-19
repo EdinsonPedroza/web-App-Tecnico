@@ -322,22 +322,31 @@ export default function CoursesPage() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-base">Año</Label>
-                    <Input 
-                      type="number" 
-                      value={form.year} 
-                      onChange={(e) => {
-                        const newYear = parseInt(e.target.value) || new Date().getFullYear();
+                    <Select 
+                      value={form.year?.toString()} 
+                      onValueChange={(value) => {
+                        const newYear = parseInt(value);
                         if (form.month && newYear) {
                           const newName = `${form.month.toUpperCase()}-${newYear}`;
                           setForm({ ...form, year: newYear, name: newName });
                         } else {
                           setForm({ ...form, year: newYear });
                         }
-                      }} 
-                      placeholder="2026"
-                      min="2024"
-                      max="2030"
-                    />
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccione un año" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="2024">2024</SelectItem>
+                        <SelectItem value="2025">2025</SelectItem>
+                        <SelectItem value="2026">2026</SelectItem>
+                        <SelectItem value="2027">2027</SelectItem>
+                        <SelectItem value="2028">2028</SelectItem>
+                        <SelectItem value="2029">2029</SelectItem>
+                        <SelectItem value="2030">2030</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
             )}
