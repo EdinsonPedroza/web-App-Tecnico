@@ -257,16 +257,17 @@ async def startup_event():
         await create_initial_data()
         
         # Start the automatic module closure scheduler
-        # Runs daily at 00:01 AM to check for modules that need to be closed
+        # Runs daily at 00:01 AM (server local timezone) to check for modules that need to be closed
+        # Note: Uses server's local timezone by default. For production, consider explicitly setting timezone.
         scheduler.add_job(
             check_and_close_modules,
-            CronTrigger(hour=0, minute=1),  # Run at 00:01 AM daily
+            CronTrigger(hour=0, minute=1),  # Run at 00:01 AM daily (server local time)
             id='auto_close_modules',
             name='Automatic Module Closure',
             replace_existing=True
         )
         scheduler.start()
-        logger.info("Automatic module closure scheduler started (runs daily at 00:01 AM)")
+        logger.info("Automatic module closure scheduler started (runs daily at 00:01 AM server local time)")
         
         logger.info("Application startup completed successfully")
     except Exception as e:
@@ -411,6 +412,8 @@ async def create_initial_data():
         logger.info("Base de datos vacía. Creando usuarios iniciales...")
     
     # Definir usuarios semilla (seed users) - solo se crean si no existen
+    # Note: Email domains vary by role (@tecnico.com, @estudiante.com, @profesor.com) 
+    # as specified in the requirements to clearly distinguish user types
     seed_users = [
         # 1 Editor
         {"id": "user-editor-1", "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
