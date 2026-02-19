@@ -89,6 +89,22 @@ def validate_module_number(module_num, field_name="module"):
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+# Health check endpoint for monitoring
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint that verifies server and MongoDB connection status"""
+    try:
+        # Ping MongoDB to verify connection
+        await db.command('ping')
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": "disconnected"}
+        )
+
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
