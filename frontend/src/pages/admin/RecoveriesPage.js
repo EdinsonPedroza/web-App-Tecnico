@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, Trash2, GraduationCap } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, Trash2, GraduationCap, AlertCircle } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function RecoveriesPage() {

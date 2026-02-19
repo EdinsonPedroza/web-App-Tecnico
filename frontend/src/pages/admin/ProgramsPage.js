@@ -10,7 +10,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, Building2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Building2, Search } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
 
@@ -21,6 +21,7 @@ export default function ProgramsPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', duration: '12 meses', moduleCount: 2 });
   const [saving, setSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const fetchPrograms = useCallback(async () => {
     try {
@@ -112,6 +113,21 @@ export default function ProgramsPage() {
           </Button>
         </div>
 
+        {/* Search Bar */}
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar programas por nombre o descripción..."
+                className="pl-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
         ) : programs.length === 0 ? (
@@ -122,7 +138,13 @@ export default function ProgramsPage() {
           </CardContent></Card>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {programs.map((prog) => (
+            {programs
+              .filter(prog => 
+                searchTerm === '' || 
+                prog.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (prog.description && prog.description.toLowerCase().includes(searchTerm.toLowerCase()))
+              )
+              .map((prog) => (
               <Card key={prog.id} className="shadow-card hover:shadow-card-hover transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
