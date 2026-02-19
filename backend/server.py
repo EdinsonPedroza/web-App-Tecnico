@@ -55,7 +55,10 @@ except Exception as e:
     raise
 
 # JWT Secret
-JWT_SECRET = os.environ.get('JWT_SECRET', 'educando_secret_key_2025')
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET:
+    logger.warning("⚠️ JWT_SECRET not set! Using insecure default. SET THIS IN PRODUCTION!")
+    JWT_SECRET = 'educando_secret_key_2025_CHANGE_ME'
 JWT_ALGORITHM = "HS256"
 
 # Password hashing with bcrypt
@@ -85,6 +88,25 @@ def validate_module_number(module_num, field_name="module"):
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+# Health check endpoint for monitoring
+@app.get("/api/health")
+async def health_check():
+    """
+    Health check endpoint for load balancers and monitoring systems.
+    Returns basic status without exposing sensitive implementation details.
+    """
+    try:
+        # Ping MongoDB to verify connection
+        await db.command('ping')
+        return {"status": "healthy"}
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy"}
+        )
+
 
 # Global exception handler
 @app.exception_handler(Exception)

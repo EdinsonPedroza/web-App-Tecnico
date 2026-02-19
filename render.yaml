@@ -18,9 +18,12 @@ services:
       - key: DB_NAME
         value: WebApp
       - key: PASSWORD_STORAGE_MODE
-        value: plain
+        value: bcrypt
       - key: CORS_ORIGINS
         value: "*"
+        # ⚠️ SECURITY WARNING: "*" allows requests from any domain.
+        # For production, replace with your specific domain(s):
+        # value: "https://yourdomain.com,https://www.yourdomain.com"
       - key: JWT_SECRET
         generateValue: true
       - key: PORT
