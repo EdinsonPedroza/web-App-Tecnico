@@ -10,12 +10,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, Users, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Users, Search, BookOpen } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function TeachersPage() {
   const [teachers, setTeachers] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -23,15 +24,19 @@ export default function TeachersPage() {
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', subject_ids: [] });
   const [saving, setSaving] = useState(false);
   const [subjectSearch, setSubjectSearch] = useState('');
+  const [viewSubjectsDialog, setViewSubjectsDialog] = useState(false);
+  const [selectedTeacher, setSelectedTeacher] = useState(null);
 
   const fetchTeachers = useCallback(async () => {
     try {
-      const [tRes, sRes] = await Promise.all([
+      const [tRes, sRes, pRes] = await Promise.all([
         api.get('/users?role=profesor'),
-        api.get('/subjects')
+        api.get('/subjects'),
+        api.get('/programs')
       ]);
       setTeachers(tRes.data);
       setSubjects(sRes.data);
+      setPrograms(pRes.data);
     } catch (err) {
       toast.error('Error cargando profesores');
     } finally {
@@ -118,6 +123,11 @@ export default function TeachersPage() {
     return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
   };
 
+  const openViewSubjects = (teacher) => {
+    setSelectedTeacher(teacher);
+    setViewSubjectsDialog(true);
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -177,7 +187,11 @@ export default function TeachersPage() {
                             ) : null;
                           })}
                           {t.subject_ids.length > 2 && (
-                            <Badge variant="outline" className="text-xs">
+                            <Badge 
+                              variant="outline" 
+                              className="text-xs cursor-pointer hover:bg-primary/10 transition-colors"
+                              onClick={() => openViewSubjects(t)}
+                            >
                               +{t.subject_ids.length - 2} más
                             </Badge>
                           )}
@@ -267,6 +281,50 @@ export default function TeachersPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin" />}{editing ? 'Actualizar' : 'Crear'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View All Subjects Dialog */}
+      <Dialog open={viewSubjectsDialog} onOpenChange={setViewSubjectsDialog}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Materias de {selectedTeacher?.name}</DialogTitle>
+            <DialogDescription>
+              Todas las materias asignadas a este profesor
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {selectedTeacher?.subject_ids && selectedTeacher.subject_ids.length > 0 ? (
+              <div className="grid grid-cols-1 gap-2">
+                {selectedTeacher.subject_ids.map(subId => {
+                  const subj = subjects.find(s => s.id === subId);
+                  return subj ? (
+                    <Card key={subId} className="p-4 hover:bg-accent/50 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-base">{subj.name}</h4>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Programa: {programs.find(p => p.id === subj.program_id)?.name || 'N/A'}
+                          </p>
+                        </div>
+                        <Badge variant="secondary" className="ml-3">
+                          Módulo {subj.module_number}
+                        </Badge>
+                      </div>
+                    </Card>
+                  ) : null;
+                })}
+              </div>
+            ) : (
+              <div className="p-10 text-center">
+                <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground">Este profesor no tiene materias asignadas</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setViewSubjectsDialog(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
