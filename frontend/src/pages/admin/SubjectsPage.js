@@ -145,7 +145,7 @@ export default function SubjectsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map((subj) => (
-              <Card key={subj.id} className="shadow-card hover:shadow-card-hover transition-shadow flex flex-col">
+              <Card key={subj.id} className="shadow-card hover:shadow-lg transition-all duration-300 hover-lift flex flex-col">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-sm font-heading">{subj.name}</CardTitle>
@@ -157,9 +157,9 @@ export default function SubjectsPage() {
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col">
                   <p className="text-xs text-muted-foreground mb-3 flex-1">{subj.description || 'Sin descripción'}</p>
-                  <div className="flex gap-2 mt-auto">
+                  <div className="flex flex-wrap gap-2 mt-auto">
                     <Badge variant="secondary" className="text-xs">Módulo {subj.module_number}</Badge>
-                    <Badge variant="outline" className="text-xs">{getProgramName(subj.program_id)}</Badge>
+                    <Badge variant="outline" className="text-xs break-words">{getProgramName(subj.program_id)}</Badge>
                   </div>
                 </CardContent>
               </Card>
