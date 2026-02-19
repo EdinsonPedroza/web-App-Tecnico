@@ -377,11 +377,12 @@ async def create_initial_data():
         await db.programs.update_one({"id": p["id"]}, {"$set": p}, upsert=True)
     
     # Crear materias basadas en los módulos de los programas
+    # IMPORTANTE: Usar $setOnInsert para el ID para evitar que cambie en cada reinicio del servidor
+    # Esto previene que los cursos pierdan la referencia a las materias (mostrando "-" en el frontend)
     for prog in programs:
         for module in prog["modules"]:
             for subj_name in module["subjects"]:
-                subject = {
-                    "id": str(uuid.uuid4()),
+                subject_update = {
                     "name": subj_name,
                     "program_id": prog["id"],
                     "module_number": module["number"],
@@ -390,7 +391,10 @@ async def create_initial_data():
                 }
                 await db.subjects.update_one(
                     {"name": subj_name, "program_id": prog["id"], "module_number": module["number"]},
-                    {"$set": subject},
+                    {
+                        "$setOnInsert": {"id": str(uuid.uuid4())},  # Solo asignar ID si es nuevo
+                        "$set": subject_update  # Actualizar otros campos
+                    },
                     upsert=True
                 )
     
