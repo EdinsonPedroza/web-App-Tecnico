@@ -1508,11 +1508,8 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
 async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
-    # Auto-number: count existing activities for this course and subject
-    count_query = {"course_id": req.course_id}
-    if req.subject_id:
-        count_query["subject_id"] = req.subject_id
-    count = await db.activities.count_documents(count_query)
+    # Auto-number: count existing activities for this course (course-wide numbering)
+    count = await db.activities.count_documents({"course_id": req.course_id})
     activity_number = count + 1
     activity = {
         "id": str(uuid.uuid4()),
