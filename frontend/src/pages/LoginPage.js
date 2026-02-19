@@ -122,7 +122,8 @@ export default function LoginPage() {
                     <Label htmlFor="cedula">Cédula</Label>
                     <Input
                       id="cedula"
-                      placeholder="Ingresa tu número de cédula"
+                      inputMode="numeric"
+                      placeholder="Ej: 12345678 (solo números)"
                       value={form.cedula}
                       onChange={(e) => setForm({ ...form, cedula: e.target.value })}
                       required

@@ -16,8 +16,7 @@ import hashlib
 import json
 import shutil
 import re
-from passlib.context import CryptContext
-from passlib.exc import UnknownHashError
+import bcrypt as _bcrypt
 from collections import defaultdict
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -63,8 +62,7 @@ if not JWT_SECRET:
     JWT_SECRET = 'educando_secret_key_2025_CHANGE_ME'
 JWT_ALGORITHM = "HS256"
 
-# Password hashing with bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing with bcrypt (using bcrypt directly to avoid passlib compatibility issues)
 
 # Password storage mode: 'plain' for plain text, 'bcrypt' for hashed (default: 'bcrypt' for security)
 # For backwards compatibility with existing plain text passwords, set PASSWORD_STORAGE_MODE='plain'
@@ -576,17 +574,17 @@ def hash_password(password: str) -> str:
                       "This is insecure. Consider using PASSWORD_STORAGE_MODE='bcrypt' for production.")
         return password
     else:
-        # Hash password using bcrypt (secure)
-        return pwd_context.hash(password)
+        # Hash password using bcrypt directly (avoids passlib compatibility issues)
+        return _bcrypt.hashpw(password.encode('utf-8'), _bcrypt.gensalt()).decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against bcrypt hash, SHA256, or plain text"""
     # Check format first to avoid timing attacks
     # bcrypt hashes start with $2a$, $2b$, or $2y$
     if hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
-        # Stored as bcrypt hash
+        # Stored as bcrypt hash - use bcrypt directly (avoids passlib compatibility issues)
         try:
-            return pwd_context.verify(plain_password, hashed_password)
+            return _bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
         except Exception as e:
             logger.error(f"Bcrypt verification error: {type(e).__name__}")
             return False
@@ -675,8 +673,8 @@ class LoginRequest(BaseModel):
     @validator('cedula')
     def sanitize_cedula(cls, v):
         if v:
-            # Only allow alphanumeric for cedula
-            return re.sub(r'[^a-zA-Z0-9]', '', v)[:50]
+            # Only allow numbers for cedula (consistent with UserCreate/UserUpdate)
+            return re.sub(r'\D', '', v)[:50]
         return v
 
 class AdminCreateByEditor(BaseModel):
