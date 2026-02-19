@@ -396,6 +396,14 @@ async def create_initial_data():
     # Verificar y crear usuarios iniciales (seed users)
     # IMPORTANTE: Solo creamos usuarios semilla si NO EXISTEN. No los sobrescribimos.
     # Esto permite que los cambios hechos desde el panel de admin sean permanentes.
+    # Para forzar reset de usuarios, establecer RESET_USERS=true en variables de entorno.
+    
+    reset_users = os.environ.get('RESET_USERS', 'false').lower() == 'true'
+    if reset_users:
+        logger.warning("⚠️  RESET_USERS=true: Eliminando TODOS los usuarios existentes...")
+        deleted_result = await db.users.delete_many({})
+        logger.info(f"Eliminados {deleted_result.deleted_count} usuarios")
+    
     existing_user_count = await db.users.count_documents({})
     if existing_user_count > 0:
         logger.info(f"Base de datos tiene {existing_user_count} usuarios. Verificando usuarios semilla...")
@@ -405,20 +413,16 @@ async def create_initial_data():
     # Definir usuarios semilla (seed users) - solo se crean si no existen
     seed_users = [
         # 1 Editor
-        {"id": "user-editor-1", "name": "Carlos Mendez", "email": "carlos.mendez@educando.com", "cedula": None, "password_hash": hash_password("Editor2026*CM"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001112233", "active": True, "module": None, "grupo": None},
-        
-        # 2 Administradores
-        {"id": "user-admin-1", "name": "Laura Torres", "email": "laura.torres@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*LT"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3002223344", "active": True, "module": None, "grupo": None},
-        {"id": "user-admin-2", "name": "Roberto Ramirez", "email": "roberto.ramirez@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*RR"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3003334455", "active": True, "module": None, "grupo": None},
-        
-        # 3 Profesores
-        {"id": "user-prof-1", "name": "Diana Silva", "email": "diana.silva@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*DS"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3004445566", "active": True, "module": None, "grupo": None},
-        {"id": "user-prof-2", "name": "Miguel Castro", "email": "miguel.castro@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*MC"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3005556677", "active": True, "module": None, "grupo": None},
-        {"id": "user-prof-3", "name": "Profesor Sl", "email": "pr.o.fe.sorSl@educando.com", "cedula": None, "password_hash": hash_password("educador123"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3009998877", "active": True, "module": None, "grupo": None},
+        {"id": "user-editor-1", "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
         
         # 2 Estudiantes
-        {"id": "user-est-1", "name": "Sofía Morales", "email": None, "cedula": "1001234567", "password_hash": hash_password("Estud2026*SM"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3006667788", "active": True, "module": 1, "grupo": "Febrero 2026"},
-        {"id": "user-est-2", "name": "Andrés Lopez", "email": None, "cedula": "1002345678", "password_hash": hash_password("Estud2026*AL"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3007778899", "active": True, "module": 1, "grupo": "Febrero 2026"},
+        {"id": "user-est-1", "name": "María García", "email": "maria.garcia@estudiante.com", "cedula": "V-12345678", "password_hash": hash_password("Estudiante1!"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": None, "active": True, "module": 1, "grupo": "Grupo 2026", "estado": "activo", "program_modules": {"prog-admin": 1}},
+        {"id": "user-est-2", "name": "Carlos López", "email": "carlos.lopez@estudiante.com", "cedula": "V-87654321", "password_hash": hash_password("Estudiante2!"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": None, "active": True, "module": 1, "grupo": "Grupo 2026", "estado": "activo", "program_modules": {"prog-admin": 1}},
+        
+        # 2 Profesores
+        {"id": "user-prof-1", "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor1!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+        {"id": "user-prof-2", "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor2!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+    ]
     ]
     
     # Insertar usuarios semilla solo si no existen (setOnInsert)
@@ -437,6 +441,8 @@ async def create_initial_data():
         logger.info(f"Creados {created_count} usuarios semilla nuevos")
     else:
         logger.info("Todos los usuarios semilla ya existen - no se sobrescribieron")
+    
+    logger.info(f"Total usuarios en sistema: {await db.users.count_documents({})}")
     
     # Crear curso de ejemplo
     admin_subjects = await db.subjects.find({"program_id": "prog-admin", "module_number": 1}, {"_id": 0}).to_list(10)
@@ -535,7 +541,7 @@ async def create_initial_data():
         logger.info(f"Fixed {fixed_user_count} users with missing subject_ids field")
     
     logger.info("Datos iniciales verificados/creados exitosamente")
-    logger.info("7 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
+    logger.info("5 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
     logger.info(f"Modo de almacenamiento de contraseñas: {PASSWORD_STORAGE_MODE}")
 
 # --- Utility Functions ---
