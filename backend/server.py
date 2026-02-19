@@ -55,7 +55,10 @@ except Exception as e:
     raise
 
 # JWT Secret
-JWT_SECRET = os.environ.get('JWT_SECRET', 'educando_secret_key_2025')
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET:
+    logger.warning("⚠️ JWT_SECRET not set! Using insecure default. SET THIS IN PRODUCTION!")
+    JWT_SECRET = 'educando_secret_key_2025_CHANGE_ME'
 JWT_ALGORITHM = "HS256"
 
 # Password hashing with bcrypt

@@ -16,7 +16,7 @@ services:
       # Use local MongoDB in Docker or set MONGO_URL env var for remote MongoDB
       - MONGO_URL=${MONGO_URL:-mongodb://mongodb:27017}
       - DB_NAME=${DB_NAME:-WebApp}
-      - PASSWORD_STORAGE_MODE=${PASSWORD_STORAGE_MODE:-plain}
+      - PASSWORD_STORAGE_MODE=${PASSWORD_STORAGE_MODE:-bcrypt}
       - JWT_SECRET=${JWT_SECRET:-educando_secret_key_2025}
     volumes:
       - uploads_data:/app/uploads
