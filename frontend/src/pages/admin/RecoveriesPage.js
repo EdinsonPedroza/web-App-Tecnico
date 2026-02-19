@@ -3,10 +3,13 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, XCircle, RefreshCw, Search, Filter, Trash2, GraduationCap } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function RecoveriesPage() {
@@ -16,11 +19,19 @@ export default function RecoveriesPage() {
   const [moduleClosureDialog, setModuleClosureDialog] = useState(false);
   const [closingModule, setClosingModule] = useState(false);
   const [selectedModule, setSelectedModule] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [graduatedCount, setGraduatedCount] = useState(0);
+  const [deletingGraduated, setDeletingGraduated] = useState(false);
 
   const fetchRecoveryPanel = useCallback(async () => {
     try {
-      const res = await api.get('/admin/recovery-panel');
-      setRecoveryData(res.data);
+      const [recoveryRes, graduatedRes] = await Promise.all([
+        api.get('/admin/recovery-panel'),
+        api.get('/admin/graduated-students-count')
+      ]);
+      setRecoveryData(recoveryRes.data);
+      setGraduatedCount(graduatedRes.data.count);
     } catch (err) {
       toast.error('Error cargando panel de recuperaciones');
       console.error(err);
@@ -70,6 +81,26 @@ export default function RecoveriesPage() {
       console.error(err);
     } finally {
       setClosingModule(false);
+    }
+  };
+
+  const handleDeleteGraduated = async () => {
+    if (!window.confirm(
+      `¿Estás seguro de eliminar TODOS los ${graduatedCount} estudiantes egresados y sus datos?\n\nEsta acción es IRREVERSIBLE y eliminará:\n- Registros de estudiantes\n- Notas\n- Entregas\n- Datos de recuperaciones\n\n¿Continuar?`
+    )) {
+      return;
+    }
+
+    setDeletingGraduated(true);
+    try {
+      const res = await api.delete('/admin/delete-graduated-students');
+      toast.success(res.data.message);
+      fetchRecoveryPanel();
+    } catch (err) {
+      toast.error('Error eliminando estudiantes egresados');
+      console.error(err);
+    } finally {
+      setDeletingGraduated(false);
     }
   };
 
@@ -140,6 +171,71 @@ export default function RecoveriesPage() {
           </Card>
         </div>
 
+        {/* Graduated Students Management */}
+        {graduatedCount > 0 && (
+          <Alert className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950">
+            <GraduationCap className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <AlertDescription className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="font-semibold text-amber-900 dark:text-amber-100">
+                  Estudiantes Egresados: {graduatedCount}
+                </p>
+                <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
+                  Los estudiantes egresados están archivados. Puedes eliminarlos permanentemente para liberar espacio.
+                </p>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteGraduated}
+                disabled={deletingGraduated}
+                className="ml-4 whitespace-nowrap"
+              >
+                {deletingGraduated ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Eliminando...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Eliminar Egresados
+                  </>
+                )}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Search and Filters */}
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nombre de estudiante o materia..."
+                  className="pl-9"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los estados</SelectItem>
+                  <SelectItem value="pending">Pendientes</SelectItem>
+                  <SelectItem value="approved">Aprobadas</SelectItem>
+                  <SelectItem value="completed">Completadas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Students with Failed Subjects */}
         {!recoveryData?.students || recoveryData.students.length === 0 ? (
           <Card className="shadow-card">
@@ -153,7 +249,22 @@ export default function RecoveriesPage() {
           </Card>
         ) : (
           <div className="space-y-6">
-            {recoveryData.students.map((student) => (
+            {recoveryData.students
+              .filter(student => {
+                // Search filter
+                const matchesSearch = searchTerm === '' || 
+                  student.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  student.failed_subjects.some(s => s.course_name.toLowerCase().includes(searchTerm.toLowerCase()));
+                
+                // Status filter
+                const matchesStatus = statusFilter === 'all' ||
+                  (statusFilter === 'pending' && student.failed_subjects.some(s => !s.recovery_approved && !s.recovery_completed)) ||
+                  (statusFilter === 'approved' && student.failed_subjects.some(s => s.recovery_approved)) ||
+                  (statusFilter === 'completed' && student.failed_subjects.some(s => s.recovery_completed));
+                
+                return matchesSearch && matchesStatus;
+              })
+              .map((student) => (
               <Card key={student.student_id} className="shadow-card">
                 <CardHeader>
                   <div className="flex items-center justify-between">

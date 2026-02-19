@@ -6,118 +6,118 @@
 
 @layer base {
   :root {
-    /* Corporación Social Educando - Steel Blue Theme */
-    /* Primary: Steel blue from logo - Enhanced for better contrast */
-    --primary: 207 75% 38%;
+    /* Corporación Social Educando - Enhanced Modern Steel Blue Theme */
+    /* Primary: Vibrant steel blue from logo - Optimized for better contrast */
+    --primary: 207 82% 42%;
     --primary-foreground: 0 0% 100%;
     
-    /* Secondary: Light steel blue for subtle backgrounds - Darker for better contrast */
-    --secondary: 210 50% 85%;
-    --secondary-foreground: 207 70% 15%;
+    /* Secondary: Modern light steel blue for subtle backgrounds */
+    --secondary: 210 55% 88%;
+    --secondary-foreground: 207 75% 18%;
     
-    /* Background: Off-white with cool blue undertone */
-    --background: 210 30% 97%;
-    --foreground: 207 70% 8%;
+    /* Background: Clean off-white with subtle blue undertone */
+    --background: 210 35% 98%;
+    --foreground: 207 75% 10%;
     
-    /* Card: Pure white with darker text for better contrast */
+    /* Card: Pure white with strong text contrast */
     --card: 0 0% 100%;
-    --card-foreground: 207 70% 8%;
+    --card-foreground: 207 75% 10%;
     
     /* Popover */
     --popover: 0 0% 100%;
-    --popover-foreground: 207 70% 8%;
+    --popover-foreground: 207 75% 10%;
     
-    /* Muted: Darker for better visibility */
-    --muted: 210 35% 75%;
-    --muted-foreground: 207 35% 25%;
+    /* Muted: Enhanced for better readability */
+    --muted: 210 40% 78%;
+    --muted-foreground: 207 40% 28%;
     
-    /* Accent: Soft teal accent - Enhanced */
-    --accent: 210 45% 80%;
-    --accent-foreground: 207 70% 12%;
+    /* Accent: Modern teal accent - Enhanced vibrancy */
+    --accent: 195 65% 85%;
+    --accent-foreground: 207 75% 15%;
     
-    /* Destructive - Enhanced contrast */
-    --destructive: 0 90% 45%;
+    /* Destructive - Modern red with good contrast */
+    --destructive: 0 88% 48%;
     --destructive-foreground: 0 0% 100%;
     
-    /* Success - Enhanced for better visibility */
-    --success: 160 75% 32%;
+    /* Success - Vibrant teal green for better visibility */
+    --success: 160 78% 35%;
     --success-foreground: 0 0% 100%;
     
-    /* Warning - Enhanced contrast */
-    --warning: 38 100% 45%;
+    /* Warning - Modern orange with strong contrast */
+    --warning: 38 98% 48%;
     --warning-foreground: 0 0% 100%;
     
-    /* Info */
-    --info: 207 75% 38%;
+    /* Info - Matches primary for consistency */
+    --info: 207 82% 42%;
     --info-foreground: 0 0% 100%;
     
-    /* Border & Input - Better visibility */
-    --border: 210 30% 65%;
-    --input: 210 30% 70%;
-    --ring: 207 75% 38%;
+    /* Border & Input - Enhanced visibility */
+    --border: 210 35% 68%;
+    --input: 210 35% 72%;
+    --ring: 207 82% 42%;
     
-    /* Radius */
-    --radius: 0.625rem;
+    /* Radius - Slightly increased for modern look */
+    --radius: 0.75rem;
     
-    /* Charts */
-    --chart-1: 207 52% 49%;
-    --chart-2: 160 55% 40%;
-    --chart-3: 38 92% 50%;
-    --chart-4: 280 45% 55%;
-    --chart-5: 12 76% 61%;
+    /* Charts - Vibrant color palette */
+    --chart-1: 207 70% 52%;
+    --chart-2: 160 65% 42%;
+    --chart-3: 38 95% 52%;
+    --chart-4: 280 55% 58%;
+    --chart-5: 12 80% 62%;
     
     /* Custom tokens */
-    --primary-dark: 207 55% 30%;
-    --primary-light: 207 52% 65%;
-    --primary-glow: 207 60% 75%;
+    --primary-dark: 207 65% 32%;
+    --primary-light: 207 60% 68%;
+    --primary-glow: 207 70% 78%;
     
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(207 55% 30%), hsl(207 52% 49%));
-    --gradient-subtle: linear-gradient(180deg, hsl(210 33% 98%), hsl(210 40% 94%));
-    --gradient-card-hover: linear-gradient(135deg, hsl(210 40% 97%), hsl(210 35% 94%));
+    /* Gradients - Enhanced vibrancy */
+    --gradient-primary: linear-gradient(135deg, hsl(207 65% 32%), hsl(207 70% 52%));
+    --gradient-subtle: linear-gradient(180deg, hsl(210 40% 98%), hsl(210 45% 95%));
+    --gradient-card-hover: linear-gradient(135deg, hsl(210 45% 97%), hsl(210 40% 94%));
     
-    /* Shadows */
-    --shadow-sm: 0 1px 3px hsl(207 52% 49% / 0.06);
-    --shadow-md: 0 4px 12px hsl(207 52% 49% / 0.08);
-    --shadow-lg: 0 10px 30px hsl(207 52% 49% / 0.1);
-    --shadow-glow: 0 0 20px hsl(207 60% 75% / 0.3);
+    /* Shadows - More pronounced for depth */
+    --shadow-sm: 0 1px 3px hsl(207 70% 52% / 0.08);
+    --shadow-md: 0 4px 14px hsl(207 70% 52% / 0.10);
+    --shadow-lg: 0 10px 35px hsl(207 70% 52% / 0.12);
+    --shadow-glow: 0 0 24px hsl(207 70% 78% / 0.35);
     
     /* Transitions */
     --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     
-    /* Sidebar */
+    /* Sidebar - Enhanced contrast */
     --sidebar-width: 260px;
-    --sidebar-bg: 207 55% 30%;
+    --sidebar-bg: 207 65% 32%;
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-accent: 207 52% 40%;
-    --sidebar-muted: 207 40% 50%;
+    --sidebar-accent: 207 60% 42%;
+    --sidebar-muted: 207 45% 52%;
   }
 
   .dark {
-    --primary: 207 52% 60%;
-    --primary-foreground: 207 55% 10%;
-    --secondary: 207 30% 16%;
-    --secondary-foreground: 210 30% 90%;
-    --background: 207 35% 8%;
-    --foreground: 210 30% 95%;
-    --card: 207 30% 12%;
-    --card-foreground: 210 30% 95%;
-    --popover: 207 30% 12%;
-    --popover-foreground: 210 30% 95%;
-    --muted: 207 25% 18%;
-    --muted-foreground: 210 15% 60%;
-    --accent: 207 25% 18%;
-    --accent-foreground: 210 30% 95%;
-    --destructive: 0 62% 40%;
+    --primary: 207 65% 65%;
+    --primary-foreground: 207 65% 12%;
+    --secondary: 207 35% 18%;
+    --secondary-foreground: 210 35% 92%;
+    --background: 207 40% 9%;
+    --foreground: 210 35% 96%;
+    --card: 207 35% 13%;
+    --card-foreground: 210 35% 96%;
+    --popover: 207 35% 13%;
+    --popover-foreground: 210 35% 96%;
+    --muted: 207 28% 20%;
+    --muted-foreground: 210 18% 62%;
+    --accent: 207 28% 20%;
+    --accent-foreground: 210 35% 96%;
+    --destructive: 0 68% 42%;
     --destructive-foreground: 0 0% 100%;
-    --border: 207 20% 20%;
-    --input: 207 20% 20%;
-    --ring: 207 52% 60%;
-    --sidebar-bg: 207 40% 10%;
+    --border: 207 25% 22%;
+    --input: 207 25% 22%;
+    --ring: 207 65% 65%;
+    --sidebar-bg: 207 45% 11%;
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-accent: 207 40% 20%;
-    --sidebar-muted: 207 25% 40%;
+    --sidebar-accent: 207 45% 22%;
+    --sidebar-muted: 207 28% 42%;
   }
 }
 
@@ -209,32 +209,35 @@
 
 /* Enhanced Scrollbar styling - More visible and themed */
 ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
 }
 ::-webkit-scrollbar-track {
-  background: hsl(var(--secondary) / 0.5);
-  border-radius: 6px;
+  background: hsl(var(--secondary) / 0.7);
+  border-radius: 8px;
   margin: 2px;
+  border: 1px solid hsl(var(--border) / 0.3);
 }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, hsl(var(--primary) / 0.6), hsl(var(--primary) / 0.8));
-  border-radius: 6px;
-  border: 2px solid hsl(var(--secondary) / 0.3);
+  background: linear-gradient(180deg, hsl(var(--primary) / 0.75), hsl(var(--primary) / 0.95));
+  border-radius: 8px;
+  border: 3px solid hsl(var(--secondary) / 0.4);
   transition: all 0.3s ease;
+  box-shadow: 0 2px 4px hsl(var(--primary) / 0.2);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, hsl(var(--primary) / 0.8), hsl(var(--primary)));
-  border-color: hsl(var(--primary) / 0.2);
-  transform: scale(1.05);
+  background: linear-gradient(180deg, hsl(var(--primary) / 0.9), hsl(var(--primary)));
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
 }
 ::-webkit-scrollbar-thumb:active {
   background: hsl(var(--primary));
+  border-color: hsl(var(--primary) / 0.5);
 }
 /* Firefox scrollbar */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--primary) / 0.6) hsl(var(--secondary) / 0.5);
+  scrollbar-width: auto;
+  scrollbar-color: hsl(var(--primary) / 0.75) hsl(var(--secondary) / 0.7);
 }
 
 /* Animation keyframes */

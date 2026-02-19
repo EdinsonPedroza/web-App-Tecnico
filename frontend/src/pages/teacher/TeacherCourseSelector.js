@@ -4,7 +4,9 @@ import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, BookOpen, Users, ChevronRight } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Loader2, BookOpen, Users, ChevronRight, Search, Filter } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -15,6 +17,8 @@ export default function TeacherCourseSelector() {
   const [programs, setPrograms] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('all');
 
   const fetchData = useCallback(async () => {
     try {
@@ -36,6 +40,16 @@ export default function TeacherCourseSelector() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
+
+  const filteredCourses = courses.filter(course => {
+    const matchesSearch = searchTerm === '' ||
+      course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getName(programs, course.program_id).toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesSubject = subjectFilter === 'all' || course.subject_id === subjectFilter;
+    
+    return matchesSearch && matchesSubject;
+  });
 
   return (
     <DashboardLayout>
@@ -60,8 +74,49 @@ export default function TeacherCourseSelector() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {courses.map((course) => (
+          <>
+            {/* Search and Filters */}
+            <Card className="shadow-card max-w-4xl mx-auto">
+              <CardContent className="p-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por nombre de curso o programa..."
+                      className="pl-9"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+                    <SelectTrigger className="w-full sm:w-[220px]">
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Filtrar por materia" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas las materias</SelectItem>
+                      {subjects.map(subject => (
+                        <SelectItem key={subject.id} value={subject.id}>
+                          {subject.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+
+            {filteredCourses.length === 0 ? (
+              <Card className="max-w-md mx-auto shadow-card">
+                <CardContent className="p-10 text-center">
+                  <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground">No se encontraron cursos</p>
+                  <p className="text-sm text-muted-foreground mt-1">Intenta con otros criterios de búsqueda.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredCourses.map((course) => (
               <Card
                 key={course.id}
                 className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-border/50 hover:border-primary/30"
@@ -95,6 +150,8 @@ export default function TeacherCourseSelector() {
               </Card>
             ))}
           </div>
+        )}
+      </>
         )}
       </div>
     </DashboardLayout>

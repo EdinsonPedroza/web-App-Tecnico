@@ -1989,6 +1989,68 @@ async def get_student_recoveries(user=Depends(get_current_user)):
         "total": len(failed_subjects)
     }
 
+@api_router.delete("/admin/delete-graduated-students")
+async def delete_graduated_students(user=Depends(get_current_user)):
+    """
+    Admin/Editor deletes all graduated students from the system.
+    This removes all their data including grades, submissions, and user records.
+    This action is irreversible and should be used to clean up graduated students.
+    """
+    if user["role"] not in ["admin", "editor"]:
+        raise HTTPException(status_code=403, detail="Solo admin/editor pueden eliminar estudiantes egresados")
+    
+    # Find all graduated students (no limit - get all of them)
+    graduated_students = await db.users.find(
+        {"role": "estudiante", "estado": "egresado"},
+        {"_id": 0, "id": 1}
+    ).to_list(None)  # None means no limit
+    
+    if not graduated_students:
+        return {
+            "message": "No hay estudiantes egresados para eliminar",
+            "deleted_count": 0
+        }
+    
+    student_ids = [s["id"] for s in graduated_students]
+    
+    # Delete related data
+    grades_deleted = await db.grades.delete_many({"student_id": {"$in": student_ids}})
+    submissions_deleted = await db.submissions.delete_many({"student_id": {"$in": student_ids}})
+    failed_subjects_deleted = await db.failed_subjects.delete_many({"student_id": {"$in": student_ids}})
+    recovery_enabled_deleted = await db.recovery_enabled.delete_many({"student_id": {"$in": student_ids}})
+    
+    # Remove students from course student_ids arrays
+    await db.courses.update_many(
+        {},
+        {"$pull": {"student_ids": {"$in": student_ids}}}
+    )
+    
+    # Delete the students themselves
+    students_deleted = await db.users.delete_many({"id": {"$in": student_ids}})
+    
+    return {
+        "message": f"Se eliminaron {students_deleted.deleted_count} estudiantes egresados y sus datos relacionados",
+        "deleted_count": students_deleted.deleted_count,
+        "grades_deleted": grades_deleted.deleted_count,
+        "submissions_deleted": submissions_deleted.deleted_count,
+        "failed_subjects_deleted": failed_subjects_deleted.deleted_count,
+        "recovery_enabled_deleted": recovery_enabled_deleted.deleted_count
+    }
+
+@api_router.get("/admin/graduated-students-count")
+async def get_graduated_students_count(user=Depends(get_current_user)):
+    """
+    Get count of graduated students for display purposes.
+    """
+    if user["role"] not in ["admin", "editor"]:
+        raise HTTPException(status_code=403, detail="Solo admin/editor pueden ver esta información")
+    
+    count = await db.users.count_documents({"role": "estudiante", "estado": "egresado"})
+    
+    return {
+        "count": count
+    }
+
 # --- Seed Data Route ---
 @api_router.post("/seed")
 async def seed_data():
