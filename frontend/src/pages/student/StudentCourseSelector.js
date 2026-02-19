@@ -170,7 +170,7 @@ export default function StudentCourseSelector() {
                 <Card
                   key={`${card.courseId}-${card.subjectId}`}
                   className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
-                  onClick={() => navigate(`/student/course/${card.courseId}`)}
+                  onClick={() => navigate(`/student/course/${card.courseId}?subjectId=${card.subjectId}`)}
                 >
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between mb-4">

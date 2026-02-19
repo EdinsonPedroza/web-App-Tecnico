@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,8 @@ import api from '@/lib/api';
 export default function StudentGrades() {
   const { user } = useAuth();
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [grades, setGrades] = useState([]);
   const [courses, setCourses] = useState([]);
   const [activities, setActivities] = useState([]);
@@ -18,7 +20,8 @@ export default function StudentGrades() {
 
   const fetchData = useCallback(async () => {
     try {
-      const gradeQuery = courseId ? `student_id=${user.id}&course_id=${courseId}` : `student_id=${user.id}`;
+      let gradeQuery = courseId ? `student_id=${user.id}&course_id=${courseId}` : `student_id=${user.id}`;
+      if (subjectId) gradeQuery += `&subject_id=${subjectId}`;
       const courseQuery = `student_id=${user.id}`;
       
       const [gRes, cRes] = await Promise.all([
@@ -33,7 +36,9 @@ export default function StudentGrades() {
 
       const allActs = [];
       for (const course of filteredCourses) {
-        const aRes = await api.get(`/activities?course_id=${course.id}`);
+        let actUrl = `/activities?course_id=${course.id}`;
+        if (subjectId) actUrl += `&subject_id=${subjectId}`;
+        const aRes = await api.get(actUrl);
         allActs.push(...aRes.data);
       }
       setActivities(allActs);
@@ -42,7 +47,7 @@ export default function StudentGrades() {
     } finally {
       setLoading(false);
     }
-  }, [user.id, courseId]);
+  }, [user.id, courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

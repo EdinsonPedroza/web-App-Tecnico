@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
@@ -57,6 +57,8 @@ export default function DashboardLayout({ children, courseId }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = () => {
@@ -65,12 +67,13 @@ export default function DashboardLayout({ children, courseId }) {
   };
 
   let links = [];
+  const queryString = subjectId ? `?subjectId=${subjectId}` : '';
   if (user?.role === 'admin') links = adminLinks;
   else if (user?.role === 'profesor') {
     if (courseId) {
       links = teacherCourseLinks.map(l => ({
         ...l,
-        path: `/teacher/course/${courseId}${l.path}`
+        path: `/teacher/course/${courseId}${l.path}${queryString}`
       }));
     } else {
       links = teacherLinks;
@@ -79,7 +82,7 @@ export default function DashboardLayout({ children, courseId }) {
     if (courseId) {
       links = studentCourseLinks.map(l => ({
         ...l,
-        path: `/student/course/${courseId}${l.path}`
+        path: `/student/course/${courseId}${l.path}${queryString}`
       }));
     } else {
       links = studentLinks;
@@ -157,7 +160,8 @@ export default function DashboardLayout({ children, courseId }) {
             </Button>
           )}
           {links.map((link) => {
-            const isActive = location.pathname === link.path;
+            const linkPathWithoutQuery = link.path.split('?')[0];
+            const isActive = location.pathname === linkPathWithoutQuery;
             const Icon = link.icon;
             return (
               <Button
