@@ -2240,11 +2240,31 @@ async def get_graduated_students_count(user=Depends(get_current_user)):
     }
 
 @api_router.post("/admin/reset-users")
-async def reset_users():
+async def reset_users(confirm_token: str = None):
     """
     DANGER: Deletes ALL users and creates fresh default users.
     Creates: 2 admins, 1 editor, 2 professors, 2 students
+    
+    Requires confirmation token: 'RESET_ALL_USERS_CONFIRM'
+    
+    This endpoint should be disabled or protected in production.
+    Set environment variable ALLOW_USER_RESET=false to disable.
     """
+    # Check if endpoint is allowed (can be disabled via env var)
+    allow_reset = os.environ.get('ALLOW_USER_RESET', 'true').lower() == 'true'
+    if not allow_reset:
+        raise HTTPException(
+            status_code=403, 
+            detail="Este endpoint está deshabilitado en producción"
+        )
+    
+    # Require confirmation token
+    if confirm_token != "RESET_ALL_USERS_CONFIRM":
+        raise HTTPException(
+            status_code=400,
+            detail="Token de confirmación requerido. Parámetro: confirm_token='RESET_ALL_USERS_CONFIRM'"
+        )
+    
     # Delete ALL users
     deleted_count = await db.users.delete_many({})
     

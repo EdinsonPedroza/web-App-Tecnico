@@ -85,14 +85,23 @@ chmod +x reset_users.sh
 
 ### Opción 2: Llamada directa a la API
 ```bash
-curl -X POST http://localhost:8000/api/admin/reset-users
+curl -X POST "http://localhost:8000/api/admin/reset-users?confirm_token=RESET_ALL_USERS_CONFIRM"
 ```
 
 ### Opción 3: Desde Python
 ```python
 import requests
-response = requests.post('http://localhost:8000/api/admin/reset-users')
+response = requests.post(
+    'http://localhost:8000/api/admin/reset-users',
+    params={'confirm_token': 'RESET_ALL_USERS_CONFIRM'}
+)
 print(response.json())
+```
+
+### Desactivar en Producción
+Para desactivar este endpoint en producción, agrega esta variable de entorno:
+```bash
+ALLOW_USER_RESET=false
 ```
 
 ---
@@ -112,8 +121,9 @@ print(response.json())
 
 3. **Endpoint de Reset:**
    - ⚠️ **PELIGRO:** `/api/admin/reset-users` elimina TODOS los usuarios
-   - No requiere autenticación (solo para desarrollo)
-   - En producción, este endpoint debería ser protegido o removido
+   - Requiere token de confirmación: `confirm_token=RESET_ALL_USERS_CONFIRM`
+   - Puede ser desactivado en producción con `ALLOW_USER_RESET=false`
+   - Solo usar en desarrollo/testing
 
 4. **Persistencia:**
    - Los usuarios creados por el endpoint de reset NO se sobreescriben automáticamente

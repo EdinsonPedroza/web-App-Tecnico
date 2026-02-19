@@ -32,8 +32,8 @@ echo ""
 echo "🔄 Reiniciando usuarios..."
 echo ""
 
-# Llamar al endpoint de reset
-response=$(curl -s -X POST "$BACKEND_URL/api/admin/reset-users")
+# Llamar al endpoint de reset con token de confirmación
+response=$(curl -s -X POST "$BACKEND_URL/api/admin/reset-users?confirm_token=RESET_ALL_USERS_CONFIRM")
 
 # Verificar si la respuesta contiene "message"
 if echo "$response" | grep -q "message"; then
