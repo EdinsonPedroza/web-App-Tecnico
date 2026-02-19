@@ -20,6 +20,8 @@ from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 from collections import defaultdict
 import asyncio
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 ROOT_DIR = Path(__file__).parent
 # Load .env.local first (for local development with real credentials)
@@ -88,6 +90,95 @@ def validate_module_number(module_num, field_name="module"):
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+# Initialize scheduler for automatic module closure
+scheduler = AsyncIOScheduler()
+
+async def check_and_close_modules():
+    """
+    Check all programs for module close dates that have passed and automatically close them.
+    This function runs daily at 00:01 AM.
+    """
+    try:
+        logger.info("Running automatic module closure check...")
+        now = datetime.now(timezone.utc)
+        today_str = now.strftime("%Y-%m-%d")
+        
+        # Get all programs with close dates configured
+        programs = await db.programs.find(
+            {
+                "$or": [
+                    {"module1_close_date": {"$ne": None, "$lte": today_str}},
+                    {"module2_close_date": {"$ne": None, "$lte": today_str}}
+                ]
+            },
+            {"_id": 0}
+        ).to_list(100)
+        
+        if not programs:
+            logger.info("No programs with close dates to process")
+            return
+        
+        for program in programs:
+            program_id = program["id"]
+            program_name = program["name"]
+            
+            # Check module 1
+            if program.get("module1_close_date") and program["module1_close_date"] <= today_str:
+                # Check if already closed
+                closure_check = await db.module_closures.find_one({
+                    "program_id": program_id,
+                    "module_number": 1,
+                    "closed_date": program["module1_close_date"]
+                })
+                
+                if not closure_check:
+                    logger.info(f"Auto-closing Module 1 for program {program_name} (date: {program['module1_close_date']})")
+                    try:
+                        # Call the internal module closure function
+                        result = await close_module_internal(module_number=1, program_id=program_id)
+                        
+                        # Mark as closed so we don't close it again
+                        await db.module_closures.insert_one({
+                            "id": str(uuid.uuid4()),
+                            "program_id": program_id,
+                            "module_number": 1,
+                            "closed_date": program["module1_close_date"],
+                            "closed_at": now.isoformat(),
+                            "result": result
+                        })
+                        logger.info(f"Module 1 closed for {program_name}: {result['promoted_count']} promoted, {result['graduated_count']} graduated, {result['recovery_pending_count']} in recovery")
+                    except Exception as e:
+                        logger.error(f"Error auto-closing Module 1 for {program_name}: {e}", exc_info=True)
+            
+            # Check module 2
+            if program.get("module2_close_date") and program["module2_close_date"] <= today_str:
+                closure_check = await db.module_closures.find_one({
+                    "program_id": program_id,
+                    "module_number": 2,
+                    "closed_date": program["module2_close_date"]
+                })
+                
+                if not closure_check:
+                    logger.info(f"Auto-closing Module 2 for program {program_name} (date: {program['module2_close_date']})")
+                    try:
+                        result = await close_module_internal(module_number=2, program_id=program_id)
+                        
+                        await db.module_closures.insert_one({
+                            "id": str(uuid.uuid4()),
+                            "program_id": program_id,
+                            "module_number": 2,
+                            "closed_date": program["module2_close_date"],
+                            "closed_at": now.isoformat(),
+                            "result": result
+                        })
+                        logger.info(f"Module 2 closed for {program_name}: {result['promoted_count']} promoted, {result['graduated_count']} graduated, {result['recovery_pending_count']} in recovery")
+                    except Exception as e:
+                        logger.error(f"Error auto-closing Module 2 for {program_name}: {e}", exc_info=True)
+        
+        logger.info("Automatic module closure check completed")
+    except Exception as e:
+        logger.error(f"Error in automatic module closure check: {e}", exc_info=True)
 
 # Health check endpoint for monitoring
 @app.get("/api/health")
@@ -164,6 +255,20 @@ async def startup_event():
         await db.command('ping')
         logger.info("MongoDB connection successful")
         await create_initial_data()
+        
+        # Start the automatic module closure scheduler
+        # Runs daily at 00:01 AM (server local timezone) to check for modules that need to be closed
+        # Note: Uses server's local timezone by default. For production, consider explicitly setting timezone.
+        scheduler.add_job(
+            check_and_close_modules,
+            CronTrigger(hour=0, minute=1),  # Run at 00:01 AM daily (server local time)
+            id='auto_close_modules',
+            name='Automatic Module Closure',
+            replace_existing=True
+        )
+        scheduler.start()
+        logger.info("Automatic module closure scheduler started (runs daily at 00:01 AM server local time)")
+        
         logger.info("Application startup completed successfully")
     except Exception as e:
         logger.error(f"Startup failed: {e}", exc_info=True)
@@ -292,6 +397,14 @@ async def create_initial_data():
     # Verificar y crear usuarios iniciales (seed users)
     # IMPORTANTE: Solo creamos usuarios semilla si NO EXISTEN. No los sobrescribimos.
     # Esto permite que los cambios hechos desde el panel de admin sean permanentes.
+    # Para forzar reset de usuarios, establecer RESET_USERS=true en variables de entorno.
+    
+    reset_users = os.environ.get('RESET_USERS', 'false').lower() == 'true'
+    if reset_users:
+        logger.warning("⚠️  RESET_USERS=true: Eliminando TODOS los usuarios existentes...")
+        deleted_result = await db.users.delete_many({})
+        logger.info(f"Eliminados {deleted_result.deleted_count} usuarios")
+    
     existing_user_count = await db.users.count_documents({})
     if existing_user_count > 0:
         logger.info(f"Base de datos tiene {existing_user_count} usuarios. Verificando usuarios semilla...")
@@ -299,22 +412,19 @@ async def create_initial_data():
         logger.info("Base de datos vacía. Creando usuarios iniciales...")
     
     # Definir usuarios semilla (seed users) - solo se crean si no existen
+    # Note: Email domains vary by role (@tecnico.com, @estudiante.com, @profesor.com) 
+    # as specified in the requirements to clearly distinguish user types
     seed_users = [
         # 1 Editor
-        {"id": "user-editor-1", "name": "Carlos Mendez", "email": "carlos.mendez@educando.com", "cedula": None, "password_hash": hash_password("Editor2026*CM"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3001112233", "active": True, "module": None, "grupo": None},
-        
-        # 2 Administradores
-        {"id": "user-admin-1", "name": "Laura Torres", "email": "laura.torres@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*LT"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3002223344", "active": True, "module": None, "grupo": None},
-        {"id": "user-admin-2", "name": "Roberto Ramirez", "email": "roberto.ramirez@educando.com", "cedula": None, "password_hash": hash_password("Admin2026*RR"), "role": "admin", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3003334455", "active": True, "module": None, "grupo": None},
-        
-        # 3 Profesores
-        {"id": "user-prof-1", "name": "Diana Silva", "email": "diana.silva@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*DS"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3004445566", "active": True, "module": None, "grupo": None},
-        {"id": "user-prof-2", "name": "Miguel Castro", "email": "miguel.castro@educando.com", "cedula": None, "password_hash": hash_password("Profe2026*MC"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3005556677", "active": True, "module": None, "grupo": None},
-        {"id": "user-prof-3", "name": "Profesor Sl", "email": "pr.o.fe.sorSl@educando.com", "cedula": None, "password_hash": hash_password("educador123"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": "3009998877", "active": True, "module": None, "grupo": None},
+        {"id": "user-editor-1", "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
         
         # 2 Estudiantes
-        {"id": "user-est-1", "name": "Sofía Morales", "email": None, "cedula": "1001234567", "password_hash": hash_password("Estud2026*SM"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3006667788", "active": True, "module": 1, "grupo": "Febrero 2026"},
-        {"id": "user-est-2", "name": "Andrés Lopez", "email": None, "cedula": "1002345678", "password_hash": hash_password("Estud2026*AL"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": "3007778899", "active": True, "module": 1, "grupo": "Febrero 2026"},
+        {"id": "user-est-1", "name": "María García", "email": "maria.garcia@estudiante.com", "cedula": "V-12345678", "password_hash": hash_password("Estudiante1!"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": None, "active": True, "module": 1, "grupo": "Grupo 2026", "estado": "activo", "program_modules": {"prog-admin": 1}},
+        {"id": "user-est-2", "name": "Carlos López", "email": "carlos.lopez@estudiante.com", "cedula": "V-87654321", "password_hash": hash_password("Estudiante2!"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": None, "active": True, "module": 1, "grupo": "Grupo 2026", "estado": "activo", "program_modules": {"prog-admin": 1}},
+        
+        # 2 Profesores
+        {"id": "user-prof-1", "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor1!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+        {"id": "user-prof-2", "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor2!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
     ]
     
     # Insertar usuarios semilla solo si no existen (setOnInsert)
@@ -334,6 +444,8 @@ async def create_initial_data():
     else:
         logger.info("Todos los usuarios semilla ya existen - no se sobrescribieron")
     
+    logger.info(f"Total usuarios en sistema: {await db.users.count_documents({})}")
+    
     # Crear curso de ejemplo
     admin_subjects = await db.subjects.find({"program_id": "prog-admin", "module_number": 1}, {"_id": 0}).to_list(10)
     if admin_subjects:
@@ -343,10 +455,12 @@ async def create_initial_data():
             "name": f"{first_subject['name']} - Febrero 2026", 
             "program_id": "prog-admin", 
             "subject_id": first_subject["id"], 
+            "subject_ids": [first_subject["id"]],  # Ensure subject_ids is always set
             "teacher_id": "user-prof-1", 
             "year": 2026, 
             "student_ids": ["user-est-1", "user-est-2"], 
-            "active": True
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
         await db.courses.update_one({"id": course["id"]}, {"$set": course}, upsert=True)
         
@@ -381,8 +495,55 @@ async def create_initial_data():
         for a in activities:
             await db.activities.update_one({"id": a["id"]}, {"$set": a}, upsert=True)
     
+    # Migrate existing courses to ensure subject_ids field exists and is properly set
+    # This fixes the data persistence issue where subject_ids might be missing or None
+    logger.info("Checking and fixing course subject_ids field...")
+    courses_to_fix = await db.courses.find(
+        {"$or": [
+            {"subject_ids": {"$exists": False}},
+            {"subject_ids": None},
+            {"subject_ids": []}
+        ]},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    fixed_count = 0
+    for course in courses_to_fix:
+        if course.get("subject_id") and (not course.get("subject_ids") or len(course.get("subject_ids", [])) == 0):
+            # Course has subject_id but no subject_ids - migrate it
+            await db.courses.update_one(
+                {"id": course["id"]},
+                {"$set": {"subject_ids": [course["subject_id"]]}}
+            )
+            fixed_count += 1
+            logger.info(f"Fixed course {course['id']}: added subject_ids=[{course['subject_id']}]")
+    
+    if fixed_count > 0:
+        logger.info(f"Fixed {fixed_count} courses with missing subject_ids field")
+    
+    # Ensure all users have subject_ids field (for teachers)
+    logger.info("Checking and fixing user subject_ids field...")
+    users_to_fix = await db.users.find(
+        {"$or": [
+            {"subject_ids": {"$exists": False}},
+            {"subject_ids": None}
+        ]},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    fixed_user_count = 0
+    for user in users_to_fix:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"subject_ids": []}}
+        )
+        fixed_user_count += 1
+    
+    if fixed_user_count > 0:
+        logger.info(f"Fixed {fixed_user_count} users with missing subject_ids field")
+    
     logger.info("Datos iniciales verificados/creados exitosamente")
-    logger.info("7 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
+    logger.info("5 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
     logger.info(f"Modo de almacenamiento de contraseñas: {PASSWORD_STORAGE_MODE}")
 
 # --- Utility Functions ---
@@ -954,6 +1115,10 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
+    # Log important updates for debugging persistence issues
+    if "subject_ids" in update_data:
+        logger.info(f"User subject assignment updated: user_id={user_id}, subject_ids={update_data['subject_ids']}, by={user['id']}")
+    
     logger.info(f"User updated: id={user_id}, by={user['id']}, fields={list(update_data.keys())}")
     
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
@@ -1239,6 +1404,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Solo admin")
     
     # Handle subject_ids: use provided subject_ids, or convert subject_id to list if provided
+    # Always ensure subject_ids is a list, never None or empty when subject_id is provided
     subject_ids = []
     if req.subject_ids:
         subject_ids = req.subject_ids
@@ -1250,10 +1416,10 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         "name": req.name,
         "program_id": req.program_id,
         "subject_id": req.subject_id,  # Keep for backward compatibility
-        "subject_ids": subject_ids,
+        "subject_ids": subject_ids if subject_ids else [],  # Always set as list, never None
         "teacher_id": req.teacher_id,
         "year": req.year,
-        "student_ids": req.student_ids,
+        "student_ids": req.student_ids if req.student_ids else [],  # Always list, never None
         "start_date": req.start_date,
         "end_date": req.end_date,
         "grupo": req.grupo,
@@ -1261,6 +1427,10 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
+    
+    # Log course creation for debugging persistence issues
+    logger.info(f"Creating course: id={course['id']}, name={course['name']}, subject_ids={course['subject_ids']}, student_ids={len(course['student_ids'])} students")
+    
     await db.courses.insert_one(course)
     del course["_id"]
     return course
@@ -1703,19 +1873,17 @@ async def set_all_students_module_1(user=Depends(get_current_user)):
         "modified_count": result.modified_count
     }
 
-@api_router.post("/admin/close-module")
-async def close_module(module_number: int, program_id: Optional[str] = None, user=Depends(get_current_user)):
+async def close_module_internal(module_number: int, program_id: Optional[str] = None):
     """
-    Admin closes a module for a program. 
+    Internal function to close a module for a program. 
     Reviews all student grades and:
     - If student passed all subjects: promote to next module or graduate
     - If student failed any subject: mark as 'pendiente_recuperacion'
-    """
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo admin puede cerrar módulos")
     
+    This function can be called both by the API endpoint and the automatic scheduler.
+    """
     if module_number not in [1, 2]:
-        raise HTTPException(status_code=400, detail="Número de módulo inválido. Debe ser 1 o 2")
+        raise ValueError(f"Número de módulo inválido. Debe ser 1 o 2, got {module_number}")
     
     # Get all active students in the specified module
     query = {"role": "estudiante", "estado": "activo"}
@@ -1862,6 +2030,26 @@ async def close_module(module_number: int, program_id: Optional[str] = None, use
         "recovery_pending_count": recovery_count,
         "failed_subjects_count": len(failed_subjects_records)
     }
+
+@api_router.post("/admin/close-module")
+async def close_module(module_number: int, program_id: Optional[str] = None, user=Depends(get_current_user)):
+    """
+    Admin manually closes a module for a program. 
+    Reviews all student grades and:
+    - If student passed all subjects: promote to next module or graduate
+    - If student failed any subject: mark as 'pendiente_recuperacion'
+    
+    NOTE: This is a manual endpoint. Module closure also happens automatically
+    when the configured close date is reached.
+    """
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede cerrar módulos")
+    
+    try:
+        result = await close_module_internal(module_number, program_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @api_router.get("/admin/recovery-panel")
 async def get_recovery_panel(user=Depends(get_current_user)):
@@ -2469,4 +2657,8 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    # Shutdown scheduler gracefully
+    if scheduler.running:
+        scheduler.shutdown()
+        logger.info("Scheduler shut down")
     client.close()

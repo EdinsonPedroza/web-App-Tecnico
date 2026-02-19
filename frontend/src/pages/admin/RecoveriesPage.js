@@ -7,18 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, CheckCircle, XCircle, RefreshCw, Search, Filter, Trash2, GraduationCap } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, Trash2, GraduationCap } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function RecoveriesPage() {
   const [recoveryData, setRecoveryData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
-  const [moduleClosureDialog, setModuleClosureDialog] = useState(false);
-  const [closingModule, setClosingModule] = useState(false);
-  const [selectedModule, setSelectedModule] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [graduatedCount, setGraduatedCount] = useState(0);
@@ -63,27 +59,6 @@ export default function RecoveriesPage() {
     }
   };
 
-  const handleCloseModule = async () => {
-    setClosingModule(true);
-    try {
-      const res = await api.post('/admin/close-module', null, {
-        params: {
-          module_number: selectedModule
-        }
-      });
-      toast.success(
-        `Módulo ${selectedModule} cerrado: ${res.data.promoted_count} promovidos, ${res.data.graduated_count} egresados, ${res.data.recovery_pending_count} en recuperación`
-      );
-      setModuleClosureDialog(false);
-      fetchRecoveryPanel();
-    } catch (err) {
-      toast.error('Error cerrando módulo');
-      console.error(err);
-    } finally {
-      setClosingModule(false);
-    }
-  };
-
   const handleDeleteGraduated = async () => {
     if (!window.confirm(
       `¿Estás seguro de eliminar TODOS los ${graduatedCount} estudiantes egresados y sus datos?\n\nEsta acción es IRREVERSIBLE y eliminará:\n- Registros de estudiantes\n- Notas\n- Entregas\n- Datos de recuperaciones\n\n¿Continuar?`
@@ -121,15 +96,12 @@ export default function RecoveriesPage() {
           <div>
             <h1 className="text-3xl font-bold font-heading">Recuperaciones</h1>
             <p className="text-muted-foreground mt-1 text-lg">
-              Gestiona las materias reprobadas y aprueba recuperaciones
+              Gestiona las materias reprobadas y aprueba recuperaciones. El cierre de módulo es automático según la fecha configurada.
             </p>
           </div>
           <div className="flex gap-2">
             <Button onClick={fetchRecoveryPanel} variant="outline">
               <RefreshCw className="h-4 w-4" /> Actualizar
-            </Button>
-            <Button onClick={() => setModuleClosureDialog(true)} variant="default">
-              <AlertCircle className="h-4 w-4" /> Cerrar Módulo
             </Button>
           </div>
         </div>
@@ -374,59 +346,6 @@ export default function RecoveriesPage() {
           </div>
         )}
       </div>
-
-      {/* Module Closure Dialog */}
-      <Dialog open={moduleClosureDialog} onOpenChange={setModuleClosureDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cerrar Módulo</DialogTitle>
-            <DialogDescription>
-              Esta acción revisará las calificaciones de todos los estudiantes y:
-              <ul className="list-disc list-inside mt-2 space-y-1">
-                <li>Promoverá a los estudiantes que aprobaron todas las materias</li>
-                <li>Graduará a los estudiantes del último módulo</li>
-                <li>Marcará como "pendiente recuperación" a quienes reprobaron</li>
-              </ul>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Selecciona el módulo a cerrar:</label>
-              <div className="flex gap-2">
-                <Button
-                  variant={selectedModule === 1 ? 'default' : 'outline'}
-                  onClick={() => setSelectedModule(1)}
-                  className="flex-1"
-                >
-                  Módulo 1
-                </Button>
-                <Button
-                  variant={selectedModule === 2 ? 'default' : 'outline'}
-                  onClick={() => setSelectedModule(2)}
-                  className="flex-1"
-                >
-                  Módulo 2
-                </Button>
-              </div>
-            </div>
-            <div className="rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-4">
-              <p className="text-sm text-amber-900 dark:text-amber-100 font-medium flex items-center gap-2">
-                <AlertCircle className="h-4 w-4" />
-                Esta acción procesará automáticamente a todos los estudiantes
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModuleClosureDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleCloseModule} disabled={closingModule}>
-              {closingModule && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Cerrar Módulo {selectedModule}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </DashboardLayout>
   );
 }
