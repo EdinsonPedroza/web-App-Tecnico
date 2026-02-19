@@ -1999,11 +1999,11 @@ async def delete_graduated_students(user=Depends(get_current_user)):
     if user["role"] not in ["admin", "editor"]:
         raise HTTPException(status_code=403, detail="Solo admin/editor pueden eliminar estudiantes egresados")
     
-    # Find all graduated students
+    # Find all graduated students (no limit - get all of them)
     graduated_students = await db.users.find(
         {"role": "estudiante", "estado": "egresado"},
         {"_id": 0, "id": 1}
-    ).to_list(1000)
+    ).to_list(None)  # None means no limit
     
     if not graduated_students:
         return {

@@ -260,7 +260,7 @@ export default function RecoveriesPage() {
                 const matchesStatus = statusFilter === 'all' ||
                   (statusFilter === 'pending' && student.failed_subjects.some(s => !s.recovery_approved && !s.recovery_completed)) ||
                   (statusFilter === 'approved' && student.failed_subjects.some(s => s.recovery_approved)) ||
-                  (statusFilter === 'completed' && student.failed_subjects.some(s => s.recovery_completed && !s.recovery_approved));
+                  (statusFilter === 'completed' && student.failed_subjects.some(s => s.recovery_completed));
                 
                 return matchesSearch && matchesStatus;
               })
