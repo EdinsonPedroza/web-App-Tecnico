@@ -1,0 +1,321 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import DashboardLayout from '@/components/layout/DashboardLayout';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+import { Loader2, AlertCircle, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import api from '@/lib/api';
+
+export default function RecoveriesPage() {
+  const [recoveryData, setRecoveryData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState(null);
+  const [moduleClosureDialog, setModuleClosureDialog] = useState(false);
+  const [closingModule, setClosingModule] = useState(false);
+  const [selectedModule, setSelectedModule] = useState(1);
+
+  const fetchRecoveryPanel = useCallback(async () => {
+    try {
+      const res = await api.get('/admin/recovery-panel');
+      setRecoveryData(res.data);
+    } catch (err) {
+      toast.error('Error cargando panel de recuperaciones');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRecoveryPanel();
+  }, [fetchRecoveryPanel]);
+
+  const handleApproveRecovery = async (failedSubjectId, approve) => {
+    setProcessingId(failedSubjectId);
+    try {
+      await api.post('/admin/approve-recovery', null, {
+        params: {
+          failed_subject_id: failedSubjectId,
+          approve: approve
+        }
+      });
+      toast.success(approve ? 'Recuperación aprobada' : 'Recuperación rechazada');
+      fetchRecoveryPanel();
+    } catch (err) {
+      toast.error('Error procesando recuperación');
+      console.error(err);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleCloseModule = async () => {
+    setClosingModule(true);
+    try {
+      const res = await api.post('/admin/close-module', null, {
+        params: {
+          module_number: selectedModule
+        }
+      });
+      toast.success(
+        `Módulo ${selectedModule} cerrado: ${res.data.promoted_count} promovidos, ${res.data.graduated_count} egresados, ${res.data.recovery_pending_count} en recuperación`
+      );
+      setModuleClosureDialog(false);
+      fetchRecoveryPanel();
+    } catch (err) {
+      toast.error('Error cerrando módulo');
+      console.error(err);
+    } finally {
+      setClosingModule(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold font-heading">Recuperaciones</h1>
+            <p className="text-muted-foreground mt-1 text-lg">
+              Gestiona las materias reprobadas y aprueba recuperaciones
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={fetchRecoveryPanel} variant="outline">
+              <RefreshCw className="h-4 w-4" /> Actualizar
+            </Button>
+            <Button onClick={() => setModuleClosureDialog(true)} variant="default">
+              <AlertCircle className="h-4 w-4" /> Cerrar Módulo
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <Card className="shadow-card">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-2">
+                <AlertCircle className="h-5 w-5 text-warning" />
+                <Badge variant="secondary">Total</Badge>
+              </div>
+              <p className="text-3xl font-bold font-heading">{recoveryData?.total_students || 0}</p>
+              <p className="text-sm text-muted-foreground mt-1">Estudiantes con materias reprobadas</p>
+            </CardContent>
+          </Card>
+          <Card className="shadow-card">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-2">
+                <XCircle className="h-5 w-5 text-destructive" />
+                <Badge variant="secondary">Materias</Badge>
+              </div>
+              <p className="text-3xl font-bold font-heading">{recoveryData?.total_failed_subjects || 0}</p>
+              <p className="text-sm text-muted-foreground mt-1">Total de materias reprobadas</p>
+            </CardContent>
+          </Card>
+          <Card className="shadow-card">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-2">
+                <CheckCircle className="h-5 w-5 text-success" />
+                <Badge variant="secondary">Aprobadas</Badge>
+              </div>
+              <p className="text-3xl font-bold font-heading">
+                {recoveryData?.students?.reduce((sum, s) => 
+                  sum + s.failed_subjects.filter(f => f.recovery_approved).length, 0) || 0}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">Recuperaciones aprobadas</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Students with Failed Subjects */}
+        {!recoveryData?.students || recoveryData.students.length === 0 ? (
+          <Card className="shadow-card">
+            <CardContent className="p-10 text-center">
+              <CheckCircle className="h-12 w-12 text-success mx-auto mb-3" />
+              <p className="text-lg font-medium">No hay estudiantes pendientes de recuperación</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Todos los estudiantes han aprobado sus materias o ya fueron procesados
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-6">
+            {recoveryData.students.map((student) => (
+              <Card key={student.student_id} className="shadow-card">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-xl">{student.student_name}</CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        ID: {student.student_id} • {student.failed_subjects.length} materia(s) reprobada(s)
+                      </p>
+                    </div>
+                    <Badge variant="destructive" className="text-sm">
+                      En Recuperación
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Materia</TableHead>
+                        <TableHead>Programa</TableHead>
+                        <TableHead>Módulo</TableHead>
+                        <TableHead>Promedio</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {student.failed_subjects.map((subject) => (
+                        <TableRow key={subject.id}>
+                          <TableCell className="font-medium">{subject.course_name}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {subject.program_name}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">
+                              Módulo {subject.module_number}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="destructive" className="text-xs">
+                              {subject.average_grade.toFixed(2)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {subject.recovery_approved ? (
+                              <Badge variant="success" className="text-xs">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Aprobada
+                              </Badge>
+                            ) : subject.recovery_completed ? (
+                              <Badge variant="secondary" className="text-xs">
+                                Completada
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                Pendiente
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {!subject.recovery_approved && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleApproveRecovery(subject.id, true)}
+                                    disabled={processingId === subject.id}
+                                    className="text-success hover:text-success hover:bg-success/10"
+                                  >
+                                    {processingId === subject.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <>
+                                        <CheckCircle className="h-4 w-4" />
+                                        Aprobar
+                                      </>
+                                    )}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleApproveRecovery(subject.id, false)}
+                                    disabled={processingId === subject.id}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                    Rechazar
+                                  </Button>
+                                </>
+                              )}
+                              {subject.recovery_approved && (
+                                <Badge variant="outline" className="text-xs text-muted-foreground">
+                                  Esperando completar
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Module Closure Dialog */}
+      <Dialog open={moduleClosureDialog} onOpenChange={setModuleClosureDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cerrar Módulo</DialogTitle>
+            <DialogDescription>
+              Esta acción revisará las calificaciones de todos los estudiantes y:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>Promoverá a los estudiantes que aprobaron todas las materias</li>
+                <li>Graduará a los estudiantes del último módulo</li>
+                <li>Marcará como "pendiente recuperación" a quienes reprobaron</li>
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Selecciona el módulo a cerrar:</label>
+              <div className="flex gap-2">
+                <Button
+                  variant={selectedModule === 1 ? 'default' : 'outline'}
+                  onClick={() => setSelectedModule(1)}
+                  className="flex-1"
+                >
+                  Módulo 1
+                </Button>
+                <Button
+                  variant={selectedModule === 2 ? 'default' : 'outline'}
+                  onClick={() => setSelectedModule(2)}
+                  className="flex-1"
+                >
+                  Módulo 2
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-4">
+              <p className="text-sm text-amber-900 dark:text-amber-100 font-medium flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                Esta acción procesará automáticamente a todos los estudiantes
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModuleClosureDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCloseModule} disabled={closingModule}>
+              {closingModule && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Cerrar Módulo {selectedModule}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </DashboardLayout>
+  );
+}

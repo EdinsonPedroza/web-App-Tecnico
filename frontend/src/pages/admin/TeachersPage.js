@@ -66,6 +66,13 @@ export default function TeachersPage() {
     if (!form.name.trim() || (!editing && !form.email.trim())) { toast.error('Nombre y correo requeridos'); return; }
     if (!editing && !form.password) { toast.error('Contraseña requerida'); return; }
     
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (form.email && !emailRegex.test(form.email)) {
+      toast.error('Por favor ingresa un correo electrónico válido (debe contener @ y un dominio)');
+      return;
+    }
+    
     // Password length validation
     if (form.password && form.password.length < 6) {
       toast.error('La contraseña debe tener al menos 6 caracteres');
@@ -193,7 +200,7 @@ export default function TeachersPage() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'Editar Profesor' : 'Nuevo Profesor'}</DialogTitle>
             <DialogDescription>Ingresa los datos del docente</DialogDescription>

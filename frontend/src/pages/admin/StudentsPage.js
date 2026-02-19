@@ -190,6 +190,12 @@ export default function StudentsPage() {
     if (!form.name.trim() || (!editing && !form.cedula.trim())) { toast.error('Nombre y cédula requeridos'); return; }
     if (!editing && !form.password) { toast.error('Contraseña requerida'); return; }
     
+    // Validate cédula: only numbers
+    if (form.cedula && !/^\d+$/.test(form.cedula)) {
+      toast.error('La cédula solo debe contener números');
+      return;
+    }
+    
     // Password length validation
     if (form.password && form.password.length < 6) {
       toast.error('La contraseña debe tener al menos 6 caracteres');
@@ -443,16 +449,16 @@ export default function StudentsPage() {
                           }
                           const studentCourses = courses.filter(c => studentCourseIds.includes(c.id));
                           return (
-                            <div className="flex flex-col gap-1">
-                              {studentCourses.map(course => {
-                                const programName = getProgramShortName(course.program_id);
-                                return (
-                                  <Badge key={course.id} variant="outline" className="text-xs">
-                                    {course.name} <span className="text-muted-foreground ml-1">({programName})</span>
-                                  </Badge>
-                                );
-                              })}
-                            </div>
+                             <div className="flex flex-col gap-1">
+                               {studentCourses.map(course => {
+                                 const programName = getProgramShortName(course.program_id);
+                                 return (
+                                   <Badge key={course.id} variant="outline" className="text-xs rounded-md px-3 py-1">
+                                     {course.name} <span className="text-muted-foreground ml-1">({programName})</span>
+                                   </Badge>
+                                 );
+                               })}
+                             </div>
                           );
                         })()}
                       </TableCell>
@@ -534,8 +540,19 @@ export default function StudentsPage() {
             <div className="space-y-2"><Label>Nombre Completo</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del estudiante" /></div>
             <div className="space-y-2">
               <Label>Cédula</Label>
-              <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" />
+              <Input 
+                type="text" 
+                inputMode="numeric" 
+                pattern="[0-9]*"
+                value={form.cedula} 
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '');
+                  setForm({ ...form, cedula: value });
+                }} 
+                placeholder="Número de cédula (solo números)" 
+              />
               {editing && <p className="text-xs text-amber-600 dark:text-amber-500">⚠️ Cambiar la cédula puede afectar el acceso del estudiante. Verifica que no exista duplicado.</p>}
+              <p className="text-xs text-muted-foreground">Solo se permiten números</p>
             </div>
             <div className="space-y-2">
               <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>

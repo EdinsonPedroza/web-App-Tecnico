@@ -16,6 +16,7 @@ import SubjectsPage from '@/pages/admin/SubjectsPage';
 import TeachersPage from '@/pages/admin/TeachersPage';
 import StudentsPage from '@/pages/admin/StudentsPage';
 import CoursesPage from '@/pages/admin/CoursesPage';
+import RecoveriesPage from '@/pages/admin/RecoveriesPage';
 import TeacherCourseSelector from '@/pages/teacher/TeacherCourseSelector';
 import TeacherCourseDashboard from '@/pages/teacher/TeacherCourseDashboard';
 import TeacherActivities from '@/pages/teacher/TeacherActivities';
@@ -30,6 +31,7 @@ import StudentCourses from '@/pages/student/StudentCourses';
 import StudentActivities from '@/pages/student/StudentActivities';
 import StudentGrades from '@/pages/student/StudentGrades';
 import StudentVideos from '@/pages/student/StudentVideos';
+import StudentRecoveriesPage from '@/pages/student/StudentRecoveriesPage';
 
 // Protected Route wrapper
 function ProtectedRoute({ children, allowedRoles }) {
@@ -90,6 +92,7 @@ function App() {
               <Route path="/admin/teachers" element={<ProtectedRoute allowedRoles={['admin']}><TeachersPage /></ProtectedRoute>} />
               <Route path="/admin/students" element={<ProtectedRoute allowedRoles={['admin']}><StudentsPage /></ProtectedRoute>} />
               <Route path="/admin/courses" element={<ProtectedRoute allowedRoles={['admin']}><CoursesPage /></ProtectedRoute>} />
+              <Route path="/admin/recoveries" element={<ProtectedRoute allowedRoles={['admin']}><RecoveriesPage /></ProtectedRoute>} />
 
               {/* Teacher Routes */}
               <Route path="/teacher" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherCourseSelector /></ProtectedRoute>} />
@@ -102,6 +105,7 @@ function App() {
               {/* Student Routes */}
               <Route path="/student" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentProgramSelector /></ProtectedRoute>} />
               <Route path="/student/courses" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentCourseSelector /></ProtectedRoute>} />
+              <Route path="/student/recoveries" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentRecoveriesPage /></ProtectedRoute>} />
               <Route path="/student/course/:courseId" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentCourseDashboard /></ProtectedRoute>} />
               <Route path="/student/course/:courseId/activities" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentActivities /></ProtectedRoute>} />
               <Route path="/student/course/:courseId/grades" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentGrades /></ProtectedRoute>} />

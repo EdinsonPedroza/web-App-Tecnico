@@ -50,7 +50,7 @@ export default function AdminDashboardHome() {
               {statCards.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <Card key={item.label} className="shadow-card hover:shadow-card-hover transition-shadow">
+                  <Card key={item.label} className="shadow-card hover:shadow-lg transition-all duration-300 hover-lift cursor-pointer">
                     <CardContent className="p-5">
                       <div className="flex items-center justify-between mb-3">
                         <Icon className={`h-5 w-5 ${item.color}`} />
@@ -76,15 +76,16 @@ export default function AdminDashboardHome() {
                     { label: 'Gestionar Profesores', desc: 'Agregar o editar docentes', path: '/admin/teachers', icon: Users },
                     { label: 'Gestionar Estudiantes', desc: 'Inscribir o editar alumnos', path: '/admin/students', icon: GraduationCap },
                     { label: 'Gestionar Cursos', desc: 'Crear cursos y asignar grupos', path: '/admin/courses', icon: ClipboardList },
+                    { label: 'Recuperaciones', desc: 'Gestionar recuperaciones de estudiantes', path: '/admin/recoveries', icon: FileText },
                   ].map((item) => {
                     const Icon = item.icon;
                     return (
                       <a
                         key={item.path}
                         href={item.path}
-                        className="flex items-center gap-4 rounded-lg p-4 hover:bg-accent transition-colors group"
+                        className="flex items-center gap-4 rounded-lg p-4 hover:bg-accent transition-all duration-300 group hover-lift"
                       >
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
                           <Icon className="h-6 w-6" />
                         </div>
                         <div className="flex-1 min-w-0">
