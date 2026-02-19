@@ -479,10 +479,6 @@ async def create_initial_data():
         # 1 Editor
         {"id": "user-editor-1", "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
         
-        # 2 Estudiantes
-        {"id": "user-est-1", "name": "María García", "email": "maria.garcia@estudiante.com", "cedula": "V-12345678", "password_hash": hash_password("Estudiante1!"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": None, "active": True, "module": 1, "grupo": "Grupo 2026", "estado": "activo", "program_modules": {"prog-admin": 1}},
-        {"id": "user-est-2", "name": "Carlos López", "email": "carlos.lopez@estudiante.com", "cedula": "V-87654321", "password_hash": hash_password("Estudiante2!"), "role": "estudiante", "program_id": "prog-admin", "program_ids": ["prog-admin"], "subject_ids": [], "phone": None, "active": True, "module": 1, "grupo": "Grupo 2026", "estado": "activo", "program_modules": {"prog-admin": 1}},
-        
         # 2 Profesores
         {"id": "user-prof-1", "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor1!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
         {"id": "user-prof-2", "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor2!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
@@ -2413,6 +2409,14 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 {"$set": {"estado": "pendiente_recuperacion"}}
             )
         
+        if not approve:
+            # Rejection: remove student from the course group
+            await db.courses.update_one(
+                {"id": course_id},
+                {"$pull": {"student_ids": student_id}}
+            )
+            logger.info(f"Student {student_id} removed from course {course_id} due to admin recovery rejection")
+        
         action = "aprobada" if approve else "rechazada"
         return {"message": f"Recuperación {action} exitosamente"}
     
@@ -2454,6 +2458,13 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 {"id": existing["id"]},
                 {"$set": {"enabled": True, "enabled_by": user["id"], "enabled_at": datetime.now(timezone.utc).isoformat()}}
             )
+    else:
+        # Rejection: remove student from the course group
+        await db.courses.update_one(
+            {"id": failed_record["course_id"]},
+            {"$pull": {"student_ids": failed_record["student_id"]}}
+        )
+        logger.info(f"Student {failed_record['student_id']} removed from course {failed_record['course_id']} due to admin recovery rejection")
     
     action = "aprobada" if approve else "rechazada"
     return {"message": f"Recuperación {action} exitosamente"}

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight, ArrowUpCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 
@@ -110,6 +110,25 @@ export default function StudentsPage() {
 
   // Get which courses a student is enrolled in
   const getStudentCourseIds = (studentId) => courses.filter(c => (c.student_ids || []).includes(studentId)).map(c => c.id);
+
+  // Determine if a group/course is compatible with a student's current module for a given program.
+  // - If studentModule == 1: student can join groups where module 1 hasn't started yet (no module_dates["1"].end in past)
+  // - If studentModule == 2: student can join groups where module 1 is already closed (module_dates["1"].end <= today)
+  const isCourseCompatibleWithModule = (course, studentModule) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const moduleDates = course.module_dates || {};
+    const mod1Dates = moduleDates['1'] || moduleDates[1] || null;
+    const mod1End = mod1Dates?.end || null;
+
+    if (studentModule === 1) {
+      // Student is in module 1: only show groups where module 1 hasn't closed yet
+      return !mod1End || mod1End >= today;
+    } else if (studentModule >= 2) {
+      // Student is in module 2+: only show groups where module 1 is already closed
+      return mod1End && mod1End < today;
+    }
+    return true;
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -296,35 +315,6 @@ export default function StudentsPage() {
     }
   };
 
-  const handlePromote = async (student) => {
-    if (!student.module || student.module >= 2) {
-      toast.error('El estudiante ya está en el módulo final');
-      return;
-    }
-    if (!window.confirm(`¿Promover a ${student.name} al Módulo ${student.module + 1}?`)) return;
-    try {
-      await api.put(`/users/${student.id}/promote`);
-      toast.success('Estudiante promovido exitosamente');
-      fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error promoviendo estudiante');
-    }
-  };
-
-  const handleGraduate = async (student) => {
-    if (student.module < 2) {
-      toast.error('El estudiante debe estar en el módulo 2 para graduarse');
-      return;
-    }
-    if (!window.confirm(`¿Marcar a ${student.name} como Egresado?`)) return;
-    try {
-      await api.put(`/users/${student.id}/graduate`);
-      toast.success('Estudiante marcado como egresado exitosamente');
-      fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error graduando estudiante');
-    }
-  };
 
   return (
     <DashboardLayout>
@@ -479,26 +469,6 @@ export default function StudentsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {s.module && s.module < 2 && (s.estado || 'activo') === 'activo' && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handlePromote(s)}
-                              title="Promover al siguiente módulo"
-                            >
-                              <ArrowUpCircle className="h-4 w-4 text-success" />
-                            </Button>
-                          )}
-                          {s.module === 2 && (s.estado || 'activo') === 'activo' && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handleGraduate(s)}
-                              title="Marcar como egresado"
-                            >
-                              <GraduationCap className="h-4 w-4 text-blue-600" />
-                            </Button>
-                          )}
                           <Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                         </div>
@@ -630,7 +600,18 @@ export default function StudentsPage() {
               <div className="flex items-center justify-between">
                 <Label className="text-base">Grupos Inscritos ({form.course_ids.length} seleccionados)</Label>
                 {(() => {
-                  const filteredCourses = courses.filter(c => !form.program_ids.length || form.program_ids.includes(c.program_id));
+                  const filteredCourses = courses.filter(c => {
+                    const matchesProgram = !form.program_ids.length || form.program_ids.includes(c.program_id);
+                    if (!matchesProgram) return false;
+                    if (editing && form.program_modules && c.program_id) {
+                      const studentModule = form.program_modules[c.program_id];
+                      if (studentModule) {
+                        const isCurrentlyEnrolled = (form.course_ids || []).includes(c.id);
+                        if (!isCurrentlyEnrolled && !isCourseCompatibleWithModule(c, studentModule)) return false;
+                      }
+                    }
+                    return true;
+                  });
                   return filteredCourses.length > 0 && (
                     <Button 
                       type="button" 
@@ -660,11 +641,25 @@ export default function StudentsPage() {
               </div>
               <div className="max-h-36 overflow-y-auto rounded-lg border p-3 space-y-2">
                 {(() => {
+                  const today = new Date().toISOString().slice(0, 10);
                   const filteredCourses = courses.filter(c => {
                     const matchesProgram = !form.program_ids.length || form.program_ids.includes(c.program_id);
+                    if (!matchesProgram) return false;
                     const courseName = String(c.name || '');
                     const matchesSearch = courseName.toLowerCase().includes(courseSearch.toLowerCase());
-                    return matchesProgram && matchesSearch;
+                    if (!matchesSearch) return false;
+                    // When editing an existing student, filter by module compatibility per program
+                    if (editing && form.program_modules && c.program_id) {
+                      const studentModule = form.program_modules[c.program_id];
+                      if (studentModule) {
+                        // Allow currently enrolled groups regardless of module (don't lock out existing)
+                        const isCurrentlyEnrolled = (form.course_ids || []).includes(c.id);
+                        if (!isCurrentlyEnrolled && !isCourseCompatibleWithModule(c, studentModule)) {
+                          return false;
+                        }
+                      }
+                    }
+                    return true;
                   });
                   
                   if (courses.length === 0) {
@@ -672,7 +667,7 @@ export default function StudentsPage() {
                   }
                   
                   if (filteredCourses.length === 0 && form.program_ids.length > 0) {
-                    return <p className="text-sm text-muted-foreground">No hay grupos para los técnicos seleccionados</p>;
+                    return <p className="text-sm text-muted-foreground">No hay grupos compatibles con el módulo del estudiante para los técnicos seleccionados</p>;
                   }
                   
                   if (filteredCourses.length === 0 && courseSearch) {
@@ -681,18 +676,25 @@ export default function StudentsPage() {
                   
                   return filteredCourses.map((c) => {
                     const programName = getProgramShortName(c.program_id);
+                    const studentModule = form.program_modules?.[c.program_id];
+                    const mod1Dates = c.module_dates?.['1'] || c.module_dates?.[1];
+                    const mod1End = mod1Dates?.end;
+                    const moduleInfo = mod1End
+                      ? (mod1End < today ? 'M1 cerrado' : 'M1 abierto')
+                      : 'Nuevo grupo';
                     return (
                       <div key={c.id} className="flex items-center gap-2">
                         <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
                         <span className="text-sm flex-1">{c.name}</span>
                         <span className="text-xs text-muted-foreground">({programName})</span>
+                        <span className="text-xs text-muted-foreground italic">{moduleInfo}</span>
                       </div>
                     );
                   });
                 })()}
               </div>
               <p className="text-xs text-muted-foreground">
-                Solo se muestran los grupos correspondientes a los técnicos seleccionados. Solo se puede elegir un grupo por técnico.
+                Se muestran grupos compatibles con el módulo del estudiante. Solo se puede elegir un grupo por técnico.
               </p>
             </div>
           </div>
