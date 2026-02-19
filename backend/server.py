@@ -2239,6 +2239,154 @@ async def get_graduated_students_count(user=Depends(get_current_user)):
         "count": count
     }
 
+@api_router.post("/admin/reset-users")
+async def reset_users(confirm_token: str = None):
+    """
+    DANGER: Deletes ALL users and creates fresh default users.
+    Creates: 2 admins, 1 editor, 2 professors, 2 students
+    
+    Requires confirmation token: 'RESET_ALL_USERS_CONFIRM'
+    
+    This endpoint should be disabled or protected in production.
+    Set environment variable ALLOW_USER_RESET=false to disable.
+    """
+    # Check if endpoint is allowed (can be disabled via env var)
+    allow_reset = os.environ.get('ALLOW_USER_RESET', 'true').lower() == 'true'
+    if not allow_reset:
+        raise HTTPException(
+            status_code=403, 
+            detail="Este endpoint está deshabilitado en producción"
+        )
+    
+    # Require confirmation token
+    if confirm_token != "RESET_ALL_USERS_CONFIRM":
+        raise HTTPException(
+            status_code=400,
+            detail="Token de confirmación requerido. Parámetro: confirm_token='RESET_ALL_USERS_CONFIRM'"
+        )
+    
+    # Delete ALL users
+    deleted_count = await db.users.delete_many({})
+    
+    # Create new default users
+    default_users = [
+        # 2 Admins
+        {
+            "id": str(uuid.uuid4()),
+            "name": "Admin Principal",
+            "email": "admin@educando.com",
+            "cedula": None,
+            "password_hash": hash_password("Admin2026"),
+            "role": "admin",
+            "program_id": None,
+            "phone": "3001234567",
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "name": "Admin Secundario",
+            "email": "admin2@educando.com",
+            "cedula": None,
+            "password_hash": hash_password("Admin2026"),
+            "role": "admin",
+            "program_id": None,
+            "phone": "3001234568",
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        },
+        # 1 Editor (logs in through profesor login)
+        {
+            "id": str(uuid.uuid4()),
+            "name": "Editor Principal",
+            "email": "editor@educando.com",
+            "cedula": None,
+            "password_hash": hash_password("Editor2026"),
+            "role": "editor",
+            "program_id": None,
+            "phone": "3002222222",
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        },
+        # 2 Professors
+        {
+            "id": str(uuid.uuid4()),
+            "name": "María García",
+            "email": "profesor@educando.com",
+            "cedula": None,
+            "password_hash": hash_password("Profe2026"),
+            "role": "profesor",
+            "program_id": None,
+            "phone": "3007654321",
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "name": "Carlos Rodríguez",
+            "email": "profesor2@educando.com",
+            "cedula": None,
+            "password_hash": hash_password("Profe2026"),
+            "role": "profesor",
+            "program_id": None,
+            "phone": "3009876543",
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        },
+        # 2 Students
+        {
+            "id": str(uuid.uuid4()),
+            "name": "Juan Martínez",
+            "email": None,
+            "cedula": "1001",
+            "password_hash": hash_password("1001"),
+            "role": "estudiante",
+            "program_id": None,
+            "phone": "3101234567",
+            "active": True,
+            "estado": "activo",
+            "current_module": 1,
+            "program_ids": [],
+            "curso_ids": [],
+            "program_modules": {},
+            "created_at": datetime.now(timezone.utc).isoformat()
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "name": "Ana Hernández",
+            "email": None,
+            "cedula": "1002",
+            "password_hash": hash_password("1002"),
+            "role": "estudiante",
+            "program_id": None,
+            "phone": "3207654321",
+            "active": True,
+            "estado": "activo",
+            "current_module": 1,
+            "program_ids": [],
+            "curso_ids": [],
+            "program_modules": {},
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+    ]
+    
+    await db.users.insert_many(default_users)
+    
+    return {
+        "message": "Usuarios reiniciados exitosamente",
+        "deleted_count": deleted_count.deleted_count,
+        "created_count": len(default_users),
+        "users": [
+            {"role": "admin", "login": "admin@educando.com", "password": "Admin2026"},
+            {"role": "admin", "login": "admin2@educando.com", "password": "Admin2026"},
+            {"role": "editor", "login": "editor@educando.com (usar login de profesor)", "password": "Editor2026"},
+            {"role": "profesor", "login": "profesor@educando.com", "password": "Profe2026"},
+            {"role": "profesor", "login": "profesor2@educando.com", "password": "Profe2026"},
+            {"role": "estudiante", "login": "1001 (cédula)", "password": "1001"},
+            {"role": "estudiante", "login": "1002 (cédula)", "password": "1002"}
+        ]
+    }
+
 # --- Seed Data Route ---
 @api_router.post("/seed")
 async def seed_data():
