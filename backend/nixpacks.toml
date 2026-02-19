@@ -8,4 +8,6 @@ cmds = ["pip install -r requirements.txt"]
 cmds = ["mkdir -p uploads"]
 
 [start]
+# NOTE: For async FastAPI apps, workers use multiprocessing. Consider setting WORKERS=1
+# and relying on async concurrency, or use Gunicorn with uvicorn workers for better process management.
 cmd = "uvicorn server:app --host 0.0.0.0 --port $PORT --workers ${WORKERS:-4}"

@@ -92,16 +92,19 @@ api_router = APIRouter(prefix="/api")
 # Health check endpoint for monitoring
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint that verifies server and MongoDB connection status"""
+    """
+    Health check endpoint for load balancers and monitoring systems.
+    Returns basic status without exposing sensitive implementation details.
+    """
     try:
         # Ping MongoDB to verify connection
         await db.command('ping')
-        return {"status": "healthy", "database": "connected"}
+        return {"status": "healthy"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return JSONResponse(
             status_code=503,
-            content={"status": "unhealthy", "database": "disconnected"}
+            content={"status": "unhealthy"}
         )
 
 
