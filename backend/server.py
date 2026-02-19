@@ -536,7 +536,20 @@ class UserCreate(BaseModel):
     @validator('cedula')
     def sanitize_cedula(cls, v):
         if v:
-            return re.sub(r'[^a-zA-Z0-9]', '', v)[:50]
+            # Only allow numbers for cedula
+            cleaned = re.sub(r'\D', '', v)[:50]
+            if v and not cleaned:
+                raise ValueError('La cédula solo debe contener números')
+            return cleaned
+        return v
+    
+    @validator('email')
+    def validate_email(cls, v):
+        if v:
+            # Email validation: must contain @ and a domain
+            email_pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+            if not re.match(email_pattern, v):
+                raise ValueError('El correo electrónico debe contener @ y un dominio válido')
         return v
     
     @validator('program_modules')
@@ -569,7 +582,20 @@ class UserUpdate(BaseModel):
     @validator('cedula')
     def sanitize_cedula(cls, v):
         if v:
-            return re.sub(r'[^a-zA-Z0-9]', '', v)[:50]
+            # Only allow numbers for cedula
+            cleaned = re.sub(r'\D', '', v)[:50]
+            if v and not cleaned:
+                raise ValueError('La cédula solo debe contener números')
+            return cleaned
+        return v
+    
+    @validator('email')
+    def validate_email(cls, v):
+        if v:
+            # Email validation: must contain @ and a domain
+            email_pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+            if not re.match(email_pattern, v):
+                raise ValueError('El correo electrónico debe contener @ y un dominio válido')
         return v
     
     @validator('program_modules')
@@ -1653,6 +1679,292 @@ async def set_all_students_module_1(user=Depends(get_current_user)):
     return {
         "message": f"Se actualizaron {result.modified_count} estudiantes al Módulo 1",
         "modified_count": result.modified_count
+    }
+
+@api_router.post("/admin/close-module")
+async def close_module(module_number: int, program_id: Optional[str] = None, user=Depends(get_current_user)):
+    """
+    Admin closes a module for a program. 
+    Reviews all student grades and:
+    - If student passed all subjects: promote to next module or graduate
+    - If student failed any subject: mark as 'pendiente_recuperacion'
+    """
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede cerrar módulos")
+    
+    if module_number not in [1, 2]:
+        raise HTTPException(status_code=400, detail="Número de módulo inválido. Debe ser 1 o 2")
+    
+    # Get all active students in the specified module
+    query = {"role": "estudiante", "estado": "activo"}
+    
+    if program_id:
+        # If program specified, filter students in that program
+        query["$or"] = [
+            {"program_id": program_id},
+            {"program_ids": program_id}
+        ]
+    
+    students = await db.users.find(query, {"_id": 0}).to_list(1000)
+    
+    promoted_count = 0
+    graduated_count = 0
+    recovery_count = 0
+    failed_subjects_records = []
+    
+    # Get all courses/groups
+    courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+    
+    for student in students:
+        student_id = student["id"]
+        student_program_modules = student.get("program_modules", {})
+        
+        # Check if student is in the specified module for any of their programs
+        programs_in_module = []
+        if program_id:
+            # Check specific program
+            if student_program_modules.get(program_id) == module_number:
+                programs_in_module.append(program_id)
+        else:
+            # Check all programs
+            for prog_id, mod_num in student_program_modules.items():
+                if mod_num == module_number:
+                    programs_in_module.append(prog_id)
+        
+        if not programs_in_module:
+            continue  # Student not in this module
+        
+        # Get all courses for this student in the specified programs
+        student_courses = [c for c in courses if student_id in c.get("student_ids", []) and c["program_id"] in programs_in_module]
+        
+        # Get all grades for the student
+        all_grades = await db.grades.find({"student_id": student_id}, {"_id": 0}).to_list(1000)
+        
+        # Group grades by course
+        failed_courses = []
+        for course in student_courses:
+            course_grades = [g for g in all_grades if g.get("course_id") == course["id"]]
+            
+            if not course_grades:
+                # No grades = failed
+                failed_courses.append({
+                    "course_id": course["id"],
+                    "course_name": course["name"],
+                    "program_id": course["program_id"],
+                    "average": 0.0
+                })
+                continue
+            
+            # Calculate average grade for this course
+            grade_values = [g["value"] for g in course_grades if g.get("value") is not None]
+            if not grade_values:
+                failed_courses.append({
+                    "course_id": course["id"],
+                    "course_name": course["name"],
+                    "program_id": course["program_id"],
+                    "average": 0.0
+                })
+                continue
+            
+            average = sum(grade_values) / len(grade_values)
+            
+            # If average < 3.0, student failed this course
+            if average < 3.0:
+                failed_courses.append({
+                    "course_id": course["id"],
+                    "course_name": course["name"],
+                    "program_id": course["program_id"],
+                    "average": round(average, 2)
+                })
+        
+        # Determine student status
+        if failed_courses:
+            # Student failed some courses - mark as pending recovery
+            recovery_count += 1
+            
+            # Store failed subjects record
+            for failed in failed_courses:
+                failed_subjects_records.append({
+                    "id": str(uuid.uuid4()),
+                    "student_id": student_id,
+                    "student_name": student["name"],
+                    "course_id": failed["course_id"],
+                    "course_name": failed["course_name"],
+                    "program_id": failed["program_id"],
+                    "module_number": module_number,
+                    "average_grade": failed["average"],
+                    "recovery_approved": False,  # Admin must approve
+                    "recovery_completed": False,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
+            
+            # Update student status
+            await db.users.update_one(
+                {"id": student_id},
+                {"$set": {"estado": "pendiente_recuperacion"}}
+            )
+        else:
+            # Student passed all courses
+            for prog_id in programs_in_module:
+                current_module = student_program_modules.get(prog_id, 1)
+                
+                if current_module < 2:
+                    # Promote to next module
+                    student_program_modules[prog_id] = current_module + 1
+                    promoted_count += 1
+                else:
+                    # Module 2 completed - graduate
+                    graduated_count += 1
+                    await db.users.update_one(
+                        {"id": student_id},
+                        {"$set": {"estado": "egresado"}}
+                    )
+            
+            # Update program_modules if promoted
+            if student_program_modules:
+                await db.users.update_one(
+                    {"id": student_id},
+                    {"$set": {"program_modules": student_program_modules}}
+                )
+    
+    # Bulk insert failed subjects records
+    if failed_subjects_records:
+        await db.failed_subjects.insert_many(failed_subjects_records)
+    
+    return {
+        "message": "Cierre de módulo completado",
+        "module_number": module_number,
+        "program_id": program_id,
+        "promoted_count": promoted_count,
+        "graduated_count": graduated_count,
+        "recovery_pending_count": recovery_count,
+        "failed_subjects_count": len(failed_subjects_records)
+    }
+
+@api_router.get("/admin/recovery-panel")
+async def get_recovery_panel(user=Depends(get_current_user)):
+    """
+    Get all students with failed subjects pending recovery approval.
+    Returns detailed information for admin to review and approve recoveries.
+    """
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede acceder al panel de recuperaciones")
+    
+    # Get all failed subject records
+    failed_records = await db.failed_subjects.find({}, {"_id": 0}).to_list(1000)
+    
+    # Get all programs for reference
+    programs = await db.programs.find({}, {"_id": 0}).to_list(100)
+    program_map = {p["id"]: p["name"] for p in programs}
+    
+    # Organize by student
+    students_map = {}
+    for record in failed_records:
+        student_id = record["student_id"]
+        if student_id not in students_map:
+            students_map[student_id] = {
+                "student_id": student_id,
+                "student_name": record["student_name"],
+                "failed_subjects": []
+            }
+        
+        students_map[student_id]["failed_subjects"].append({
+            "id": record["id"],
+            "course_id": record["course_id"],
+            "course_name": record["course_name"],
+            "program_id": record["program_id"],
+            "program_name": program_map.get(record["program_id"], "Desconocido"),
+            "module_number": record["module_number"],
+            "average_grade": record["average_grade"],
+            "recovery_approved": record["recovery_approved"],
+            "recovery_completed": record["recovery_completed"]
+        })
+    
+    return {
+        "students": list(students_map.values()),
+        "total_students": len(students_map),
+        "total_failed_subjects": len(failed_records)
+    }
+
+@api_router.post("/admin/approve-recovery")
+async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, user=Depends(get_current_user)):
+    """
+    Admin approves or rejects recovery for a specific failed subject.
+    If approved, student can see and complete recovery activities.
+    """
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede aprobar recuperaciones")
+    
+    # Find the failed subject record
+    failed_record = await db.failed_subjects.find_one({"id": failed_subject_id}, {"_id": 0})
+    if not failed_record:
+        raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
+    
+    # Update approval status
+    await db.failed_subjects.update_one(
+        {"id": failed_subject_id},
+        {"$set": {
+            "recovery_approved": approve,
+            "approved_by": user["id"],
+            "approved_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # If approved, also enable recovery in the recovery_enabled collection
+    if approve:
+        recovery = {
+            "id": str(uuid.uuid4()),
+            "student_id": failed_record["student_id"],
+            "course_id": failed_record["course_id"],
+            "enabled": True,
+            "enabled_by": user["id"],
+            "enabled_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        existing = await db.recovery_enabled.find_one({
+            "student_id": failed_record["student_id"],
+            "course_id": failed_record["course_id"]
+        })
+        
+        if not existing:
+            await db.recovery_enabled.insert_one(recovery)
+        else:
+            await db.recovery_enabled.update_one(
+                {"id": existing["id"]},
+                {"$set": {"enabled": True, "enabled_by": user["id"], "enabled_at": datetime.now(timezone.utc).isoformat()}}
+            )
+    
+    action = "aprobada" if approve else "rechazada"
+    return {"message": f"Recuperación {action} exitosamente"}
+
+@api_router.get("/student/my-recoveries")
+async def get_student_recoveries(user=Depends(get_current_user)):
+    """
+    Get recovery subjects for the current student.
+    Only returns subjects where recovery has been approved by admin.
+    """
+    if user["role"] != "estudiante":
+        raise HTTPException(status_code=403, detail="Solo estudiantes pueden acceder a sus recuperaciones")
+    
+    student_id = user["id"]
+    
+    # Get failed subjects where recovery is approved
+    failed_subjects = await db.failed_subjects.find({
+        "student_id": student_id,
+        "recovery_approved": True,
+        "recovery_completed": False
+    }, {"_id": 0}).to_list(100)
+    
+    # Get program info for each
+    programs = await db.programs.find({}, {"_id": 0}).to_list(100)
+    program_map = {p["id"]: p["name"] for p in programs}
+    
+    for subject in failed_subjects:
+        subject["program_name"] = program_map.get(subject["program_id"], "Desconocido")
+    
+    return {
+        "recoveries": failed_subjects,
+        "total": len(failed_subjects)
     }
 
 # --- Seed Data Route ---
