@@ -1134,6 +1134,11 @@ async def delete_user(user_id: str, user=Depends(get_current_user)):
     result = await db.users.delete_one({"id": user_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    # Remove the deleted user from all course student_ids arrays so counts stay accurate
+    await db.courses.update_many(
+        {"student_ids": user_id},
+        {"$pull": {"student_ids": user_id}}
+    )
     return {"message": "Usuario eliminado"}
 
 # --- Editor Routes ---
@@ -1464,6 +1469,29 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
 async def delete_course(course_id: str, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
+    
+    # Find the course to get its student list
+    course = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    if course:
+        student_ids_in_course = course.get("student_ids", [])
+        if student_ids_in_course:
+            # Find students who are ONLY in this course (not enrolled in any other course)
+            other_courses = await db.courses.find(
+                {"id": {"$ne": course_id}, "student_ids": {"$in": student_ids_in_course}},
+                {"_id": 0, "student_ids": 1}
+            ).to_list(None)
+            # Collect all student IDs that appear in other courses
+            students_in_other_courses = set()
+            for c in other_courses:
+                students_in_other_courses.update(c.get("student_ids", []))
+            # Students exclusively in this course (not in any other)
+            exclusive_student_ids = [
+                sid for sid in student_ids_in_course
+                if sid not in students_in_other_courses
+            ]
+            if exclusive_student_ids:
+                await db.users.delete_many({"id": {"$in": exclusive_student_ids}})
+    
     await db.courses.delete_one({"id": course_id})
     return {"message": "Curso eliminado"}
 

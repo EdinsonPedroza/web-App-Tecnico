@@ -5,7 +5,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, BookOpen, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Loader2, BookOpen, ChevronRight, ArrowLeft, Lock } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -52,6 +52,13 @@ export default function StudentCourseSelector() {
     ? courses.filter(c => c.program_id === selectedProgram.id)
     : courses;
 
+  // Get student's current module for a given program
+  const getStudentModule = (programId) => {
+    const mod = user.program_modules?.[programId] ?? user.module;
+    const num = parseInt(mod, 10);
+    return Number.isFinite(num) && num >= 1 ? num : 1;
+  };
+
   // Expand each course into individual subject cards
   // Each course/group has subject_ids with multiple subjects
   const subjectCards = filteredCourses.flatMap((course) => {
@@ -59,15 +66,26 @@ export default function StudentCourseSelector() {
       ? course.subject_ids
       : (course.subject_id ? [course.subject_id] : []);
     
-    return courseSubjectIds.map((subjectId) => ({
-      courseId: course.id,
-      subjectId,
-      subjectName: getName(subjects, subjectId),
-      groupName: course.grupo || course.name,
-      programName: getName(programs, course.program_id),
-      year: course.year,
-      courseName: course.name,
-    }));
+    const studentModule = getStudentModule(course.program_id);
+    
+    return courseSubjectIds.map((subjectId) => {
+      const subject = subjects.find(s => s.id === subjectId);
+      const rawSubjectModule = parseInt(subject?.module_number, 10);
+      const subjectModule = Number.isFinite(rawSubjectModule) && rawSubjectModule >= 1 ? rawSubjectModule : 1;
+      const isLocked = subjectModule !== studentModule;
+      return {
+        courseId: course.id,
+        subjectId,
+        subjectName: getName(subjects, subjectId),
+        groupName: course.grupo || course.name,
+        programName: getName(programs, course.program_id),
+        year: course.year,
+        courseName: course.name,
+        isLocked,
+        subjectModule,
+        studentModule,
+      };
+    });
   });
 
   const handleBackToPrograms = () => {
@@ -117,41 +135,74 @@ export default function StudentCourseSelector() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {subjectCards.map((card) => (
-              <Card
-                key={`${card.courseId}-${card.subjectId}`}
-                className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
-                onClick={() => navigate(`/student/course/${card.courseId}`)}
-              >
-                <CardHeader className="pb-4">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <BookOpen className="h-7 w-7" />
+              card.isLocked ? (
+                <Card
+                  key={`${card.courseId}-${card.subjectId}`}
+                  className="shadow-card opacity-50 border-2 border-border/30 cursor-not-allowed"
+                  title={`Disponible en Módulo ${card.subjectModule}`}
+                >
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                        <Lock className="h-7 w-7" />
+                      </div>
+                      <Badge variant="outline" className="text-xs">Módulo {card.subjectModule}</Badge>
                     </div>
-                    <ChevronRight className="h-7 w-7 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </div>
-                  {/* Show SUBJECT name large */}
-                  <CardTitle className="text-2xl font-heading leading-tight">
-                    {card.subjectName}
-                  </CardTitle>
-                  {/* Show GROUP below */}
-                  <div className="mt-3">
-                    <Badge 
-                      variant="secondary" 
-                      className="text-base px-4 py-2"
-                    >
-                      {card.groupName}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <CardDescription className="text-base">
-                    {card.programName}
-                  </CardDescription>
-                  <div className="flex gap-2 flex-wrap">
-                    <Badge variant="outline" className="text-base px-3 py-1">{card.year}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
+                    <CardTitle className="text-2xl font-heading leading-tight text-muted-foreground">
+                      {card.subjectName}
+                    </CardTitle>
+                    <div className="mt-3">
+                      <Badge variant="outline" className="text-sm px-3 py-1">
+                        {card.groupName}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <CardDescription className="text-base">
+                      {card.programName}
+                    </CardDescription>
+                    <p className="text-xs text-muted-foreground">
+                      Disponible cuando pases al Módulo {card.subjectModule}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card
+                  key={`${card.courseId}-${card.subjectId}`}
+                  className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
+                  onClick={() => navigate(`/student/course/${card.courseId}`)}
+                >
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <BookOpen className="h-7 w-7" />
+                      </div>
+                      <ChevronRight className="h-7 w-7 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
+                    {/* Show SUBJECT name large */}
+                    <CardTitle className="text-2xl font-heading leading-tight">
+                      {card.subjectName}
+                    </CardTitle>
+                    {/* Show GROUP below */}
+                    <div className="mt-3">
+                      <Badge 
+                        variant="secondary" 
+                        className="text-base px-4 py-2"
+                      >
+                        {card.groupName}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <CardDescription className="text-base">
+                      {card.programName}
+                    </CardDescription>
+                    <div className="flex gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-base px-3 py-1">{card.year}</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
             ))}
           </div>
         )}

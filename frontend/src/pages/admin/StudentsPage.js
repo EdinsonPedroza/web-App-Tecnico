@@ -88,8 +88,9 @@ export default function StudentsPage() {
   const getProgramShortName = (id) => {
     const program = programs.find(p => p.id === id);
     if (!program || !program.name) return 'N/A';
-    const words = program.name.split(' ');
-    return words.length > 3 ? words.slice(2, 5).join(' ') : program.name;
+    // Strip leading "Técnico [Laboral] [en/de/para]" prefix for cleaner display
+    const cleaned = program.name.replace(/^[Tt][eé]cnico\s+([Ll]aboral\s+)?([Ee]n\s+|[Dd]e\s+|[Pp]ara\s+)?/, '');
+    return cleaned.length > 0 ? cleaned : program.name;
   };
   
   // Get all program names for a student (supports both program_id and program_ids)
@@ -151,12 +152,20 @@ export default function StudentsPage() {
   const toggleCourse = (courseId) => {
     setForm(prev => {
       const courseIds = prev.course_ids || [];
-      return {
-        ...prev,
-        course_ids: courseIds.includes(courseId)
-          ? courseIds.filter(id => id !== courseId)
-          : [...courseIds, courseId]
-      };
+      const isRemoving = courseIds.includes(courseId);
+      if (isRemoving) {
+        return { ...prev, course_ids: courseIds.filter(id => id !== courseId) };
+      }
+      // Enforce one group per program: remove any existing group for the same program
+      const selectedCourse = courses.find(c => c.id === courseId);
+      const sameProgramIds = selectedCourse
+        ? courseIds.filter(id => {
+            const c = courses.find(x => x.id === id);
+            return c && c.program_id === selectedCourse.program_id;
+          })
+        : [];
+      const filteredIds = courseIds.filter(id => !sameProgramIds.includes(id));
+      return { ...prev, course_ids: [...filteredIds, courseId] };
     });
   };
 
@@ -616,49 +625,6 @@ export default function StudentsPage() {
                 Los estudiantes pueden inscribirse en varios técnicos simultáneamente
               </p>
             </div>
-            <div className="space-y-2">
-              <Label className="text-base">Módulos por Programa Técnico</Label>
-              {form.program_ids && form.program_ids.length > 0 ? (
-                <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
-                  {form.program_ids.map(progId => {
-                    const program = programs.find(p => p.id === progId);
-                    const currentModule = form.program_modules?.[progId] ?? DEFAULT_MODULE;
-                    return (
-                      <div key={progId} className="flex items-center justify-between gap-3 p-2 rounded bg-background">
-                        <span className="text-sm font-medium flex-1">{program?.name || 'Programa'}</span>
-                        <Select 
-                          value={String(currentModule)} 
-                          onValueChange={(v) => {
-                            setForm(prev => ({
-                              ...prev,
-                              program_modules: {
-                                ...prev.program_modules,
-                                [progId]: parseInt(v)
-                              }
-                            }));
-                          }}
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">Módulo 1</SelectItem>
-                            <SelectItem value="2">Módulo 2</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground p-3 rounded-lg border bg-muted/20">
-                  Selecciona al menos un programa técnico para asignar módulos
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Cada estudiante puede estar en diferentes módulos según el programa técnico
-              </p>
-            </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -726,7 +692,7 @@ export default function StudentsPage() {
                 })()}
               </div>
               <p className="text-xs text-muted-foreground">
-                Solo se muestran los grupos correspondientes a los técnicos seleccionados. Cada grupo muestra su técnico asociado.
+                Solo se muestran los grupos correspondientes a los técnicos seleccionados. Solo se puede elegir un grupo por técnico.
               </p>
             </div>
           </div>

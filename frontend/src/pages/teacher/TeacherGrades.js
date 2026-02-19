@@ -56,6 +56,12 @@ export default function TeacherGrades() {
     setEditedGrades(prev => ({ ...prev, [key]: value }));
   };
 
+  const isGradeInvalid = (value) => {
+    if (value === '' || value === undefined) return false;
+    const num = parseFloat(value);
+    return isNaN(num) || num < 0 || num > 5;
+  };
+
   const saveGrade = async (studentId, activityId) => {
     const key = `${studentId}-${activityId}`;
     const value = parseFloat(editedGrades[key]);
@@ -90,6 +96,11 @@ export default function TeacherGrades() {
   const saveAllEdited = async () => {
     const keys = Object.keys(editedGrades);
     if (keys.length === 0) { toast.info('No hay cambios por guardar'); return; }
+    const invalidKeys = keys.filter(key => isGradeInvalid(editedGrades[key]));
+    if (invalidKeys.length > 0) {
+      toast.error('Hay notas con valores inválidos (deben estar entre 0.0 y 5.0). Corrígelas antes de guardar.');
+      return;
+    }
     for (const key of keys) {
       const [studentId, activityId] = key.split('-');
       await saveGrade(studentId, activityId);
@@ -175,6 +186,7 @@ export default function TeacherGrades() {
                             const value = getGradeValue(student.id, act.id);
                             const isEdited = editedGrades[key] !== undefined;
                             const isSaving = savingGrades[key];
+                            const invalid = isEdited && isGradeInvalid(value);
                             return (
                               <td key={act.id} className="text-center px-2 py-2 border-r">
                                 <div className="relative">
@@ -183,12 +195,24 @@ export default function TeacherGrades() {
                                     min="0"
                                     max="5"
                                     step="0.1"
-                                    className={`w-20 h-8 text-center mx-auto text-sm ${isEdited ? 'border-primary ring-1 ring-primary/30' : ''} ${value && parseFloat(value) >= 3 ? 'text-success' : value ? 'text-destructive' : ''}`}
+                                    className={[
+                                      'w-20 h-8 text-center mx-auto text-sm',
+                                      invalid
+                                        ? 'border-destructive ring-1 ring-destructive/50 text-destructive'
+                                        : isEdited
+                                          ? 'border-primary ring-1 ring-primary/30'
+                                          : '',
+                                      !invalid && value
+                                        ? parseFloat(value) >= 3 ? 'text-success' : 'text-destructive'
+                                        : '',
+                                    ].filter(Boolean).join(' ')}
                                     value={value}
                                     onChange={(e) => handleGradeChange(student.id, act.id, e.target.value)}
                                     onBlur={() => {
-                                      if (isEdited) saveGrade(student.id, act.id);
+                                      if (isEdited && !invalid) saveGrade(student.id, act.id);
+                                      else if (isEdited && invalid) toast.error('La nota debe estar entre 0.0 y 5.0');
                                     }}
+                                    title={invalid ? 'La nota debe estar entre 0.0 y 5.0' : undefined}
                                     placeholder="-"
                                     disabled={isSaving}
                                   />
