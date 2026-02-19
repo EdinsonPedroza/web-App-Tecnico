@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, CheckCircle, XCircle, RefreshCw, Search, Filter } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, XCircle, RefreshCw, Search, Filter, Trash2, GraduationCap } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function RecoveriesPage() {
@@ -20,11 +21,17 @@ export default function RecoveriesPage() {
   const [selectedModule, setSelectedModule] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [graduatedCount, setGraduatedCount] = useState(0);
+  const [deletingGraduated, setDeletingGraduated] = useState(false);
 
   const fetchRecoveryPanel = useCallback(async () => {
     try {
-      const res = await api.get('/admin/recovery-panel');
-      setRecoveryData(res.data);
+      const [recoveryRes, graduatedRes] = await Promise.all([
+        api.get('/admin/recovery-panel'),
+        api.get('/admin/graduated-students-count')
+      ]);
+      setRecoveryData(recoveryRes.data);
+      setGraduatedCount(graduatedRes.data.count);
     } catch (err) {
       toast.error('Error cargando panel de recuperaciones');
       console.error(err);
@@ -74,6 +81,26 @@ export default function RecoveriesPage() {
       console.error(err);
     } finally {
       setClosingModule(false);
+    }
+  };
+
+  const handleDeleteGraduated = async () => {
+    if (!window.confirm(
+      `¿Estás seguro de eliminar TODOS los ${graduatedCount} estudiantes egresados y sus datos?\n\nEsta acción es IRREVERSIBLE y eliminará:\n- Registros de estudiantes\n- Notas\n- Entregas\n- Datos de recuperaciones\n\n¿Continuar?`
+    )) {
+      return;
+    }
+
+    setDeletingGraduated(true);
+    try {
+      const res = await api.delete('/admin/delete-graduated-students');
+      toast.success(res.data.message);
+      fetchRecoveryPanel();
+    } catch (err) {
+      toast.error('Error eliminando estudiantes egresados');
+      console.error(err);
+    } finally {
+      setDeletingGraduated(false);
     }
   };
 
@@ -143,6 +170,42 @@ export default function RecoveriesPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Graduated Students Management */}
+        {graduatedCount > 0 && (
+          <Alert className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950">
+            <GraduationCap className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <AlertDescription className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="font-semibold text-amber-900 dark:text-amber-100">
+                  Estudiantes Egresados: {graduatedCount}
+                </p>
+                <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
+                  Los estudiantes egresados están archivados. Puedes eliminarlos permanentemente para liberar espacio.
+                </p>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteGraduated}
+                disabled={deletingGraduated}
+                className="ml-4 whitespace-nowrap"
+              >
+                {deletingGraduated ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Eliminando...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Eliminar Egresados
+                  </>
+                )}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Search and Filters */}
         <Card className="shadow-card">
