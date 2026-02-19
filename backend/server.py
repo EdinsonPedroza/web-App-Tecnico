@@ -286,7 +286,8 @@ async def create_initial_data():
     """Crea los usuarios y datos iniciales si no existen"""
     logger.info("Verificando y creando datos iniciales...")
     
-    # Crear programas con sus módulos y materias (siempre se verifican y crean si no existen)
+    # Crear programas con sus módulos y materias SOLO si no existen
+    # Usar $setOnInsert para evitar sobrescribir cambios hechos desde el admin panel
     programs = [
         {
             "id": "prog-admin", 
@@ -371,16 +372,29 @@ async def create_initial_data():
             "active": True
         },
     ]
+    # Only insert programs if they don't already exist - never overwrite admin changes
+    programs_created = 0
     for p in programs:
-        await db.programs.update_one({"id": p["id"]}, {"$set": p}, upsert=True)
+        result = await db.programs.update_one(
+            {"id": p["id"]},
+            {"$setOnInsert": p},
+            upsert=True
+        )
+        if result.upserted_id:
+            programs_created += 1
+    if programs_created > 0:
+        logger.info(f"Creados {programs_created} programas nuevos")
+    else:
+        logger.info("Todos los programas ya existen - no se sobrescribieron")
     
     # Crear materias basadas en los módulos de los programas
-    # IMPORTANTE: Usar $setOnInsert para el ID para evitar que cambie en cada reinicio del servidor
-    # Esto previene que los cursos pierdan la referencia a las materias (mostrando "-" en el frontend)
+    # IMPORTANTE: Usar $setOnInsert para TODOS los campos para evitar sobrescribir cambios
+    # Esto previene que los cursos pierdan la referencia a las materias
     for prog in programs:
         for module in prog["modules"]:
             for subj_name in module["subjects"]:
-                subject_update = {
+                subject_data = {
+                    "id": str(uuid.uuid4()),
                     "name": subj_name,
                     "program_id": prog["id"],
                     "module_number": module["number"],
@@ -389,10 +403,7 @@ async def create_initial_data():
                 }
                 await db.subjects.update_one(
                     {"name": subj_name, "program_id": prog["id"], "module_number": module["number"]},
-                    {
-                        "$setOnInsert": {"id": str(uuid.uuid4())},  # Solo asignar ID si es nuevo
-                        "$set": subject_update  # Actualizar otros campos
-                    },
+                    {"$setOnInsert": subject_data},
                     upsert=True
                 )
     

@@ -5,7 +5,8 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, BookOpen, Users, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Loader2, BookOpen, Users, ChevronRight, ArrowLeft, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -17,6 +18,7 @@ export default function TeacherCourseSelector() {
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSubject, setSelectedSubject] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -54,6 +56,14 @@ export default function TeacherCourseSelector() {
     .map(subjectId => subjects.find(s => s.id === subjectId))
     .filter(Boolean);
 
+  // Filter subjects by search query
+  const filteredSubjects = searchQuery.trim()
+    ? teacherSubjects.filter(s =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (getName(programs, s.program_id) || '').toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : teacherSubjects;
+
   // Get courses (groups) that include the selected subject
   const groupsForSubject = selectedSubject
     ? courses.filter(course => {
@@ -63,6 +73,14 @@ export default function TeacherCourseSelector() {
         return ids.includes(selectedSubject.id);
       })
     : [];
+
+  // Filter groups by search query
+  const filteredGroups = searchQuery.trim()
+    ? groupsForSubject.filter(c =>
+        (c.grupo || c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (getName(programs, c.program_id) || '').toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : groupsForSubject;
 
   return (
     <DashboardLayout>
@@ -90,8 +108,20 @@ export default function TeacherCourseSelector() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {teacherSubjects.map((subject) => {
+              <>
+                <div className="max-w-md mx-auto">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar materia..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredSubjects.map((subject) => {
                   // Count groups that include this subject
                   const groupCount = courses.filter(course => {
                     const ids = course.subject_ids && course.subject_ids.length > 0
@@ -104,7 +134,7 @@ export default function TeacherCourseSelector() {
                     <Card
                       key={subject.id}
                       className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
-                      onClick={() => setSelectedSubject(subject)}
+                      onClick={() => { setSelectedSubject(subject); setSearchQuery(''); }}
                     >
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between mb-3">
@@ -132,6 +162,7 @@ export default function TeacherCourseSelector() {
                   );
                 })}
               </div>
+              </>
             )}
           </>
         ) : (
@@ -141,7 +172,7 @@ export default function TeacherCourseSelector() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setSelectedSubject(null)}
+                onClick={() => { setSelectedSubject(null); setSearchQuery(''); }}
                 className="gap-2"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -169,8 +200,22 @@ export default function TeacherCourseSelector() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {groupsForSubject.map((course) => (
+              <>
+                {groupsForSubject.length > 3 && (
+                  <div className="max-w-md mx-auto">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar grupo..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredGroups.map((course) => (
                   <Card
                     key={course.id}
                     className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
@@ -202,6 +247,7 @@ export default function TeacherCourseSelector() {
                   </Card>
                 ))}
               </div>
+              </>
             )}
           </>
         )}
