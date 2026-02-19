@@ -59,7 +59,11 @@ export default function CoursesPage() {
   
   // Get the selected program to determine module count
   const selectedProgram = programs.find(p => p.id === form.program_id);
-  const moduleCount = selectedProgram?.modules?.length || 0;
+  const programModuleCount = selectedProgram?.modules?.length || 0;
+  // When editing an existing course, preserve its original module count from stored module_dates
+  // so that changes to the program's module count don't affect already-created groups
+  const existingModuleCount = editing ? Object.keys(editing.module_dates || {}).length : 0;
+  const moduleCount = editing ? (existingModuleCount || programModuleCount) : programModuleCount;
   
   const formatGrupoSuggestion = (month, year, programId) => {
     if (!month || !year || !programId) return '';
