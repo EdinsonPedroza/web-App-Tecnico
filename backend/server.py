@@ -94,8 +94,9 @@ scheduler = AsyncIOScheduler()
 
 async def check_and_close_modules():
     """
-    Check all programs for module close dates that have passed and automatically close them.
+    Check all programs and courses for module close dates that have passed and automatically close them.
     This function runs daily at 00:01 AM.
+    Also checks recovery close dates: students who haven't passed recovery by the deadline are removed.
     """
     try:
         logger.info("Running automatic module closure check...")
@@ -115,64 +116,111 @@ async def check_and_close_modules():
         
         if not programs:
             logger.info("No programs with close dates to process")
-            return
+        else:
+            for program in programs:
+                program_id = program["id"]
+                program_name = program["name"]
+                
+                # Check module 1
+                if program.get("module1_close_date") and program["module1_close_date"] <= today_str:
+                    # Check if already closed
+                    closure_check = await db.module_closures.find_one({
+                        "program_id": program_id,
+                        "module_number": 1,
+                        "closed_date": program["module1_close_date"]
+                    })
+                    
+                    if not closure_check:
+                        logger.info(f"Auto-closing Module 1 for program {program_name} (date: {program['module1_close_date']})")
+                        try:
+                            # Call the internal module closure function
+                            result = await close_module_internal(module_number=1, program_id=program_id)
+                            
+                            # Mark as closed so we don't close it again
+                            await db.module_closures.insert_one({
+                                "id": str(uuid.uuid4()),
+                                "program_id": program_id,
+                                "module_number": 1,
+                                "closed_date": program["module1_close_date"],
+                                "closed_at": now.isoformat(),
+                                "result": result
+                            })
+                            logger.info(f"Module 1 closed for {program_name}: {result['promoted_count']} promoted, {result['graduated_count']} graduated, {result['recovery_pending_count']} in recovery")
+                        except Exception as e:
+                            logger.error(f"Error auto-closing Module 1 for {program_name}: {e}", exc_info=True)
+                
+                # Check module 2
+                if program.get("module2_close_date") and program["module2_close_date"] <= today_str:
+                    closure_check = await db.module_closures.find_one({
+                        "program_id": program_id,
+                        "module_number": 2,
+                        "closed_date": program["module2_close_date"]
+                    })
+                    
+                    if not closure_check:
+                        logger.info(f"Auto-closing Module 2 for program {program_name} (date: {program['module2_close_date']})")
+                        try:
+                            result = await close_module_internal(module_number=2, program_id=program_id)
+                            
+                            await db.module_closures.insert_one({
+                                "id": str(uuid.uuid4()),
+                                "program_id": program_id,
+                                "module_number": 2,
+                                "closed_date": program["module2_close_date"],
+                                "closed_at": now.isoformat(),
+                                "result": result
+                            })
+                            logger.info(f"Module 2 closed for {program_name}: {result['promoted_count']} promoted, {result['graduated_count']} graduated, {result['recovery_pending_count']} in recovery")
+                        except Exception as e:
+                            logger.error(f"Error auto-closing Module 2 for {program_name}: {e}", exc_info=True)
         
-        for program in programs:
-            program_id = program["id"]
-            program_name = program["name"]
-            
-            # Check module 1
-            if program.get("module1_close_date") and program["module1_close_date"] <= today_str:
-                # Check if already closed
-                closure_check = await db.module_closures.find_one({
-                    "program_id": program_id,
-                    "module_number": 1,
-                    "closed_date": program["module1_close_date"]
-                })
+        # Check course-level recovery close dates: remove students who haven't completed recovery
+        all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+        removed_count = 0
+        for course in all_courses:
+            module_dates = course.get("module_dates") or {}
+            for module_key, dates in module_dates.items():
+                recovery_close = dates.get("recovery_close") if dates else None
+                if not recovery_close or recovery_close > today_str:
+                    continue  # Recovery period not closed yet
                 
-                if not closure_check:
-                    logger.info(f"Auto-closing Module 1 for program {program_name} (date: {program['module1_close_date']})")
-                    try:
-                        # Call the internal module closure function
-                        result = await close_module_internal(module_number=1, program_id=program_id)
-                        
-                        # Mark as closed so we don't close it again
-                        await db.module_closures.insert_one({
-                            "id": str(uuid.uuid4()),
-                            "program_id": program_id,
-                            "module_number": 1,
-                            "closed_date": program["module1_close_date"],
-                            "closed_at": now.isoformat(),
-                            "result": result
-                        })
-                        logger.info(f"Module 1 closed for {program_name}: {result['promoted_count']} promoted, {result['graduated_count']} graduated, {result['recovery_pending_count']} in recovery")
-                    except Exception as e:
-                        logger.error(f"Error auto-closing Module 1 for {program_name}: {e}", exc_info=True)
-            
-            # Check module 2
-            if program.get("module2_close_date") and program["module2_close_date"] <= today_str:
-                closure_check = await db.module_closures.find_one({
-                    "program_id": program_id,
-                    "module_number": 2,
-                    "closed_date": program["module2_close_date"]
-                })
+                # Find students with pending (not completed) recovery for this course
+                pending_records = await db.failed_subjects.find({
+                    "course_id": course["id"],
+                    "recovery_approved": True,
+                    "recovery_completed": False
+                }, {"_id": 0}).to_list(100)
                 
-                if not closure_check:
-                    logger.info(f"Auto-closing Module 2 for program {program_name} (date: {program['module2_close_date']})")
-                    try:
-                        result = await close_module_internal(module_number=2, program_id=program_id)
-                        
-                        await db.module_closures.insert_one({
-                            "id": str(uuid.uuid4()),
-                            "program_id": program_id,
-                            "module_number": 2,
-                            "closed_date": program["module2_close_date"],
-                            "closed_at": now.isoformat(),
-                            "result": result
-                        })
-                        logger.info(f"Module 2 closed for {program_name}: {result['promoted_count']} promoted, {result['graduated_count']} graduated, {result['recovery_pending_count']} in recovery")
-                    except Exception as e:
-                        logger.error(f"Error auto-closing Module 2 for {program_name}: {e}", exc_info=True)
+                for record in pending_records:
+                    student_id = record["student_id"]
+                    logger.info(f"Recovery close date passed for student {student_id} in course {course['id']} – removing from group")
+                    
+                    # Remove student from course
+                    await db.courses.update_one(
+                        {"id": course["id"]},
+                        {"$pull": {"student_ids": student_id}}
+                    )
+                    
+                    # Mark record as closed/expired
+                    await db.failed_subjects.update_one(
+                        {"id": record["id"]},
+                        {"$set": {"recovery_expired": True, "expired_at": now.isoformat()}}
+                    )
+                    
+                    # If student has no other courses, delete from system
+                    other_courses = await db.courses.count_documents({"student_ids": student_id})
+                    if other_courses == 0:
+                        await db.users.delete_one({"id": student_id, "role": "estudiante"})
+                        await db.grades.delete_many({"student_id": student_id})
+                        await db.submissions.delete_many({"student_id": student_id})
+                        await db.failed_subjects.delete_many({"student_id": student_id})
+                        await db.recovery_enabled.delete_many({"student_id": student_id})
+                        logger.info(f"Student {student_id} deleted from system (no other courses)")
+                    
+                    removed_count += 1
+        
+        if removed_count > 0:
+            logger.info(f"Recovery check: removed {removed_count} students from groups due to expired recovery deadlines")
         
         logger.info("Automatic module closure check completed")
     except Exception as e:
@@ -1416,9 +1464,13 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
         if valid_modules:
             module_number = min(valid_modules)
+            program_id = course["program_id"]
             await db.users.update_many(
                 {"id": {"$in": course["student_ids"]}, "role": "estudiante"},
-                {"$set": {"module": module_number}}
+                {"$set": {
+                    "module": module_number,
+                    f"program_modules.{program_id}": module_number
+                }}
             )
     
     return course
@@ -1454,11 +1506,15 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
             valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
             if valid_modules:
                 module_number = min(valid_modules)
+                program_id = updated.get("program_id", "")
                 student_ids = updated.get("student_ids") or []
                 if student_ids:
                     await db.users.update_many(
                         {"id": {"$in": student_ids}, "role": "estudiante"},
-                        {"$set": {"module": module_number}}
+                        {"$set": {
+                            "module": module_number,
+                            f"program_modules.{program_id}": module_number
+                        }}
                     )
     
     return updated
@@ -1502,6 +1558,17 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
     if subject_id:
         query["subject_id"] = subject_id
     activities = await db.activities.find(query, {"_id": 0}).to_list(500)
+    
+    # For students: filter out recovery activities unless recovery is enabled for them in this course
+    if user["role"] == "estudiante" and course_id:
+        recovery_enabled = await db.recovery_enabled.find_one({
+            "student_id": user["id"],
+            "course_id": course_id,
+            "enabled": True
+        })
+        if not recovery_enabled:
+            activities = [a for a in activities if not a.get("is_recovery")]
+    
     return activities
 
 @api_router.post("/activities")
@@ -1600,7 +1667,64 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                 grade_value = max(0.0, min(5.0, grade_value))
             else:
                 grade_value = 3.0
+            
+            # Mark the failed_subjects record for this course as completed
+            await db.failed_subjects.update_many(
+                {"student_id": req.student_id, "course_id": req.course_id, "recovery_approved": True},
+                {"$set": {"recovery_completed": True, "completed_at": datetime.now(timezone.utc).isoformat()}}
+            )
+            
+            # Check if all failed subjects for this student are now completed
+            remaining = await db.failed_subjects.count_documents({
+                "student_id": req.student_id,
+                "recovery_completed": False
+            })
+            
+            if remaining == 0:
+                # Student has passed all recovery subjects – promote to next module or graduate
+                student = await db.users.find_one({"id": req.student_id}, {"_id": 0})
+                if student:
+                    course = await db.courses.find_one({"id": req.course_id}, {"_id": 0})
+                    program_id = course.get("program_id") if course else None
+                    if program_id:
+                        program_modules = student.get("program_modules") or {}
+                        current_module = program_modules.get(program_id) or student.get("module", 1)
+                        program = await db.programs.find_one({"id": program_id}, {"_id": 0})
+                        max_modules = len(program.get("modules", [])) if program else 2
+                        if current_module >= max_modules:
+                            # Graduate the student
+                            await db.users.update_one(
+                                {"id": req.student_id},
+                                {"$set": {"estado": "egresado"}}
+                            )
+                        else:
+                            # Promote to next module
+                            next_module = current_module + 1
+                            await db.users.update_one(
+                                {"id": req.student_id},
+                                {"$set": {
+                                    "module": next_module,
+                                    "estado": "activo",
+                                    f"program_modules.{program_id}": next_module
+                                }}
+                            )
         else:
+            # Recovery rejected: remove student from the course
+            course = await db.courses.find_one({"id": req.course_id}, {"_id": 0})
+            if course:
+                await db.courses.update_one(
+                    {"id": req.course_id},
+                    {"$pull": {"student_ids": req.student_id}}
+                )
+                # If student has no other courses, delete them from the system
+                other_courses = await db.courses.count_documents({"student_ids": req.student_id})
+                if other_courses == 0:
+                    await db.users.delete_one({"id": req.student_id, "role": "estudiante"})
+                    await db.grades.delete_many({"student_id": req.student_id})
+                    await db.submissions.delete_many({"student_id": req.student_id})
+                    await db.failed_subjects.delete_many({"student_id": req.student_id})
+                    await db.recovery_enabled.delete_many({"student_id": req.student_id})
+            
             # If rejected, don't create/update a grade (keep existing average)
             # Just update the recovery status if grade already exists
             if existing:
@@ -1611,7 +1735,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                 updated = await db.grades.find_one({"id": existing["id"]}, {"_id": 0})
                 return updated
             # If no existing grade, don't create one for rejection
-            return {"message": "Recuperación rechazada, no se registra nota"}
+            return {"message": "Recuperación rechazada, estudiante removido del grupo"}
     
     if existing:
         update_data = {
@@ -2096,6 +2220,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     """
     Get all students with failed subjects pending recovery approval.
     Returns detailed information for admin to review and approve recoveries.
+    Also detects students in courses where the module close date has passed
+    and they have failing averages, even if they haven't been explicitly processed.
     """
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede acceder al panel de recuperaciones")
@@ -2130,10 +2256,81 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "recovery_completed": record["recovery_completed"]
         })
     
+    # Also detect students in courses with past module close dates who have failing averages
+    # but are not yet in the failed_subjects collection
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+    
+    # Track which (student_id, course_id) combos are already in failed_subjects
+    already_tracked = set()
+    for record in failed_records:
+        already_tracked.add((record["student_id"], record["course_id"]))
+    
+    for course in all_courses:
+        module_dates = course.get("module_dates") or {}
+        for module_key, dates in module_dates.items():
+            close_date = dates.get("end") if dates else None
+            if not close_date or close_date > today_str:
+                continue  # Module not closed yet
+            
+            module_number = int(module_key) if str(module_key).isdigit() else None
+            if not module_number:
+                continue
+            
+            # Get students enrolled in this course
+            student_ids = course.get("student_ids") or []
+            if not student_ids:
+                continue
+            
+            # Get all grades for this course
+            all_grades = await db.grades.find(
+                {"course_id": course["id"]}, {"_id": 0}
+            ).to_list(5000)
+            
+            for student_id in student_ids:
+                if (student_id, course["id"]) in already_tracked:
+                    continue  # Already tracked
+                
+                student_grades = [g for g in all_grades if g.get("student_id") == student_id]
+                grade_values = [g["value"] for g in student_grades if g.get("value") is not None]
+                
+                average = sum(grade_values) / len(grade_values) if grade_values else 0.0
+                if average >= 3.0:
+                    continue  # Student passed
+                
+                # Student has failing grade – look them up and add to panel
+                student = await db.users.find_one({"id": student_id, "role": "estudiante"}, {"_id": 0})
+                if not student:
+                    continue
+                
+                # Create a temporary failed record (not persisted yet)
+                temp_record_id = f"auto-{student_id}-{course['id']}-{module_number}"
+                
+                if student_id not in students_map:
+                    students_map[student_id] = {
+                        "student_id": student_id,
+                        "student_name": student.get("name", "Desconocido"),
+                        "failed_subjects": []
+                    }
+                
+                students_map[student_id]["failed_subjects"].append({
+                    "id": temp_record_id,
+                    "course_id": course["id"],
+                    "course_name": course.get("name", "Sin nombre"),
+                    "program_id": course.get("program_id", ""),
+                    "program_name": program_map.get(course.get("program_id", ""), "Desconocido"),
+                    "module_number": module_number,
+                    "average_grade": round(average, 2),
+                    "recovery_approved": False,
+                    "recovery_completed": False,
+                    "auto_detected": True
+                })
+                already_tracked.add((student_id, course["id"]))
+    
     return {
         "students": list(students_map.values()),
         "total_students": len(students_map),
-        "total_failed_subjects": len(failed_records)
+        "total_failed_subjects": sum(len(s["failed_subjects"]) for s in students_map.values())
     }
 
 @api_router.post("/admin/approve-recovery")
@@ -2141,9 +2338,83 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
     """
     Admin approves or rejects recovery for a specific failed subject.
     If approved, student can see and complete recovery activities.
+    Handles both persisted records and auto-detected entries (id starts with 'auto-').
     """
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede aprobar recuperaciones")
+    
+    # Handle auto-detected entries (not persisted yet): format "auto-{student_id}-{course_id}-{module_number}"
+    if failed_subject_id.startswith("auto-"):
+        # Format: auto-{student_id}-{course_id}-{module_number}
+        # UUIDs are always exactly 36 chars. Strip 'auto-' prefix then parse fixed-length fields.
+        remainder = failed_subject_id[5:]  # strip 'auto-'
+        # last '-' separates the module_number (an integer, no dashes)
+        last_dash = remainder.rfind("-")
+        if last_dash == -1:
+            raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
+        module_str = remainder[last_dash + 1:]
+        sc_part = remainder[:last_dash]
+        # sc_part = "{student_id}-{course_id}" – both are standard UUIDs (36 chars each)
+        # Total length: 36 + 1 (dash) + 36 = 73 chars
+        if len(sc_part) != 73:
+            raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
+        student_id = sc_part[:36]
+        course_id = sc_part[37:]
+        
+        # Validate that both IDs exist in the database
+        student = await db.users.find_one({"id": student_id, "role": "estudiante"}, {"_id": 0})
+        course = await db.courses.find_one({"id": course_id}, {"_id": 0})
+        if not student or not course:
+            raise HTTPException(status_code=404, detail="Estudiante o grupo no encontrado")
+        
+        # Create a real failed_subject record for this auto-detected entry
+        module_number = int(module_str) if module_str.isdigit() else 1
+        all_grades = await db.grades.find({"student_id": student_id, "course_id": course_id}, {"_id": 0}).to_list(100)
+        grade_values = [g["value"] for g in all_grades if g.get("value") is not None]
+        average = sum(grade_values) / len(grade_values) if grade_values else 0.0
+        
+        new_record = {
+            "id": str(uuid.uuid4()),
+            "student_id": student_id,
+            "student_name": student.get("name", "Desconocido"),
+            "course_id": course_id,
+            "course_name": course.get("name", "Sin nombre"),
+            "program_id": course.get("program_id", ""),
+            "module_number": module_number,
+            "average_grade": round(average, 2),
+            "recovery_approved": approve,
+            "recovery_completed": False,
+            "approved_by": user["id"],
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.failed_subjects.insert_one(new_record)
+        
+        if approve:
+            # Enable recovery activities for this student/course
+            existing = await db.recovery_enabled.find_one({"student_id": student_id, "course_id": course_id})
+            if not existing:
+                await db.recovery_enabled.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "student_id": student_id,
+                    "course_id": course_id,
+                    "enabled": True,
+                    "enabled_by": user["id"],
+                    "enabled_at": datetime.now(timezone.utc).isoformat()
+                })
+            else:
+                await db.recovery_enabled.update_one(
+                    {"id": existing["id"]},
+                    {"$set": {"enabled": True, "enabled_by": user["id"], "enabled_at": datetime.now(timezone.utc).isoformat()}}
+                )
+            # Update student status
+            await db.users.update_one(
+                {"id": student_id},
+                {"$set": {"estado": "pendiente_recuperacion"}}
+            )
+        
+        action = "aprobada" if approve else "rechazada"
+        return {"message": f"Recuperación {action} exitosamente"}
     
     # Find the failed subject record
     failed_record = await db.failed_subjects.find_one({"id": failed_subject_id}, {"_id": 0})

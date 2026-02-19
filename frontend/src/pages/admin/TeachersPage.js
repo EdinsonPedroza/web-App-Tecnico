@@ -270,7 +270,13 @@ export default function TeachersPage() {
                         }}
                       />
                       <label htmlFor={`subject-${subject.id}`} className="text-sm cursor-pointer flex-1">
-                        {subject.name} <span className="text-muted-foreground text-xs">(Módulo {subject.module_number})</span>
+                        {subject.name}{' '}
+                        <span className="text-muted-foreground text-xs">
+                          {(() => {
+                            const prog = subject.program_id ? programs.find(p => p.id === subject.program_id) : null;
+                            return `(Módulo ${subject.module_number}${prog ? ` · ${prog.name}` : ''})`;
+                          })()}
+                        </span>
                       </label>
                     </div>
                   ))

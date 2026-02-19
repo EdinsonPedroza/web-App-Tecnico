@@ -13,6 +13,7 @@ export default function StudentCourseDashboard() {
   const subjectId = searchParams.get('subjectId');
   const { user } = useAuth();
   const [course, setCourse] = useState(null);
+  const [subject, setSubject] = useState(null);
   const [activities, setActivities] = useState([]);
   const [videos, setVideos] = useState([]);
   const [grades, setGrades] = useState([]);
@@ -28,16 +29,25 @@ export default function StudentCourseDashboard() {
       if (subjectId) videosUrl += `&subject_id=${subjectId}`;
       let gradesUrl = `/grades?student_id=${user.id}&course_id=${courseId}`;
       if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
-      const [cRes, aRes, vRes, gRes] = await Promise.all([
+      const requests = [
         api.get(`/courses/${courseId}`),
         api.get(activitiesUrl),
         api.get(videosUrl),
         api.get(gradesUrl)
-      ]);
+      ];
+      if (subjectId) {
+        requests.push(api.get('/subjects'));
+      }
+      const results = await Promise.all(requests);
+      const [cRes, aRes, vRes, gRes] = results;
       setCourse(cRes.data);
       setActivities(aRes.data);
       setVideos(vRes.data);
       setGrades(gRes.data);
+      if (subjectId && results[4]) {
+        const found = results[4].data.find(s => s.id === subjectId);
+        setSubject(found || null);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -63,7 +73,7 @@ export default function StudentCourseDashboard() {
     <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold font-heading">{course?.name}</h1>
+          <h1 className="text-2xl font-bold font-heading">{subject?.name || course?.name}</h1>
           <p className="text-muted-foreground mt-1">Resumen del curso</p>
         </div>
 
