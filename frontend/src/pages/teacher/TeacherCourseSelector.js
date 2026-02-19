@@ -197,9 +197,6 @@ export default function TeacherCourseSelector() {
                           {course.student_ids?.length || 0} estudiantes
                         </Badge>
                         <Badge variant="outline">{course.year}</Badge>
-                        {course.name && (
-                          <Badge variant="outline">{course.name}</Badge>
-                        )}
                       </div>
                     </CardContent>
                   </Card>
