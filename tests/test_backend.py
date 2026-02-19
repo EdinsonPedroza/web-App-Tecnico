@@ -129,7 +129,9 @@ class TestCedulaValidation:
         assert self._sanitize_cedula_create("12-345-678") == "12345678"
 
     def test_cedula_empty_string(self):
-        assert self._sanitize_cedula_login("") is None or self._sanitize_cedula_login("") == ""
+        # Empty string is falsy, so sanitizer returns it as-is
+        result = self._sanitize_cedula_login("")
+        assert result is None or result == ""
 
     def test_cedula_none(self):
         assert self._sanitize_cedula_login(None) is None
@@ -261,8 +263,8 @@ def test_app():
     try:
         from server import app
         return app
-    except Exception:
-        pytest.skip("Cannot import server (MongoDB not available)")
+    except (ImportError, ConnectionError, Exception) as exc:
+        pytest.skip(f"Cannot import server: {type(exc).__name__}: {exc}")
 
 
 @pytest.fixture

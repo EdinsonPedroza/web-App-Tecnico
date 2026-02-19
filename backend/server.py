@@ -583,6 +583,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     # bcrypt hashes start with $2a$, $2b$, or $2y$
     if hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
         # Stored as bcrypt hash - use bcrypt directly (avoids passlib compatibility issues)
+        # bcrypt requires bytes input, so we encode strings to UTF-8
         try:
             return _bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
         except Exception as e:
