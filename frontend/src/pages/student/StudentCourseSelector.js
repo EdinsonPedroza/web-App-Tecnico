@@ -52,6 +52,24 @@ export default function StudentCourseSelector() {
     ? courses.filter(c => c.program_id === selectedProgram.id)
     : courses;
 
+  // Expand each course into individual subject cards
+  // Each course/group has subject_ids with multiple subjects
+  const subjectCards = filteredCourses.flatMap((course) => {
+    const courseSubjectIds = course.subject_ids && course.subject_ids.length > 0
+      ? course.subject_ids
+      : (course.subject_id ? [course.subject_id] : []);
+    
+    return courseSubjectIds.map((subjectId) => ({
+      courseId: course.id,
+      subjectId,
+      subjectName: getName(subjects, subjectId),
+      groupName: course.grupo || course.name,
+      programName: getName(programs, course.program_id),
+      year: course.year,
+      courseName: course.name,
+    }));
+  });
+
   const handleBackToPrograms = () => {
     sessionStorage.removeItem('selectedProgramId');
     navigate('/student');
@@ -79,70 +97,62 @@ export default function StudentCourseSelector() {
         
         <div className="text-center max-w-xl mx-auto">
           <h1 className="text-4xl sm:text-5xl font-bold font-heading text-foreground">
-            Mis Cursos
+            Mis Materias
           </h1>
           <p className="text-muted-foreground mt-3 text-xl">
-            Selecciona un curso para ver tus notas, actividades y clases.
+            Selecciona una materia para ver tus actividades, notas y clases.
           </p>
         </div>
 
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
-        ) : filteredCourses.length === 0 ? (
+        ) : subjectCards.length === 0 ? (
           <Card className="max-w-md mx-auto shadow-card">
             <CardContent className="p-12 text-center">
               <BookOpen className="h-14 w-14 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground text-lg">No estás inscrito en ningún curso</p>
-              <p className="text-sm text-muted-foreground mt-2">Contacta al administrador para inscribirte en cursos.</p>
+              <p className="text-muted-foreground text-lg">No estás inscrito en ninguna materia</p>
+              <p className="text-sm text-muted-foreground mt-2">Contacta al administrador para inscribirte en un grupo.</p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCourses.map((course) => {
-              const subjectName = getName(subjects, course.subject_id);
-              const programName = getName(programs, course.program_id);
-              
-              return (
-                <Card
-                  key={course.id}
-                  className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
-                  onClick={() => navigate(`/student/course/${course.id}`)}
-                >
-                  <CardHeader className="pb-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                        <BookOpen className="h-7 w-7" />
-                      </div>
-                      <ChevronRight className="h-7 w-7 text-muted-foreground group-hover:text-primary transition-colors" />
+            {subjectCards.map((card) => (
+              <Card
+                key={`${card.courseId}-${card.subjectId}`}
+                className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
+                onClick={() => navigate(`/student/course/${card.courseId}`)}
+              >
+                <CardHeader className="pb-4">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <BookOpen className="h-7 w-7" />
                     </div>
-                    {/* Show SUBJECT name large */}
-                    <CardTitle className="text-2xl font-heading leading-tight">
-                      {subjectName}
-                    </CardTitle>
-                    {/* Show GROUP below (e.g., ENERO-2026) */}
-                    {course.grupo && (
-                      <div className="mt-3">
-                        <Badge 
-                          variant="secondary" 
-                          className="text-base px-4 py-2"
-                        >
-                          {course.grupo}
-                        </Badge>
-                      </div>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <CardDescription className="text-base">
-                      {programName}
-                    </CardDescription>
-                    <div className="flex gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-base px-3 py-1">{course.year}</Badge>
-                      <Badge variant="outline" className="text-base px-3 py-1">{course.name}</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    <ChevronRight className="h-7 w-7 text-muted-foreground group-hover:text-primary transition-colors" />
+                  </div>
+                  {/* Show SUBJECT name large */}
+                  <CardTitle className="text-2xl font-heading leading-tight">
+                    {card.subjectName}
+                  </CardTitle>
+                  {/* Show GROUP below */}
+                  <div className="mt-3">
+                    <Badge 
+                      variant="secondary" 
+                      className="text-base px-4 py-2"
+                    >
+                      {card.groupName}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <CardDescription className="text-base">
+                    {card.programName}
+                  </CardDescription>
+                  <div className="flex gap-2 flex-wrap">
+                    <Badge variant="outline" className="text-base px-3 py-1">{card.year}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         )}
       </div>
