@@ -538,8 +538,8 @@ class UserCreate(BaseModel):
         if v:
             # Only allow numbers for cedula
             cleaned = re.sub(r'\D', '', v)[:50]
-            if v and not cleaned:
-                raise ValueError('La cédula solo debe contener números')
+            if not cleaned:
+                raise ValueError('La cédula debe contener al menos un número')
             return cleaned
         return v
     
@@ -584,8 +584,8 @@ class UserUpdate(BaseModel):
         if v:
             # Only allow numbers for cedula
             cleaned = re.sub(r'\D', '', v)[:50]
-            if v and not cleaned:
-                raise ValueError('La cédula solo debe contener números')
+            if not cleaned:
+                raise ValueError('La cédula debe contener al menos un número')
             return cleaned
         return v
     
