@@ -448,55 +448,6 @@ async def create_initial_data():
     
     logger.info(f"Total usuarios en sistema: {await db.users.count_documents({})}")
     
-    # Crear curso de ejemplo
-    admin_subjects = await db.subjects.find({"program_id": "prog-admin", "module_number": 1}, {"_id": 0}).to_list(10)
-    if admin_subjects:
-        first_subject = admin_subjects[0]
-        course = {
-            "id": "course-1", 
-            "name": f"{first_subject['name']} - Febrero 2026", 
-            "program_id": "prog-admin", 
-            "subject_id": first_subject["id"], 
-            "subject_ids": [first_subject["id"]],  # Ensure subject_ids is always set
-            "teacher_id": "user-prof-1", 
-            "year": 2026, 
-            "student_ids": ["user-est-1", "user-est-2"], 
-            "active": True,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        await db.courses.update_one({"id": course["id"]}, {"$set": course}, upsert=True)
-        
-        # Crear actividades
-        now = datetime.now(timezone.utc)
-        activities = [
-            {
-                "id": "act-1", 
-                "course_id": "course-1", 
-                "title": "Ensayo sobre principios administrativos", 
-                "description": "Elaborar un ensayo de 2 páginas sobre los principios fundamentales de la administración", 
-                "activity_number": 1, 
-                "start_date": now.isoformat(), 
-                "due_date": (now + timedelta(days=14)).isoformat(), 
-                "files": [], 
-                "is_recovery": False,
-                "active": True
-            },
-            {
-                "id": "act-2", 
-                "course_id": "course-1", 
-                "title": "Taller de organización empresarial", 
-                "description": "Realizar el taller práctico sobre estructura organizacional", 
-                "activity_number": 2, 
-                "start_date": now.isoformat(), 
-                "due_date": (now + timedelta(days=7)).isoformat(), 
-                "files": [], 
-                "is_recovery": False,
-                "active": True
-            },
-        ]
-        for a in activities:
-            await db.activities.update_one({"id": a["id"]}, {"$set": a}, upsert=True)
-    
     # Migrate existing courses to ensure subject_ids field exists and is properly set
     # This fixes the data persistence issue where subject_ids might be missing or None
     logger.info("Checking and fixing course subject_ids field...")
@@ -1441,6 +1392,20 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     
     await db.courses.insert_one(course)
     del course["_id"]
+    
+    # Assign module to enrolled students based on the group's subjects
+    if course["student_ids"] and course["subject_ids"]:
+        subject_docs = await db.subjects.find(
+            {"id": {"$in": course["subject_ids"]}}, {"_id": 0, "module_number": 1}
+        ).to_list(None)
+        valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
+        if valid_modules:
+            module_number = min(valid_modules)
+            await db.users.update_many(
+                {"id": {"$in": course["student_ids"]}, "role": "estudiante"},
+                {"$set": {"module": module_number}}
+            )
+    
     return course
 
 @api_router.put("/courses/{course_id}")
@@ -1463,6 +1428,24 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
     updated = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    
+    # Update module for enrolled students when student_ids or subject_ids change
+    if updated and req.student_ids is not None:
+        subject_ids_for_module = updated.get("subject_ids") or []
+        if subject_ids_for_module:
+            subject_docs = await db.subjects.find(
+                {"id": {"$in": subject_ids_for_module}}, {"_id": 0, "module_number": 1}
+            ).to_list(None)
+            valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
+            if valid_modules:
+                module_number = min(valid_modules)
+                student_ids = updated.get("student_ids") or []
+                if student_ids:
+                    await db.users.update_many(
+                        {"id": {"$in": student_ids}, "role": "estudiante"},
+                        {"$set": {"module": module_number}}
+                    )
+    
     return updated
 
 @api_router.delete("/courses/{course_id}")
@@ -2200,8 +2183,21 @@ async def get_student_recoveries(user=Depends(get_current_user)):
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
     
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
     for subject in failed_subjects:
         subject["program_name"] = program_map.get(subject["program_id"], "Desconocido")
+        # Check if recovery closing date has passed for this module/course
+        course = await db.courses.find_one({"id": subject["course_id"]}, {"_id": 0, "module_dates": 1})
+        recovery_close = None
+        if course and course.get("module_dates"):
+            # module_dates keys are stored as strings (JSON object keys are always strings)
+            module_key = str(subject.get("module_number", ""))
+            module_dates = course["module_dates"].get(module_key)
+            if module_dates:
+                recovery_close = module_dates.get("recovery_close")
+        subject["recovery_close_date"] = recovery_close
+        subject["recovery_closed"] = bool(recovery_close and recovery_close < today_str)
     
     return {
         "recoveries": failed_subjects,
