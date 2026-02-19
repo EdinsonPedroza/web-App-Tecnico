@@ -7,7 +7,7 @@
 # Testing
 **/coverage/
 **/test_reports/
-**/tests/
+**/.pytest_cache/
 
 # Production builds
 **/build/

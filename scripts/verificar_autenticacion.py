@@ -4,10 +4,13 @@ Script para verificar que la autenticación funciona correctamente.
 Prueba específicamente el usuario editor.
 """
 
-from passlib.context import CryptContext
+import bcrypt as _bcrypt
 
-# Configuración de bcrypt (igual que en server.py)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def hash_pw(password):
+    return _bcrypt.hashpw(password.encode('utf-8'), _bcrypt.gensalt()).decode('utf-8')
+
+def verify_pw(password, hashed):
+    return _bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 # Contraseñas de prueba - NOTA: Estas son las contraseñas del sistema
 # Ver USUARIOS_Y_CONTRASEÑAS.txt para credenciales completas
@@ -28,7 +31,7 @@ print("-" * 70)
 
 # Probar hash y verificación
 test_password = "Editor2026*CM"
-test_hash = pwd_context.hash(test_password)
+test_hash = hash_pw(test_password)
 
 print(f"   Contraseña de prueba: {test_password}")
 print(f"   Hash generado: {test_hash[:50]}...")
@@ -36,11 +39,11 @@ print(f"   Longitud del hash: {len(test_hash)} caracteres")
 print()
 
 # Verificar que el hash funciona
-is_valid = pwd_context.verify(test_password, test_hash)
+is_valid = verify_pw(test_password, test_hash)
 print(f"   ✓ Verificación con contraseña correcta: {is_valid}")
 
 # Verificar que falla con contraseña incorrecta
-is_invalid = pwd_context.verify("wrong_password", test_hash)
+is_invalid = verify_pw("wrong_password", test_hash)
 print(f"   ✓ Verificación con contraseña incorrecta: {is_invalid}")
 print()
 
@@ -48,8 +51,8 @@ print("2. Generando hashes para todos los usuarios:")
 print("-" * 70)
 
 for role, password in passwords_to_test.items():
-    hashed = pwd_context.hash(password)
-    is_correct = pwd_context.verify(password, hashed)
+    hashed = hash_pw(password)
+    is_correct = verify_pw(password, hashed)
     print(f"   {role:15} | Contraseña: {password:15} | Hash OK: {is_correct}")
 
 print()
@@ -59,17 +62,17 @@ print("-" * 70)
 # Este es el hash que debería estar en la base de datos para el editor
 editor_password = "Editor2026*CM"
 # Simular lo que hace el sistema al crear el usuario
-editor_hash_from_code = pwd_context.hash(editor_password)
+editor_hash_from_code = hash_pw(editor_password)
 
 print(f"   Contraseña del editor: {editor_password}")
 print(f"   Hash generado: {editor_hash_from_code[:50]}...")
 print()
 
 # Verificar que funciona
-verification_result = pwd_context.verify("Editor2026*CM", editor_hash_from_code)
+verification_result = verify_pw("Editor2026*CM", editor_hash_from_code)
 print(f"   ✓ Verificación con 'Editor2026*CM': {verification_result}")
 
-wrong_verification = pwd_context.verify("wrongpassword", editor_hash_from_code)
+wrong_verification = verify_pw("wrongpassword", editor_hash_from_code)
 print(f"   ✓ Verificación con 'wrongpassword' (incorrecta): {wrong_verification}")
 print()
 
