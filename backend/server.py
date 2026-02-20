@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field, ConfigDict, validator
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
 import jwt
 import hashlib
 import json
@@ -119,10 +118,8 @@ scheduler = AsyncIOScheduler()
 async def check_and_close_modules():
     """
     Check all programs and courses for module close dates that have passed and automatically close them.
-    This function runs daily at 02:00 AM Colombia time (America/Bogota).
+    This function runs daily at 00:01 AM.
     Also checks recovery close dates: students who haven't passed recovery by the deadline are removed.
-    The function is idempotent: each closure is recorded in `module_closures` so repeating the job
-    for the same program/module/date has no additional effect.
     """
     try:
         logger.info("Running automatic module closure check...")
@@ -339,22 +336,17 @@ async def startup_event():
         await create_initial_data()
         
         # Start the automatic module closure scheduler
-        # Runs daily at 02:00 AM Colombia time (America/Bogota, UTC-5) to check for
-        # modules that need to be closed, promotions, and recovery deadlines.
-        # The job is idempotent: each closure is recorded in `module_closures` so it
-        # never executes more than once for the same program/module/date, even if the
-        # process restarts or the job fires multiple times.
-        # On Render, use a single Web Service (not multiple instances) to avoid
-        # duplicate executions; the in-process APScheduler is sufficient for one dyno.
+        # Runs daily at 00:01 AM (server local timezone) to check for modules that need to be closed
+        # Note: Uses server's local timezone by default. For production, consider explicitly setting timezone.
         scheduler.add_job(
             check_and_close_modules,
-            CronTrigger(hour=2, minute=0, timezone=ZoneInfo("America/Bogota")),  # 02:00 AM Colombia (UTC-5)
+            CronTrigger(hour=0, minute=1),  # Run at 00:01 AM daily (server local time)
             id='auto_close_modules',
             name='Automatic Module Closure',
             replace_existing=True
         )
         scheduler.start()
-        logger.info("Automatic module closure scheduler started (runs daily at 02:00 AM Colombia time / America/Bogota)")
+        logger.info("Automatic module closure scheduler started (runs daily at 00:01 AM server local time)")
         
         logger.info("Application startup completed successfully")
     except Exception as e:
@@ -2633,14 +2625,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
     
-    # Build cedula lookup for all students referenced in failed_records
-    student_ids_in_records = list({r["student_id"] for r in failed_records})
-    students_from_db = await db.users.find(
-        {"id": {"$in": student_ids_in_records}, "role": "estudiante"},
-        {"_id": 0, "id": 1, "cedula": 1}
-    ).to_list(len(student_ids_in_records) + 1)
-    cedula_map = {s["id"]: s.get("cedula") for s in students_from_db}
-    
     # Organize by student
     students_map = {}
     for record in failed_records:
@@ -2649,7 +2633,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             students_map[student_id] = {
                 "student_id": student_id,
                 "student_name": record["student_name"],
-                "student_cedula": cedula_map.get(student_id),
                 "failed_subjects": []
             }
         
@@ -2719,7 +2702,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     students_map[student_id] = {
                         "student_id": student_id,
                         "student_name": student.get("name", "Desconocido"),
-                        "student_cedula": student.get("cedula"),
                         "failed_subjects": []
                     }
                 
