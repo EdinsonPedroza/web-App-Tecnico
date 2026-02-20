@@ -530,6 +530,174 @@ class TestEnrollmentModuleAssignment:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests for derive_estado_from_program_statuses
+# ---------------------------------------------------------------------------
+
+class TestDeriveEstadoFromProgramStatuses:
+    """Tests for the derive_estado_from_program_statuses helper."""
+
+    def _derive(self, program_statuses):
+        """Mirror of derive_estado_from_program_statuses from server.py."""
+        if not program_statuses:
+            return "activo"
+        statuses = list(program_statuses.values())
+        if "pendiente_recuperacion" in statuses:
+            return "pendiente_recuperacion"
+        if all(s == "egresado" for s in statuses):
+            return "egresado"
+        if "activo" in statuses:
+            return "activo"
+        return "retirado"
+
+    def test_empty_returns_activo(self):
+        assert self._derive({}) == "activo"
+        assert self._derive(None) == "activo"
+
+    def test_single_activo(self):
+        assert self._derive({"prog-1": "activo"}) == "activo"
+
+    def test_single_egresado(self):
+        assert self._derive({"prog-1": "egresado"}) == "egresado"
+
+    def test_single_retirado(self):
+        assert self._derive({"prog-1": "retirado"}) == "retirado"
+
+    def test_single_pendiente_recuperacion(self):
+        assert self._derive({"prog-1": "pendiente_recuperacion"}) == "pendiente_recuperacion"
+
+    def test_pendiente_recuperacion_takes_priority(self):
+        """pendiente_recuperacion beats activo and egresado."""
+        result = self._derive({
+            "prog-1": "pendiente_recuperacion",
+            "prog-2": "activo"
+        })
+        assert result == "pendiente_recuperacion"
+
+    def test_all_egresado(self):
+        result = self._derive({"prog-1": "egresado", "prog-2": "egresado"})
+        assert result == "egresado"
+
+    def test_activo_beats_retirado(self):
+        result = self._derive({"prog-1": "activo", "prog-2": "retirado"})
+        assert result == "activo"
+
+    def test_all_retirado(self):
+        result = self._derive({"prog-1": "retirado", "prog-2": "retirado"})
+        assert result == "retirado"
+
+    def test_egresado_and_activo_returns_activo(self):
+        """If one program is egresado but another is activo, global is activo."""
+        result = self._derive({"prog-1": "egresado", "prog-2": "activo"})
+        assert result == "activo"
+
+    def test_pendiente_recuperacion_beats_egresado(self):
+        """pendiente_recuperacion takes priority even over egresado."""
+        result = self._derive({
+            "prog-1": "egresado",
+            "prog-2": "pendiente_recuperacion"
+        })
+        assert result == "pendiente_recuperacion"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for program_statuses initialization in user creation
+# ---------------------------------------------------------------------------
+
+class TestProgramStatusesInit:
+    """Tests for program_statuses initialization logic when creating a student."""
+
+    def _init_program_statuses(self, role, program_ids, program_statuses_input=None):
+        """Mirror of create_user program_statuses initialization logic."""
+        if role == "estudiante":
+            if program_statuses_input:
+                return program_statuses_input
+            elif program_ids:
+                return {prog_id: "activo" for prog_id in program_ids}
+            else:
+                return None
+        return None
+
+    def test_student_with_programs_gets_activo(self):
+        result = self._init_program_statuses("estudiante", ["prog-1", "prog-2"])
+        assert result == {"prog-1": "activo", "prog-2": "activo"}
+
+    def test_student_no_programs_gets_none(self):
+        result = self._init_program_statuses("estudiante", [])
+        assert result is None
+
+    def test_student_with_provided_statuses(self):
+        provided = {"prog-1": "retirado"}
+        result = self._init_program_statuses("estudiante", ["prog-1"], program_statuses_input=provided)
+        assert result == {"prog-1": "retirado"}
+
+    def test_non_student_gets_none(self):
+        assert self._init_program_statuses("profesor", ["prog-1"]) is None
+        assert self._init_program_statuses("admin", ["prog-1"]) is None
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for delete_course blocking logic
+# ---------------------------------------------------------------------------
+
+class TestDeleteCourseBlocking:
+    """Tests for the logic that blocks course deletion with non-egresado students."""
+
+    def _get_blocking_students(self, students, program_id):
+        """Mirror of delete_course blocking check in server.py."""
+        blocking = []
+        for s in students:
+            program_statuses = s.get("program_statuses") or {}
+            status = program_statuses.get(program_id) if program_id else s.get("estado")
+            if not status:
+                status = s.get("estado", "activo")
+            if status != "egresado":
+                blocking.append(s["id"])
+        return blocking
+
+    def test_all_egresado_allows_deletion(self):
+        students = [
+            {"id": "s1", "program_statuses": {"prog-1": "egresado"}},
+            {"id": "s2", "program_statuses": {"prog-1": "egresado"}},
+        ]
+        assert self._get_blocking_students(students, "prog-1") == []
+
+    def test_any_activo_blocks_deletion(self):
+        students = [
+            {"id": "s1", "program_statuses": {"prog-1": "egresado"}},
+            {"id": "s2", "program_statuses": {"prog-1": "activo"}},
+        ]
+        blocking = self._get_blocking_students(students, "prog-1")
+        assert "s2" in blocking
+        assert "s1" not in blocking
+
+    def test_pendiente_recuperacion_blocks_deletion(self):
+        students = [
+            {"id": "s1", "program_statuses": {"prog-1": "pendiente_recuperacion"}},
+        ]
+        blocking = self._get_blocking_students(students, "prog-1")
+        assert "s1" in blocking
+
+    def test_retirado_blocks_deletion(self):
+        students = [
+            {"id": "s1", "program_statuses": {"prog-1": "retirado"}},
+        ]
+        blocking = self._get_blocking_students(students, "prog-1")
+        assert "s1" in blocking
+
+    def test_no_program_statuses_falls_back_to_estado(self):
+        students = [
+            {"id": "s1", "estado": "activo"},
+            {"id": "s2", "estado": "egresado"},
+        ]
+        blocking = self._get_blocking_students(students, "prog-1")
+        assert "s1" in blocking
+        assert "s2" not in blocking
+
+    def test_empty_student_list_allows_deletion(self):
+        assert self._get_blocking_students([], "prog-1") == []
+
+
+# ---------------------------------------------------------------------------
 # Integration tests using FastAPI TestClient
 # ---------------------------------------------------------------------------
 
