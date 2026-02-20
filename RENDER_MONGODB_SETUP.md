@@ -404,7 +404,29 @@ python test_mongodb_connection.py
 
 ---
 
-## 💡 RESUMEN RÁPIDO
+## 🔧 VARIABLES DE ENTORNO ESENCIALES EN RENDER
+
+Para asegurar persistencia y comportamiento correcto en producción, configura estas variables de entorno en Render:
+
+| Variable | Descripción | Valor recomendado (producción) |
+|---|---|---|
+| `MONGO_URL` | URL de conexión a MongoDB Atlas | `mongodb+srv://usuario:password@cluster.mongodb.net/WebApp?retryWrites=true&w=majority` |
+| `DB_NAME` | Nombre de la base de datos | `WebApp` (o el nombre que uses en tu Atlas) |
+| `JWT_SECRET` | Clave secreta para JWT (tokens de sesión) | Una cadena aleatoria larga y segura |
+| `CREATE_SEED_USERS` | Controla si se crean usuarios semilla al iniciar | `false` — **desactivar en producción** para evitar que los usuarios semilla se creen automáticamente en cada reinicio del servicio |
+| `ALLOW_USER_RESET` | Permite el endpoint `/api/reset-users` | `false` — desactivar en producción |
+| `RESET_USERS` | Elimina todos los usuarios al iniciar | `false` (nunca en producción) |
+| `PASSWORD_STORAGE_MODE` | Modo de almacenamiento de contraseñas | `bcrypt` |
+
+### ⚠️ Notas importantes sobre persistencia de datos
+
+- **`MONGO_URL`** y **`DB_NAME`** deben apuntar siempre a la misma base de datos. Si cambias estas variables, los usuarios y datos creados anteriormente NO estarán disponibles.
+- Si ves que se crean usuarios semilla al reiniciar el servicio, verifica que `CREATE_SEED_USERS=false` esté configurado.
+- El endpoint `/api/reset-users` es destructivo (elimina todos los usuarios). Desactívalo en producción con `ALLOW_USER_RESET=false`.
+
+---
+
+
 
 **Tu problema:** Las credenciales no funcionan porque MongoDB no está conectado.
 

@@ -492,6 +492,8 @@ async def create_initial_data():
     # IMPORTANTE: Solo creamos usuarios semilla si NO EXISTEN. No los sobrescribimos.
     # Esto permite que los cambios hechos desde el panel de admin sean permanentes.
     # Para forzar reset de usuarios, establecer RESET_USERS=true en variables de entorno.
+    # Para deshabilitar la creación de usuarios semilla (recomendado en producción),
+    # establecer CREATE_SEED_USERS=false en variables de entorno.
     
     reset_users = os.environ.get('RESET_USERS', 'false').lower() == 'true'
     if reset_users:
@@ -505,34 +507,42 @@ async def create_initial_data():
     else:
         logger.info("Base de datos vacía. Creando usuarios iniciales...")
     
-    # Definir usuarios semilla (seed users) - solo se crean si no existen
-    # Note: Email domains vary by role (@tecnico.com, @estudiante.com, @profesor.com) 
-    # as specified in the requirements to clearly distinguish user types
-    seed_users = [
-        # 1 Editor
-        {"id": "user-editor-1", "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
-        
-        # 2 Profesores
-        {"id": "user-prof-1", "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor1!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
-        {"id": "user-prof-2", "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor2!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
-    ]
+    # CREATE_SEED_USERS: controla si se crean usuarios semilla en startup.
+    # Por defecto 'true' para desarrollo local; establecer 'false' en producción (Render/Railway)
+    # para evitar que los usuarios semilla se recreen automáticamente.
+    create_seed_users = os.environ.get('CREATE_SEED_USERS', 'true').lower() == 'true'
     
-    # Insertar usuarios semilla solo si no existen (setOnInsert)
-    # Esto preserva los cambios hechos desde el admin panel
-    created_count = 0
-    for u in seed_users:
-        result = await db.users.update_one(
-            {"id": u["id"]},
-            {"$setOnInsert": u},
-            upsert=True
-        )
-        if result.upserted_id:
-            created_count += 1
-    
-    if created_count > 0:
-        logger.info(f"Creados {created_count} usuarios semilla nuevos")
+    if not create_seed_users:
+        logger.info("CREATE_SEED_USERS=false: Omitiendo creación de usuarios semilla (modo producción)")
     else:
-        logger.info("Todos los usuarios semilla ya existen - no se sobrescribieron")
+        # Definir usuarios semilla (seed users) - solo se crean si no existen
+        # Note: Email domains vary by role (@tecnico.com, @estudiante.com, @profesor.com) 
+        # as specified in the requirements to clearly distinguish user types
+        seed_users = [
+            # 1 Editor
+            {"id": "user-editor-1", "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+            
+            # 2 Profesores
+            {"id": "user-prof-1", "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor1!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+            {"id": "user-prof-2", "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor2!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+        ]
+        
+        # Insertar usuarios semilla solo si no existen (setOnInsert)
+        # Esto preserva los cambios hechos desde el admin panel
+        created_count = 0
+        for u in seed_users:
+            result = await db.users.update_one(
+                {"id": u["id"]},
+                {"$setOnInsert": u},
+                upsert=True
+            )
+            if result.upserted_id:
+                created_count += 1
+        
+        if created_count > 0:
+            logger.info(f"Creados {created_count} usuarios semilla nuevos")
+        else:
+            logger.info("Todos los usuarios semilla ya existen - no se sobrescribieron")
     
     logger.info(f"Total usuarios en sistema: {await db.users.count_documents({})}")
     
@@ -1168,7 +1178,11 @@ async def get_users(role: Optional[str] = None, estado: Optional[str] = None, us
     if role:
         query["role"] = role
     if estado:
-        query["estado"] = estado
+        # Treat missing/null estado as 'activo' so newly created users are visible
+        if estado == 'activo':
+            query["$or"] = [{"estado": "activo"}, {"estado": None}, {"estado": {"$exists": False}}]
+        else:
+            query["estado"] = estado
     users = await db.users.find(query, {"_id": 0, "password_hash": 0}).to_list(1000)
     return users
 
@@ -2231,6 +2245,24 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
     due_date = datetime.fromisoformat(activity["due_date"].replace("Z", "+00:00"))
     if now > due_date:
         raise HTTPException(status_code=400, detail="La fecha límite ha pasado. No se puede entregar.")
+    
+    # Check module restriction: activity's subject module must match student's current module
+    if activity.get("subject_id"):
+        subject = await db.subjects.find_one({"id": activity["subject_id"]}, {"_id": 0, "module_number": 1})
+        if subject and subject.get("module_number") is not None:
+            subject_module = subject["module_number"]
+            # Get course's program_id
+            course = await db.courses.find_one({"id": activity["course_id"]}, {"_id": 0, "program_id": 1})
+            if course and course.get("program_id"):
+                program_id = course["program_id"]
+                student_module = (user.get("program_modules") or {}).get(program_id)
+                if student_module is None:
+                    student_module = user.get("module")
+                if student_module is not None and int(student_module) != int(subject_module):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Esta actividad pertenece al Módulo {int(subject_module)}, pero estás actualmente en el Módulo {int(student_module)}. Solo puedes entregar actividades de tu módulo actual."
+                    )
     
     existing = await db.submissions.find_one({
         "activity_id": req.activity_id,
