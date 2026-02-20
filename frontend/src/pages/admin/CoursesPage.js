@@ -205,9 +205,31 @@ export default function CoursesPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('¿Eliminar este curso?')) return;
-    try { await api.delete(`/courses/${id}`); toast.success('Curso eliminado'); fetchData(); }
-    catch (err) { toast.error('Error eliminando curso'); }
+    if (!window.confirm('¿Eliminar este grupo?')) return;
+    try {
+      await api.delete(`/courses/${id}`);
+      toast.success('Grupo eliminado');
+      fetchData();
+    } catch (err) {
+      if (err.response?.status === 400 && err.response?.data?.detail?.includes('force=true')) {
+        const detail = err.response.data.detail;
+        if (window.confirm(
+          `⚠️ ADVERTENCIA: ${detail}\n\n` +
+          'Los estudiantes NO serán borrados, solo desmatriculados del grupo.\n\n' +
+          '¿Deseas continuar y eliminar el grupo de todas formas?'
+        )) {
+          try {
+            await api.delete(`/courses/${id}`, { params: { force: true } });
+            toast.success('Grupo eliminado (estudiantes desmatriculados)');
+            fetchData();
+          } catch (err2) {
+            toast.error(err2.response?.data?.detail || 'Error eliminando grupo');
+          }
+        }
+      } else {
+        toast.error(err.response?.data?.detail || 'Error eliminando grupo');
+      }
+    }
   };
 
   return (

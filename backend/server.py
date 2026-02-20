@@ -336,17 +336,17 @@ async def startup_event():
         await create_initial_data()
         
         # Start the automatic module closure scheduler
-        # Runs daily at 00:01 AM (server local timezone) to check for modules that need to be closed
+        # Runs daily at 02:00 AM (server local timezone) – low traffic window
         # Note: Uses server's local timezone by default. For production, consider explicitly setting timezone.
         scheduler.add_job(
             check_and_close_modules,
-            CronTrigger(hour=0, minute=1),  # Run at 00:01 AM daily (server local time)
+            CronTrigger(hour=2, minute=0),  # Run at 02:00 AM daily (server local time)
             id='auto_close_modules',
             name='Automatic Module Closure',
             replace_existing=True
         )
         scheduler.start()
-        logger.info("Automatic module closure scheduler started (runs daily at 00:01 AM server local time)")
+        logger.info("Automatic module closure scheduler started (runs daily at 02:00 AM server local time)")
         
         logger.info("Application startup completed successfully")
     except Exception as e:
@@ -672,6 +672,39 @@ def can_enroll_in_course(course: dict) -> bool:
         return True
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return today < mod1_start
+
+
+def can_enroll_in_module(module_dates: dict, module_number: int) -> bool:
+    """Check if enrollment window is open for a specific module number.
+
+    Rules:
+    - Module 1: today < start_mod1
+    - Module N>1: recovery_close_mod(N-1) <= today < start_mod(N)
+
+    If dates are missing, enrollment is allowed (no restriction).
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    mod_key = str(module_number)
+    mod_dates = module_dates.get(mod_key) or module_dates.get(module_number) or {}
+    mod_start = mod_dates.get("start")
+
+    if module_number == 1:
+        if not mod_start:
+            return True
+        return today < mod_start
+
+    # Module N > 1: window is recovery_close_mod(N-1) <= today < start_mod(N)
+    prev_key = str(module_number - 1)
+    prev_dates = module_dates.get(prev_key) or module_dates.get(module_number - 1) or {}
+    prev_recovery_close = prev_dates.get("recovery_close") or prev_dates.get("end")
+
+    if not prev_recovery_close and not mod_start:
+        return True  # No dates configured – allow
+    if prev_recovery_close and today < prev_recovery_close:
+        return False  # Previous module recovery hasn't closed yet
+    if mod_start and today >= mod_start:
+        return False  # Target module has already started
+    return True
 
 
 def validate_module_dates_order(module_dates: dict) -> Optional[str]:
@@ -1630,16 +1663,13 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     if date_order_error:
         raise HTTPException(status_code=400, detail=date_order_error)
     
-    # Validate enrollment deadline: only allow students before module 1 starts
+    # Validate enrollment deadline per module
     student_ids_to_add = req.student_ids or []
     if student_ids_to_add:
-        # Build a temporary course-like dict to check the enrollment window
-        if not can_enroll_in_course({"module_dates": module_dates}):
-            # Module 1 has already started – only allow re-enrollment for retirado students
-            # whose module matches the current module of the course
-            course_current_module = get_current_module_from_dates(module_dates)
-            # Check each student: if they are retirado for this program, allow if module matches
-            if req.program_id and course_current_module is not None:
+        course_current_module = get_current_module_from_dates(module_dates) or 1
+        if not can_enroll_in_module(module_dates, course_current_module):
+            # Enrollment window closed – only allow reingreso for retirado students in the current module
+            if req.program_id:
                 students_info = await db.users.find(
                     {"id": {"$in": student_ids_to_add}, "role": "estudiante"},
                     {"_id": 0, "id": 1, "program_statuses": 1, "program_modules": 1}
@@ -1658,15 +1688,15 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                     raise HTTPException(
                         status_code=400,
                         detail=(
-                            "No se puede matricular estudiantes: el período de matrícula ha cerrado "
-                            "(Módulo 1 ya inició). Solo se permite reingreso de estudiantes retirados "
-                            "en el módulo actual del grupo."
+                            f"No se puede matricular estudiantes: el período de matrícula para el "
+                            f"Módulo {course_current_module} ha cerrado. Solo se permite reingreso de "
+                            "estudiantes retirados en el módulo actual del grupo."
                         )
                     )
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail="No se puede matricular estudiantes: el período de matrícula ha cerrado (Módulo 1 ya inició)"
+                    detail=f"No se puede matricular estudiantes: el período de matrícula para el Módulo {course_current_module} ha cerrado"
                 )
 
     # Validate: a student cannot be in 2+ groups of the same program
@@ -1764,14 +1794,15 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
         # Get the current course to know its program, existing student list, and module_dates
         current_course = await db.courses.find_one({"id": course_id}, {"_id": 0, "program_id": 1, "student_ids": 1, "module_dates": 1})
         if current_course:
-            # Check enrollment deadline: only allow new students before module 1 starts
+            # Check enrollment deadline per module
             current_student_ids = set(current_course.get("student_ids") or [])
             newly_added_ids = list(set(req.student_ids) - current_student_ids)
-            if newly_added_ids and not can_enroll_in_course(current_course):
-                # Module 1 has started – only allow reingreso for retirado students whose module matches
+            course_module_dates = current_course.get("module_dates") or {}
+            course_current_module = get_current_module_from_dates(course_module_dates) or 1
+            if newly_added_ids and not can_enroll_in_module(course_module_dates, course_current_module):
+                # Enrollment window closed – only allow reingreso for retirado students in current module
                 prog_id = current_course.get("program_id")
-                course_current_module = get_current_module_from_dates(current_course.get("module_dates") or {})
-                if prog_id and course_current_module is not None:
+                if prog_id:
                     students_info = await db.users.find(
                         {"id": {"$in": newly_added_ids}, "role": "estudiante"},
                         {"_id": 0, "id": 1, "program_statuses": 1, "program_modules": 1}
@@ -1790,15 +1821,15 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                         raise HTTPException(
                             status_code=400,
                             detail=(
-                                "No se puede matricular estudiantes: el período de matrícula ha cerrado "
-                                "(Módulo 1 ya inició). Solo se permite reingreso de estudiantes retirados "
-                                "en el módulo actual del grupo."
+                                f"No se puede matricular estudiantes: el período de matrícula para el "
+                                f"Módulo {course_current_module} ha cerrado. Solo se permite reingreso de "
+                                "estudiantes retirados en el módulo actual del grupo."
                             )
                         )
                 else:
                     raise HTTPException(
                         status_code=400,
-                        detail="No se puede matricular estudiantes: el período de matrícula ha cerrado (Módulo 1 ya inició)"
+                        detail=f"No se puede matricular estudiantes: el período de matrícula para el Módulo {course_current_module} ha cerrado"
                     )
 
             program_id = current_course.get("program_id")
@@ -1847,7 +1878,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
     return updated
 
 @api_router.delete("/courses/{course_id}")
-async def delete_course(course_id: str, user=Depends(get_current_user)):
+async def delete_course(course_id: str, force: bool = False, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
     
@@ -1860,7 +1891,7 @@ async def delete_course(course_id: str, user=Depends(get_current_user)):
     student_ids_in_course = course.get("student_ids", [])
     
     if student_ids_in_course:
-        # Block deletion if any student has a non-egresado status for this program
+        # Check which students are non-egresado
         students = await db.users.find(
             {"id": {"$in": student_ids_in_course}, "role": "estudiante"},
             {"_id": 0, "id": 1, "program_statuses": 1, "estado": 1}
@@ -1868,22 +1899,31 @@ async def delete_course(course_id: str, user=Depends(get_current_user)):
         blocking_students = []
         for s in students:
             program_statuses = s.get("program_statuses") or {}
-            # Check per-program status first; fall back to global estado
             status = program_statuses.get(program_id) if program_id else s.get("estado")
             if not status:
                 status = s.get("estado", "activo")
             if status != "egresado":
                 blocking_students.append(s["id"])
-        if blocking_students:
+        if blocking_students and not force:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"No se puede eliminar el grupo: contiene {len(blocking_students)} estudiante(s) "
-                    "que aún no han egresado. Use 'Eliminar Egresados' para limpiar solo egresados."
+                    "que aún no han egresado. Use force=true para desmatricularlos y eliminar el grupo."
                 )
             )
+        # force=True or all students are egresados: unenroll non-egresado students (do not delete them)
+        if blocking_students:
+            await db.users.update_many(
+                {"id": {"$in": blocking_students}},
+                {"$unset": {"grupo": ""}}
+            )
+            logger.info(
+                f"Force-deleted course {course_id}: unenrolled {len(blocking_students)} active student(s) "
+                f"(students not deleted, only removed from group)"
+            )
     
-    # All students are egresados (or group is empty) – delete the course (students are not deleted)
+    # Delete the course (students are never deleted)
     await db.courses.delete_one({"id": course_id})
     return {"message": "Curso eliminado"}
 
@@ -2612,14 +2652,35 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     """
     Get all students with failed subjects pending recovery approval.
     Returns detailed information for admin to review and approve recoveries.
+    Only shows in-process records: not yet decided, or approved-but-not-completed.
+    Excluded: recovery_rejected=True or (recovery_approved=True and recovery_completed=True).
     Also detects students in courses where the module close date has passed
     and they have failing averages, even if they haven't been explicitly processed.
     """
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede acceder al panel de recuperaciones")
     
-    # Get all failed subject records
-    failed_records = await db.failed_subjects.find({}, {"_id": 0}).to_list(1000)
+    # Only fetch in-process records (panel shows these states only):
+    #   - Pending (not yet decided): recovery_rejected is not True AND NOT (approved + completed)
+    #   - Approved but not yet completed: recovery_approved=True, recovery_completed=False
+    # Excluded: recovery_rejected=True OR (recovery_approved=True AND recovery_completed=True)
+    failed_records = await db.failed_subjects.find(
+        {
+            "recovery_rejected": {"$ne": True},
+            "$nor": [{"recovery_approved": True, "recovery_completed": True}]
+        },
+        {"_id": 0}
+    ).to_list(1000)
+    
+    # Build a lookup of student cedulas for human-readable IDs
+    student_ids_in_records = list({r["student_id"] for r in failed_records})
+    students_lookup = {}
+    if student_ids_in_records:
+        student_docs = await db.users.find(
+            {"id": {"$in": student_ids_in_records}},
+            {"_id": 0, "id": 1, "cedula": 1, "name": 1}
+        ).to_list(None)
+        students_lookup = {s["id"]: s for s in student_docs}
     
     # Get all programs for reference
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
@@ -2630,9 +2691,11 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     for record in failed_records:
         student_id = record["student_id"]
         if student_id not in students_map:
+            student_doc = students_lookup.get(student_id) or {}
             students_map[student_id] = {
                 "student_id": student_id,
                 "student_name": record["student_name"],
+                "student_cedula": student_doc.get("cedula") or "",
                 "failed_subjects": []
             }
         
@@ -2774,7 +2837,9 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             "program_id": course.get("program_id", ""),
             "module_number": module_number,
             "average_grade": round(average, 2),
+            # Exactly one of recovery_approved / recovery_rejected is True after admin decision
             "recovery_approved": approve,
+            "recovery_rejected": not approve,
             "recovery_completed": False,
             "approved_by": user["id"],
             "approved_at": datetime.now(timezone.utc).isoformat(),
@@ -2838,10 +2903,12 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
     
     # Update approval status
+    # Exactly one of recovery_approved / recovery_rejected is True after admin decision
     await db.failed_subjects.update_one(
         {"id": failed_subject_id},
         {"$set": {
             "recovery_approved": approve,
+            "recovery_rejected": not approve,
             "approved_by": user["id"],
             "approved_at": datetime.now(timezone.utc).isoformat()
         }}

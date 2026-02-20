@@ -111,7 +111,9 @@ export default function TeacherGrades() {
       return;
     }
     for (const key of keys) {
-      const [studentId, activityId] = key.split('-');
+      // Keys are "{studentId}-{activityId}" where both are 36-char UUIDs
+      const studentId = key.slice(0, 36);
+      const activityId = key.slice(37);
       await saveGrade(studentId, activityId);
     }
   };
