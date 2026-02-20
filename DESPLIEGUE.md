@@ -118,10 +118,13 @@ curl http://localhost/api/health || curl http://localhost:8001/health
 Visita `http://TU_IP_DEL_SERVIDOR` en tu navegador.
 
 **Credenciales iniciales:**
-- Email: `admin@educando.com`
-- Contraseña: `admin123`
+Consulta el archivo `USUARIOS_Y_CONTRASEÑAS.txt` para las credenciales completas del sistema.
 
-⚠️ **IMPORTANTE:** Cambia estas credenciales inmediatamente después del primer acceso.
+Ejemplo de credenciales de administrador:
+- Email: `laura.torres@educando.com`
+- Contraseña: Ver USUARIOS_Y_CONTRASEÑAS.txt
+
+⚠️ **IMPORTANTE:** En producción, cambia todas las contraseñas inmediatamente después del primer acceso.
 
 ---
 
@@ -175,7 +178,7 @@ Visita `http://TU_IP_DEL_SERVIDOR` en tu navegador.
 
 7. **¡Listo!**
    - Visita la URL que te dio Railway
-   - Usa las credenciales iniciales (admin@educando.com / admin123)
+   - Usa las credenciales del archivo USUARIOS_Y_CONTRASEÑAS.txt (por ejemplo: laura.torres@educando.com)
 
 **Costos estimados en Railway:**
 - Plan gratuito: $5 de crédito gratis/mes (suficiente para pruebas)
@@ -193,21 +196,52 @@ Visita `http://TU_IP_DEL_SERVIDOR` en tu navegador.
 - ✅ Deploy automático
 - ⚠️ Los servicios gratuitos "duermen" después de inactividad
 
+### ⚠️ IMPORTANTE: Configuración de MongoDB en Render
+
+**Render NO incluye MongoDB automáticamente.**  
+Debes configurar MongoDB manualmente antes de que la aplicación funcione.
+
+📖 **Guía completa:** Ver archivo [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)  
+📋 **Referencia rápida:** Ver archivo [TARJETA_REFERENCIA_MONGODB.md](TARJETA_REFERENCIA_MONGODB.md)
+
 ### Pasos:
 
 1. **Crea cuenta en Render**
    - Ve a [render.com](https://render.com)
    - Crea una cuenta con GitHub
 
-2. **Crea 3 servicios separados:**
-
-   **a) MongoDB:**
-   - Click en "New +" > "MongoDB"
+2. **Configura MongoDB primero (RECOMENDADO: MongoDB Atlas)**
+   
+   **Opción A - MongoDB Atlas (RECOMENDADO - Gratis):**
+   - Ve a [MongoDB Atlas](https://www.mongodb.com/cloud/atlas/register)
+   - Crea un cluster gratuito (M0 - 512MB)
+   - Crea un usuario de base de datos
+   - Permite acceso desde 0.0.0.0/0 en Network Access
+   - Copia la connection string
+   - **Ver guía detallada:** [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)
+   
+   **Opción B - Render Private Services (Pago):**
+   - Click en "New +" > "Private Service" > "MongoDB"
    - Nombre: `educando-db`
-   - Plan: Free (256MB) o Starter ($7/mes)
+   - Plan: Starter ($7/mes) - No hay plan gratuito
    - Copia la "Internal Connection String"
 
-   **b) Backend:**
+3. **Deploy con render.yaml (Automático)**
+   
+   Este repositorio incluye un archivo `render.yaml` que automatiza el despliegue:
+   
+   - Click en "New +" > "Blueprint"
+   - Conecta tu repositorio GitHub
+   - Render detectará `render.yaml` y creará los servicios automáticamente
+   - **IMPORTANTE:** Debes configurar `MONGO_URL` manualmente:
+     - Ve a `educando-backend` → Environment
+     - Agrega `MONGO_URL` con tu connection string de Atlas
+     - Save Changes
+     - Manual Deploy → Deploy latest commit
+
+4. **O crear servicios manualmente:**
+
+   **a) Backend:**
    - Click en "New +" > "Web Service"
    - Conecta tu repositorio
    - Configuración:
@@ -218,12 +252,12 @@ Visita `http://TU_IP_DEL_SERVIDOR` en tu navegador.
      - Plan: Free o Starter ($7/mes)
    - Variables de entorno:
      ```
-     MONGO_URL=<la connection string de MongoDB>
+     MONGO_URL=<tu connection string de MongoDB Atlas>
      DB_NAME=educando_db
      JWT_SECRET=tu_clave_secreta_muy_larga
      ```
 
-   **c) Frontend:**
+   **b) Frontend:**
    - Click en "New +" > "Static Site"
    - Conecta tu repositorio
    - Configuración:
@@ -237,14 +271,22 @@ Visita `http://TU_IP_DEL_SERVIDOR` en tu navegador.
      REACT_APP_BACKEND_URL=<URL del backend>
      ```
 
-3. **¡Listo!**
+5. **Verificar que MongoDB esté conectado:**
+   - Ve a Render → educando-backend → Logs
+   - Busca: "MongoDB connection successful"
+   - Busca: "Credenciales creadas para 7 usuarios"
+   - Si NO ves estos mensajes: Ver [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)
+
+6. **¡Listo!**
    - Render construirá y desplegará todo automáticamente
    - Visita la URL del frontend
-   - Usa las credenciales iniciales
+   - Usa las credenciales del archivo [USUARIOS_Y_CONTRASEÑAS.txt](USUARIOS_Y_CONTRASEÑAS.txt)
 
 **Costos estimados en Render:**
-- Plan gratuito: $0 (con limitaciones)
+- Plan gratuito: $0 (con limitaciones) + MongoDB Atlas Free
 - Plan básico: ~$7-14/mes (más confiable)
+
+**¿Problemas con autenticación?** Ver [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)
 
 ---
 
@@ -475,8 +517,12 @@ Cuando inicias la aplicación por primera vez, se crean automáticamente:
 - ✅ Cursos de ejemplo
 
 **Credenciales iniciales del administrador:**
-- Email: `admin@educando.com`
-- Contraseña: `admin123`
+
+Consulta el archivo `USUARIOS_Y_CONTRASEÑAS.txt` en la raíz del proyecto para todas las credenciales.
+
+Ejemplo de credenciales de administrador:
+- Email: `laura.torres@educando.com`
+- Contraseña: Ver USUARIOS_Y_CONTRASEÑAS.txt
 
 ### ⚠️ IMPORTANTE - Cambiar credenciales de admin:
 
@@ -484,7 +530,7 @@ Cuando inicias la aplicación por primera vez, se crean automáticamente:
 
 1. **Inicia sesión como admin**
    - Ve a tu sitio web
-   - Inicia sesión con admin@educando.com / admin123
+   - Inicia sesión con las credenciales del archivo USUARIOS_Y_CONTRASEÑAS.txt
 
 2. **Cambia la contraseña inmediatamente**
    - Ve a tu perfil o configuración
@@ -765,7 +811,7 @@ exit
 
 ### No puedo iniciar sesión como admin
 
-**Síntomas:** Las credenciales admin@educando.com / admin123 no funcionan
+**Síntomas:** Las credenciales de admin no funcionan
 
 **Soluciones:**
 ```bash

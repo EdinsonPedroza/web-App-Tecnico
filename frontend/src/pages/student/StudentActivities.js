@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,12 +11,15 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { toast } from 'sonner';
 import { Loader2, FileText, Calendar, Clock, Lock, Unlock, Send, Download, File, TimerOff, Upload, Trash2, Image } from 'lucide-react';
 import api from '@/lib/api';
+import { ensureProtocol } from '@/utils/url';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 
 export default function StudentActivities() {
   const { user } = useAuth();
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [activities, setActivities] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,8 +31,12 @@ export default function StudentActivities() {
 
   const fetchData = useCallback(async () => {
     try {
-      const query = courseId ? `course_id=${courseId}` : '';
-      const aRes = await api.get(`/activities${query ? '?' + query : ''}`);
+      let url = '/activities';
+      const params = [];
+      if (courseId) params.push(`course_id=${courseId}`);
+      if (subjectId) params.push(`subject_id=${subjectId}`);
+      if (params.length > 0) url += '?' + params.join('&');
+      const aRes = await api.get(url);
       setActivities(aRes.data);
       const sRes = await api.get(`/submissions?student_id=${user.id}`);
       setSubmissions(sRes.data);
@@ -38,7 +45,7 @@ export default function StudentActivities() {
     } finally {
       setLoading(false);
     }
-  }, [user.id, courseId]);
+  }, [user.id, courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -153,6 +160,7 @@ export default function StudentActivities() {
                         <AccordionTrigger className="flex-1 hover:no-underline py-2">
                           <div className="flex items-center gap-2 w-full">
                             <Badge variant="outline" className="shrink-0 text-xs font-mono">Act {actNum}</Badge>
+                            {act.is_recovery && <Badge variant="warning" className="shrink-0 text-xs">Recuperación</Badge>}
                             <StatusIcon className={`h-4 w-4 shrink-0 ${status.variant === 'destructive' ? 'text-destructive' : status.variant === 'success' ? 'text-success' : 'text-muted-foreground'}`} />
                             <h3 className="text-sm font-semibold truncate">{act.title}</h3>
                             <span className="ml-auto text-xs text-muted-foreground hidden sm:flex items-center gap-1">

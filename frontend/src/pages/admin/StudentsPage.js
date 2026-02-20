@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight, ArrowUpCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 
@@ -88,8 +88,9 @@ export default function StudentsPage() {
   const getProgramShortName = (id) => {
     const program = programs.find(p => p.id === id);
     if (!program || !program.name) return 'N/A';
-    const words = program.name.split(' ');
-    return words.length > 3 ? words.slice(2, 5).join(' ') : program.name;
+    // Strip leading "Técnico [Laboral] [en/de/para]" prefix for cleaner display
+    const cleaned = program.name.replace(/^[Tt][eé]cnico\s+([Ll]aboral\s+)?([Ee]n\s+|[Dd]e\s+|[Pp]ara\s+)?/, '');
+    return cleaned.length > 0 ? cleaned : program.name;
   };
   
   // Get all program names for a student (supports both program_id and program_ids)
@@ -109,6 +110,25 @@ export default function StudentsPage() {
 
   // Get which courses a student is enrolled in
   const getStudentCourseIds = (studentId) => courses.filter(c => (c.student_ids || []).includes(studentId)).map(c => c.id);
+
+  // Determine if a group/course is compatible with a student's current module for a given program.
+  // - If studentModule == 1: student can join groups where module 1 hasn't started yet (today < module_dates["1"].start)
+  // - If studentModule == 2: student can join groups where module 1 has already started (module_dates["1"].start <= today)
+  const isCourseCompatibleWithModule = (course, studentModule) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const moduleDates = course.module_dates || {};
+    const mod1Dates = moduleDates['1'] || moduleDates[1] || null;
+    const mod1Start = mod1Dates?.start || null;
+
+    if (studentModule === 1) {
+      // Student is in module 1: only show groups where module 1 hasn't started yet
+      return !mod1Start || mod1Start > today;
+    } else if (studentModule >= 2) {
+      // Student is in module 2+: only show groups where module 1 has already started
+      return mod1Start && mod1Start <= today;
+    }
+    return true;
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -151,12 +171,20 @@ export default function StudentsPage() {
   const toggleCourse = (courseId) => {
     setForm(prev => {
       const courseIds = prev.course_ids || [];
-      return {
-        ...prev,
-        course_ids: courseIds.includes(courseId)
-          ? courseIds.filter(id => id !== courseId)
-          : [...courseIds, courseId]
-      };
+      const isRemoving = courseIds.includes(courseId);
+      if (isRemoving) {
+        return { ...prev, course_ids: courseIds.filter(id => id !== courseId) };
+      }
+      // Enforce one group per program: remove any existing group for the same program
+      const selectedCourse = courses.find(c => c.id === courseId);
+      const sameProgramIds = selectedCourse
+        ? courseIds.filter(id => {
+            const c = courses.find(x => x.id === id);
+            return c && c.program_id === selectedCourse.program_id;
+          })
+        : [];
+      const filteredIds = courseIds.filter(id => !sameProgramIds.includes(id));
+      return { ...prev, course_ids: [...filteredIds, courseId] };
     });
   };
 
@@ -189,6 +217,12 @@ export default function StudentsPage() {
   const handleSave = async () => {
     if (!form.name.trim() || (!editing && !form.cedula.trim())) { toast.error('Nombre y cédula requeridos'); return; }
     if (!editing && !form.password) { toast.error('Contraseña requerida'); return; }
+    
+    // Validate cédula: only numbers
+    if (form.cedula && !/^\d+$/.test(form.cedula)) {
+      toast.error('La cédula solo debe contener números');
+      return;
+    }
     
     // Password length validation
     if (form.password && form.password.length < 6) {
@@ -281,35 +315,6 @@ export default function StudentsPage() {
     }
   };
 
-  const handlePromote = async (student) => {
-    if (!student.module || student.module >= 2) {
-      toast.error('El estudiante ya está en el módulo final');
-      return;
-    }
-    if (!window.confirm(`¿Promover a ${student.name} al Módulo ${student.module + 1}?`)) return;
-    try {
-      await api.put(`/users/${student.id}/promote`);
-      toast.success('Estudiante promovido exitosamente');
-      fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error promoviendo estudiante');
-    }
-  };
-
-  const handleGraduate = async (student) => {
-    if (student.module < 2) {
-      toast.error('El estudiante debe estar en el módulo 2 para graduarse');
-      return;
-    }
-    if (!window.confirm(`¿Marcar a ${student.name} como Egresado?`)) return;
-    try {
-      await api.put(`/users/${student.id}/graduate`);
-      toast.success('Estudiante marcado como egresado exitosamente');
-      fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error graduando estudiante');
-    }
-  };
 
   return (
     <DashboardLayout>
@@ -355,6 +360,8 @@ export default function StudentsPage() {
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="activo">Activos</SelectItem>
                 <SelectItem value="egresado">Egresados</SelectItem>
+                <SelectItem value="pendiente_recuperacion">Pendiente Recuperación</SelectItem>
+                <SelectItem value="retirado">Retirados</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -443,16 +450,16 @@ export default function StudentsPage() {
                           }
                           const studentCourses = courses.filter(c => studentCourseIds.includes(c.id));
                           return (
-                            <div className="flex flex-col gap-1">
-                              {studentCourses.map(course => {
-                                const programName = getProgramShortName(course.program_id);
-                                return (
-                                  <Badge key={course.id} variant="outline" className="text-xs">
-                                    {course.name} <span className="text-muted-foreground ml-1">({programName})</span>
-                                  </Badge>
-                                );
-                              })}
-                            </div>
+                             <div className="flex flex-col gap-1">
+                               {studentCourses.map(course => {
+                                 const programName = getProgramShortName(course.program_id);
+                                 return (
+                                   <Badge key={course.id} variant="outline" className="text-xs rounded-md px-3 py-1">
+                                     {course.name} <span className="text-muted-foreground ml-1">({programName})</span>
+                                   </Badge>
+                                 );
+                               })}
+                             </div>
                           );
                         })()}
                       </TableCell>
@@ -464,26 +471,6 @@ export default function StudentsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {s.module && s.module < 2 && (s.estado || 'activo') === 'activo' && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handlePromote(s)}
-                              title="Promover al siguiente módulo"
-                            >
-                              <ArrowUpCircle className="h-4 w-4 text-success" />
-                            </Button>
-                          )}
-                          {s.module === 2 && (s.estado || 'activo') === 'activo' && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handleGraduate(s)}
-                              title="Marcar como egresado"
-                            >
-                              <GraduationCap className="h-4 w-4 text-blue-600" />
-                            </Button>
-                          )}
                           <Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                         </div>
@@ -534,8 +521,19 @@ export default function StudentsPage() {
             <div className="space-y-2"><Label>Nombre Completo</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del estudiante" /></div>
             <div className="space-y-2">
               <Label>Cédula</Label>
-              <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" />
+              <Input 
+                type="text" 
+                inputMode="numeric" 
+                pattern="[0-9]*"
+                value={form.cedula} 
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '');
+                  setForm({ ...form, cedula: value });
+                }} 
+                placeholder="Número de cédula (solo números)" 
+              />
               {editing && <p className="text-xs text-amber-600 dark:text-amber-500">⚠️ Cambiar la cédula puede afectar el acceso del estudiante. Verifica que no exista duplicado.</p>}
+              <p className="text-xs text-muted-foreground">Solo se permiten números</p>
             </div>
             <div className="space-y-2">
               <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>
@@ -599,55 +597,23 @@ export default function StudentsPage() {
                 Los estudiantes pueden inscribirse en varios técnicos simultáneamente
               </p>
             </div>
-            <div className="space-y-2">
-              <Label className="text-base">Módulos por Programa Técnico</Label>
-              {form.program_ids && form.program_ids.length > 0 ? (
-                <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
-                  {form.program_ids.map(progId => {
-                    const program = programs.find(p => p.id === progId);
-                    const currentModule = form.program_modules?.[progId] ?? DEFAULT_MODULE;
-                    return (
-                      <div key={progId} className="flex items-center justify-between gap-3 p-2 rounded bg-background">
-                        <span className="text-sm font-medium flex-1">{program?.name || 'Programa'}</span>
-                        <Select 
-                          value={String(currentModule)} 
-                          onValueChange={(v) => {
-                            setForm(prev => ({
-                              ...prev,
-                              program_modules: {
-                                ...prev.program_modules,
-                                [progId]: parseInt(v)
-                              }
-                            }));
-                          }}
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">Módulo 1</SelectItem>
-                            <SelectItem value="2">Módulo 2</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground p-3 rounded-lg border bg-muted/20">
-                  Selecciona al menos un programa técnico para asignar módulos
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Cada estudiante puede estar en diferentes módulos según el programa técnico
-              </p>
-            </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-base">Grupos Inscritos ({form.course_ids.length} seleccionados)</Label>
                 {(() => {
-                  const filteredCourses = courses.filter(c => !form.program_ids.length || form.program_ids.includes(c.program_id));
+                  const filteredCourses = courses.filter(c => {
+                    const matchesProgram = !form.program_ids.length || form.program_ids.includes(c.program_id);
+                    if (!matchesProgram) return false;
+                    if (editing && form.program_modules && c.program_id) {
+                      const studentModule = form.program_modules[c.program_id];
+                      if (studentModule) {
+                        const isCurrentlyEnrolled = (form.course_ids || []).includes(c.id);
+                        if (!isCurrentlyEnrolled && !isCourseCompatibleWithModule(c, studentModule)) return false;
+                      }
+                    }
+                    return true;
+                  });
                   return filteredCourses.length > 0 && (
                     <Button 
                       type="button" 
@@ -677,11 +643,25 @@ export default function StudentsPage() {
               </div>
               <div className="max-h-36 overflow-y-auto rounded-lg border p-3 space-y-2">
                 {(() => {
+                  const today = new Date().toISOString().slice(0, 10);
                   const filteredCourses = courses.filter(c => {
                     const matchesProgram = !form.program_ids.length || form.program_ids.includes(c.program_id);
+                    if (!matchesProgram) return false;
                     const courseName = String(c.name || '');
                     const matchesSearch = courseName.toLowerCase().includes(courseSearch.toLowerCase());
-                    return matchesProgram && matchesSearch;
+                    if (!matchesSearch) return false;
+                    // When editing an existing student, filter by module compatibility per program
+                    if (editing && form.program_modules && c.program_id) {
+                      const studentModule = form.program_modules[c.program_id];
+                      if (studentModule) {
+                        // Allow currently enrolled groups regardless of module (don't lock out existing)
+                        const isCurrentlyEnrolled = (form.course_ids || []).includes(c.id);
+                        if (!isCurrentlyEnrolled && !isCourseCompatibleWithModule(c, studentModule)) {
+                          return false;
+                        }
+                      }
+                    }
+                    return true;
                   });
                   
                   if (courses.length === 0) {
@@ -689,7 +669,7 @@ export default function StudentsPage() {
                   }
                   
                   if (filteredCourses.length === 0 && form.program_ids.length > 0) {
-                    return <p className="text-sm text-muted-foreground">No hay grupos para los técnicos seleccionados</p>;
+                    return <p className="text-sm text-muted-foreground">No hay grupos compatibles con el módulo del estudiante para los técnicos seleccionados</p>;
                   }
                   
                   if (filteredCourses.length === 0 && courseSearch) {
@@ -698,18 +678,25 @@ export default function StudentsPage() {
                   
                   return filteredCourses.map((c) => {
                     const programName = getProgramShortName(c.program_id);
+                    const studentModule = form.program_modules?.[c.program_id];
+                    const mod1Dates = c.module_dates?.['1'] || c.module_dates?.[1];
+                    const mod1Start = mod1Dates?.start;
+                    const moduleInfo = mod1Start
+                      ? (mod1Start <= today ? 'Inscripción cerrada' : 'Inscripción abierta')
+                      : 'Nuevo grupo';
                     return (
                       <div key={c.id} className="flex items-center gap-2">
                         <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
                         <span className="text-sm flex-1">{c.name}</span>
                         <span className="text-xs text-muted-foreground">({programName})</span>
+                        <span className="text-xs text-muted-foreground italic">{moduleInfo}</span>
                       </div>
                     );
                   });
                 })()}
               </div>
               <p className="text-xs text-muted-foreground">
-                Solo se muestran los grupos correspondientes a los técnicos seleccionados. Cada grupo muestra su técnico asociado.
+                Se muestran grupos compatibles con el módulo del estudiante. Solo se puede elegir un grupo por técnico.
               </p>
             </div>
           </div>

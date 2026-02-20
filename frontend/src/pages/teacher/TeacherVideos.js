@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,8 @@ import api from '@/lib/api';
 
 export default function TeacherVideos() {
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -22,14 +24,16 @@ export default function TeacherVideos() {
 
   const fetchVideos = useCallback(async () => {
     try {
-      const res = await api.get(`/class-videos?course_id=${courseId}`);
+      let url = `/class-videos?course_id=${courseId}`;
+      if (subjectId) url += `&subject_id=${subjectId}`;
+      const res = await api.get(url);
       setVideos(res.data);
     } catch (err) {
       toast.error('Error cargando videos');
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchVideos(); }, [fetchVideos]);
 
@@ -53,7 +57,7 @@ export default function TeacherVideos() {
         await api.put(`/class-videos/${editing.id}`, form);
         toast.success('Video actualizado');
       } else {
-        await api.post('/class-videos', { course_id: courseId, ...form });
+        await api.post('/class-videos', { course_id: courseId, subject_id: subjectId, ...form });
         toast.success('Video subido exitosamente');
       }
       setDialogOpen(false);

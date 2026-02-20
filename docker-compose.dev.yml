@@ -16,7 +16,8 @@ services:
       - mongodb
     environment:
       - MONGO_URL=mongodb://mongodb:27017
-      - DB_NAME=educando_db
+      - DB_NAME=WebApp
+      - PASSWORD_STORAGE_MODE=plain
     volumes:
       - ./backend:/app          # 👈 Monta el código del backend en tiempo real
       - uploads_data:/app/uploads

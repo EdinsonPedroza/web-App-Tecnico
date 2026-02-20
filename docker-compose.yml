@@ -13,8 +13,11 @@ services:
     depends_on:
       - mongodb
     environment:
-      - MONGO_URL=mongodb://mongodb:27017
-      - DB_NAME=educando_db
+      # Use local MongoDB in Docker or set MONGO_URL env var for remote MongoDB
+      - MONGO_URL=${MONGO_URL:-mongodb://mongodb:27017}
+      - DB_NAME=${DB_NAME:-WebApp}
+      - PASSWORD_STORAGE_MODE=${PASSWORD_STORAGE_MODE:-bcrypt}
+      - JWT_SECRET=${JWT_SECRET:-educando_secret_key_2025}
     volumes:
       - uploads_data:/app/uploads
 
@@ -25,6 +28,9 @@ services:
     restart: always
     depends_on:
       - backend
+    environment:
+      - BACKEND_URL=http://backend:8001
+      - PORT=80
     ports:
       - "80:80"
 

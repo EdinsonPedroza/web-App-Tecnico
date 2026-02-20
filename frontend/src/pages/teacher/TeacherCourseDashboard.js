@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,27 +8,43 @@ import api from '@/lib/api';
 
 export default function TeacherCourseDashboard() {
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [course, setCourse] = useState(null);
+  const [subject, setSubject] = useState(null);
   const [activities, setActivities] = useState([]);
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const [cRes, aRes, vRes] = await Promise.all([
+      let activitiesUrl = `/activities?course_id=${courseId}`;
+      if (subjectId) activitiesUrl += `&subject_id=${subjectId}`;
+      let videosUrl = `/class-videos?course_id=${courseId}`;
+      if (subjectId) videosUrl += `&subject_id=${subjectId}`;
+      const requests = [
         api.get(`/courses/${courseId}`),
-        api.get(`/activities?course_id=${courseId}`),
-        api.get(`/class-videos?course_id=${courseId}`)
-      ]);
+        api.get(activitiesUrl),
+        api.get(videosUrl)
+      ];
+      if (subjectId) {
+        requests.push(api.get('/subjects'));
+      }
+      const results = await Promise.all(requests);
+      const [cRes, aRes, vRes] = results;
       setCourse(cRes.data);
       setActivities(aRes.data);
       setVideos(vRes.data);
+      if (subjectId && results[3]) {
+        const found = results[3].data.find(s => s.id === subjectId);
+        setSubject(found || null);
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -44,7 +60,7 @@ export default function TeacherCourseDashboard() {
     <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold font-heading">{course?.name}</h1>
+          <h1 className="text-2xl font-bold font-heading">{subject?.name || course?.name}</h1>
           <p className="text-muted-foreground mt-1">Resumen del curso</p>
         </div>
 

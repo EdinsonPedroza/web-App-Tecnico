@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, BookOpen, Filter } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, BookOpen, Filter, Search } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function SubjectsPage() {
@@ -17,6 +17,7 @@ export default function SubjectsPage() {
   const [loading, setLoading] = useState(true);
   const [filterProgram, setFilterProgram] = useState('all');
   const [filterModule, setFilterModule] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', program_id: '', module_number: 1, description: '' });
@@ -39,6 +40,7 @@ export default function SubjectsPage() {
   const filtered = subjects.filter(s => {
     if (filterProgram !== 'all' && String(s.program_id) !== String(filterProgram)) return false;
     if (filterModule !== 'all' && s.module_number !== parseInt(filterModule)) return false;
+    if (searchQuery && !s.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin programa';
@@ -123,6 +125,16 @@ export default function SubjectsPage() {
           </div>
         </div>
 
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Buscar materias por nombre..." 
+            className="pl-9" 
+            value={searchQuery} 
+            onChange={(e) => setSearchQuery(e.target.value)} 
+          />
+        </div>
+
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
         ) : filtered.length === 0 ? (
@@ -133,7 +145,7 @@ export default function SubjectsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map((subj) => (
-              <Card key={subj.id} className="shadow-card hover:shadow-card-hover transition-shadow flex flex-col">
+              <Card key={subj.id} className="shadow-card hover:shadow-lg transition-all duration-300 hover-lift flex flex-col">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-sm font-heading">{subj.name}</CardTitle>
@@ -145,9 +157,9 @@ export default function SubjectsPage() {
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col">
                   <p className="text-xs text-muted-foreground mb-3 flex-1">{subj.description || 'Sin descripción'}</p>
-                  <div className="flex gap-2 mt-auto">
+                  <div className="flex flex-wrap gap-2 mt-auto">
                     <Badge variant="secondary" className="text-xs">Módulo {subj.module_number}</Badge>
-                    <Badge variant="outline" className="text-xs">{getProgramName(subj.program_id)}</Badge>
+                    <Badge variant="outline" className="text-xs break-words">{getProgramName(subj.program_id)}</Badge>
                   </div>
                 </CardContent>
               </Card>

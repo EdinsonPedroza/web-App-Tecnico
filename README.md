@@ -2,31 +2,94 @@
 
 Aplicación web full-stack para gestión educativa con React (frontend), FastAPI (backend) y MongoDB.
 
+## 🎉 BASE DE DATOS CONFIGURADA
+
+✅ **La aplicación ya está conectada a MongoDB Atlas (Cluster0 → Base de datos: WebApp)**
+
+📖 **Inicio Rápido:** [INICIO_RAPIDO_WEBAPP.md](INICIO_RAPIDO_WEBAPP.md) - ¡Empieza aquí en 5 minutos!  
+📚 **Guía Completa:** [CONFIGURACION_MONGODB.md](CONFIGURACION_MONGODB.md) - Todos los detalles
+
+**⚡ Acción requerida:** Configura Network Access en MongoDB Atlas para permitir conexiones ([ver guía](INICIO_RAPIDO_WEBAPP.md#1-configurar-acceso-en-mongodb-atlas-importante))
+
+---
+
+## 🆘 ¿LAS CREDENCIALES NO FUNCIONAN?
+
+### 🚨 Si estás frustrado porque no puedes iniciar sesión:
+
+**LEE PRIMERO:** [🚀 INICIO_RAPIDO_MONGO.md](INICIO_RAPIDO_MONGO.md) ⭐ **EMPIEZA AQUÍ** (Diagnóstico en 30 segundos)
+
+**Causa más común:** MongoDB NO está conectado en Render.
+
+### 📚 Guías Completas para Resolver el Problema:
+
+1. **[🚀 INICIO_RAPIDO_MONGO.md](INICIO_RAPIDO_MONGO.md)** ⭐ **EMPIEZA AQUÍ** - Diagnóstico rápido en 30 segundos
+2. **[🔍 QUE_VER_EN_MONGO.md](QUE_VER_EN_MONGO.md)** - Guía visual: Qué DEBE verse dentro de MongoDB
+3. **[📖 RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)** - Configurar MongoDB Atlas paso a paso
+4. **[📋 USUARIOS_Y_CONTRASEÑAS.txt](USUARIOS_Y_CONTRASEÑAS.txt)** - Lista completa de credenciales
+5. **[📝 TARJETA_REFERENCIA_MONGODB.md](TARJETA_REFERENCIA_MONGODB.md)** - Referencia rápida
+
+### ✅ Credenciales de Prueba (para después de configurar MongoDB):
+
+| Rol | Pestaña | Usuario | Contraseña |
+|-----|---------|---------|------------|
+| Admin | PROFESOR | laura.torres@educando.com | Admin2026*LT |
+| Profesor | PROFESOR | diana.silva@educando.com | Profe2026*DS |
+| Estudiante | ESTUDIANTE | 1001234567 | Estud2026*SM |
+
+⚠️ **RECUERDA:** Admins y Editores usan la pestaña "PROFESOR", NO "ESTUDIANTE"
+
+---
+
 ## 🌐 ¿Quieres Subir Esto a la Web?
 
-### 🎯 LA FORMA MÁS FÁCIL: Railway (15 minutos) ⭐
+### 🎯 Despliegue en Render.com (Recomendado) ⭐
 
-**¿Todo está perfecto y quieres subirlo YA?**
+**La forma más fácil de llevar tu aplicación a producción**
 
-1. **📖 Lee:** [PASO_A_PASO_RAILWAY.md](PASO_A_PASO_RAILWAY.md) ⭐ **Empieza aquí**
-2. **🚂 Ve a:** https://railway.app
-3. **⏱️ Tiempo:** 15 minutos
-4. **💰 Costo:** ~$15/mes
+1. **📖 Lee:** [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md) - Guía paso a paso
+2. **🚀 Ve a:** https://render.com
+3. **⏱️ Tiempo:** 15-30 minutos
+4. **💰 Costo:** Desde $0 (gratuito para desarrollo)
 5. **🎉 Resultado:** Tu app online con HTTPS automático
 
-### 📚 Todas las Guías Disponibles:
+### 📚 Guías de Despliegue Disponibles:
 
-- **🎯 [RESPUESTA: La Forma MÁS FÁCIL](RESPUESTA_DEPLOYMENT.md)** - Respuesta directa a tu pregunta
-- **🚂 [Paso a Paso con Railway](PASO_A_PASO_RAILWAY.md)** ⭐ Tutorial detallado (15 min)
-- **📱 [Guía Rápida - Comparación](GUIA_RAPIDA_DESPLIEGUE.md)** - Railway vs Render vs VPS
-- **📋 [Tarjeta de Referencia](REFERENCIA_RAPIDA.md)** - Para imprimir o consulta rápida
-- **📚 [Guía Completa Técnica](DESPLIEGUE.md)** - Documentación completa y detallada
-- **✅ [Checklist Post-Deploy](CHECKLIST_POST_DEPLOY.md)** - Verifica en 5 minutos que todo quedó bien
-- **🚀 [Para 3000+ Usuarios](DEPLOYMENT_RECOMMENDATIONS.md)** - Escalamiento profesional
+- **[RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md)** - Configurar MongoDB Atlas y Render paso a paso
+- **[DESPLIEGUE.md](DESPLIEGUE.md)** - Guía técnica completa de despliegue
+- **[GUIA_PRODUCCION_3000_USUARIOS.md](GUIA_PRODUCCION_3000_USUARIOS.md)** - Escalamiento para producción (3000+ usuarios)
 
-**No importa el precio? → Usa Railway (lo más fácil)**  
-**Quieres ahorrar? → Usa VPS (~$5/mes, más técnico)**  
-**Primera vez desplegando? → Sigue el tutorial de Railway paso a paso**
+**¿Primera vez desplegando?** → Comienza con RENDER_MONGODB_SETUP.md  
+**¿Necesitas soportar muchos usuarios?** → Lee GUIA_PRODUCCION_3000_USUARIOS.md  
+**¿Quieres entender todo el proceso?** → Lee DESPLIEGUE.md
+
+---
+
+## 🏭 ¿Necesitas la Plataforma para 3000 Usuarios?
+
+### 🚀 GUÍA DE PRODUCCIÓN COMPLETA
+
+**¿La plataforma se va a caer con muchos usuarios? ¿Qué servidor necesito? ¿Cuánto cuesta?**
+
+📖 **Lee la Guía Completa:** [GUIA_PRODUCCION_3000_USUARIOS.md](GUIA_PRODUCCION_3000_USUARIOS.md)
+
+Esta guía incluye:
+- ✅ Todo lo que necesitas para soportar 3000 usuarios simultáneos
+- ✅ Configuración paso a paso del servidor y base de datos
+- ✅ Costos estimados ($30-310/mes según escala)
+- ✅ Arquitectura recomendada con escalamiento horizontal
+- ✅ Monitoreo y troubleshooting
+- ✅ Checklist completo de implementación
+
+**Resumen Rápido:**
+- **MongoDB:** Upgrade a M10 ($57/mes) - 3000+ conexiones
+- **Backend:** 4-8 instancias con múltiples workers ($28/mes)
+- **Redis:** Para sesiones distribuidas ($15/mes)
+- **CDN:** Cloudflare (gratis) para archivos estáticos
+- **Monitoreo:** New Relic o DataDog (opcional, $15/mes)
+
+**Configuración Actual:** Soporta ~200-500 usuarios simultáneos (gratis)  
+**Configuración 3000 usuarios:** ~$107/mes (M10 + 4 backends + Redis)
 
 ---
 
@@ -212,6 +275,52 @@ docker compose -f docker-compose.dev.yml down -v
 **Solución**: Los datos persisten en el volumen `mongodb_data`. Para limpiar:
 ```bash
 docker compose -f docker-compose.dev.yml down -v  # ⚠️ Esto borrará los datos
+```
+
+### Problemas con autenticación o credenciales
+
+**❌ Problema**: Las credenciales no funcionan, no puedo iniciar sesión.
+
+**🎯 Solución Rápida**: Lee [INICIO_RAPIDO_MONGO.md](INICIO_RAPIDO_MONGO.md) para diagnóstico en 30 segundos.
+
+**📖 Solución Completa**:
+
+1. **Diagnóstico rápido:** [INICIO_RAPIDO_MONGO.md](INICIO_RAPIDO_MONGO.md) - Identifica el problema en 30 seg
+2. **Ver qué hay en MongoDB:** [QUE_VER_EN_MONGO.md](QUE_VER_EN_MONGO.md) - Guía visual completa
+3. **Configurar MongoDB:** [RENDER_MONGODB_SETUP.md](RENDER_MONGODB_SETUP.md) - Setup paso a paso
+4. **Credenciales de prueba:** [USUARIOS_Y_CONTRASEÑAS.txt](USUARIOS_Y_CONTRASEÑAS.txt) - Lista completa
+
+**Causa más común en Render**: MongoDB no está conectado
+
+Pasos esenciales:
+1. ✅ Crear cuenta en MongoDB Atlas (gratis): https://www.mongodb.com/cloud/atlas/register
+2. ✅ Crear cluster M0 (512MB gratis) y usuario de base de datos
+3. ✅ Configurar `MONGO_URL` en Render → educando-backend → Environment
+4. ✅ Re-desplegar el backend
+5. ✅ Verificar logs: "MongoDB connection successful" y "Credenciales creadas para 7 usuarios"
+6. ✅ Probar login con credenciales de USUARIOS_Y_CONTRASEÑAS.txt
+
+## 🔧 Verificar Conexión a MongoDB
+
+Si tienes problemas conectándote a MongoDB (especialmente en producción), usa el script de verificación:
+
+```bash
+# Opción 1: Pasar la connection string directamente
+python backend/verify_mongodb.py "mongodb+srv://user:pass@cluster.mongodb.net/educando_db"
+
+# Opción 2: Configurar MONGO_URL en backend/.env y ejecutar
+python backend/verify_mongodb.py
+```
+
+El script verificará:
+- ✅ Que la connection string sea válida
+- ✅ Que puedas conectarte a MongoDB
+- ✅ Que los usuarios estén creados correctamente
+- ✅ El estado de las colecciones y documentos
+
+**Requisitos:**
+```bash
+pip install motor python-dotenv
 ```
 
 ## 📚 Documentación Adicional

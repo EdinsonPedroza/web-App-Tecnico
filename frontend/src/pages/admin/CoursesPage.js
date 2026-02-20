@@ -59,7 +59,11 @@ export default function CoursesPage() {
   
   // Get the selected program to determine module count
   const selectedProgram = programs.find(p => p.id === form.program_id);
-  const moduleCount = selectedProgram?.modules?.length || 0;
+  const programModuleCount = selectedProgram?.modules?.length || 0;
+  // When editing an existing course, preserve its original module count from stored module_dates
+  // so that changes to the program's module count don't affect already-created groups
+  const existingModuleCount = editing ? Object.keys(editing.module_dates || {}).length : 0;
+  const moduleCount = editing ? (existingModuleCount || programModuleCount) : programModuleCount;
   
   const formatGrupoSuggestion = (month, year, programId) => {
     if (!month || !year || !programId) return '';
@@ -322,22 +326,31 @@ export default function CoursesPage() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-base">Año</Label>
-                    <Input 
-                      type="number" 
-                      value={form.year} 
-                      onChange={(e) => {
-                        const newYear = parseInt(e.target.value) || new Date().getFullYear();
+                    <Select 
+                      value={form.year?.toString()} 
+                      onValueChange={(value) => {
+                        const newYear = parseInt(value);
                         if (form.month && newYear) {
                           const newName = `${form.month.toUpperCase()}-${newYear}`;
                           setForm({ ...form, year: newYear, name: newName });
                         } else {
                           setForm({ ...form, year: newYear });
                         }
-                      }} 
-                      placeholder="2026"
-                      min="2024"
-                      max="2030"
-                    />
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccione un año" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="2024">2024</SelectItem>
+                        <SelectItem value="2025">2025</SelectItem>
+                        <SelectItem value="2026">2026</SelectItem>
+                        <SelectItem value="2027">2027</SelectItem>
+                        <SelectItem value="2028">2028</SelectItem>
+                        <SelectItem value="2029">2029</SelectItem>
+                        <SelectItem value="2030">2030</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
             )}
@@ -354,17 +367,16 @@ export default function CoursesPage() {
                 {!editing ? 'Se genera automáticamente al seleccionar mes y año' : 'Puedes editar el nombre del grupo'}
               </p>
             </div>
-            {/* Module Dates - Show only if a program is selected and it has modules */}
             {form.program_id && moduleCount > 0 && (
               <div className="space-y-3">
-                <Label className="text-base">Fechas de Inicio y Cierre por Módulo</Label>
+                <Label className="text-base">Fechas de Inicio, Cierre y Cierre de Recuperaciones por Módulo</Label>
                 <div className="rounded-lg border p-4 space-y-4 bg-muted/20">
                   {Array(moduleCount).fill().map((_, i) => {
                     const moduleNum = i + 1;
                     return (
                       <div key={moduleNum} className="space-y-2">
                         <p className="text-sm font-semibold text-foreground">Módulo {moduleNum}</p>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-3 gap-3">
                           <div className="space-y-1">
                             <Label className="text-xs">Fecha Inicio</Label>
                             <Input 
@@ -393,13 +405,27 @@ export default function CoursesPage() {
                               placeholder="Fecha de cierre" 
                             />
                           </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Cierre Recuperaciones</Label>
+                            <Input 
+                              type="date" 
+                              value={form.module_dates[moduleNum]?.recovery_close || ''} 
+                              onChange={(e) => {
+                                const newModuleDates = { ...form.module_dates };
+                                if (!newModuleDates[moduleNum]) newModuleDates[moduleNum] = {};
+                                newModuleDates[moduleNum].recovery_close = e.target.value;
+                                setForm({ ...form, module_dates: newModuleDates });
+                              }} 
+                              placeholder="Cierre de recuperaciones" 
+                            />
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Define el período de cada módulo para este grupo
+                  Define el período de cada módulo y la fecha límite para recuperaciones
                 </p>
               </div>
             )}
