@@ -247,6 +247,171 @@ class TestModuleValidation:
             self._validate_module("1")
 
 
+class TestGetCurrentModuleFromDates:
+    """Tests for the get_current_module_from_dates utility function."""
+
+    def _get_module_from_dates(self, module_dates):
+        """Mirror of get_current_module_from_dates from server.py for unit testing."""
+        from datetime import datetime, timezone
+        if not module_dates:
+            return None
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        sorted_keys = sorted(module_dates.keys(), key=lambda k: int(k) if str(k).isdigit() else 0)
+        for mod_key in sorted_keys:
+            dates = module_dates.get(mod_key) or {}
+            start = dates.get("start")
+            end = dates.get("recovery_close") or dates.get("end")
+            if start and end and start <= today <= end:
+                return int(mod_key)
+        modules_with_start = [
+            (int(k), (module_dates.get(k) or {}).get("start"))
+            for k in sorted_keys
+            if (module_dates.get(k) or {}).get("start")
+        ]
+        if not modules_with_start:
+            return None
+        modules_with_start.sort()
+        if today < modules_with_start[0][1]:
+            return modules_with_start[0][0]
+        current = modules_with_start[0][0]
+        for mod_num, start in modules_with_start:
+            if start <= today:
+                current = mod_num
+        return current
+
+    def test_empty_module_dates_returns_none(self):
+        assert self._get_module_from_dates({}) is None
+
+    def test_none_module_dates_returns_none(self):
+        assert self._get_module_from_dates(None) is None
+
+    def test_today_in_module1_returns_1(self):
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc)
+        dates = {
+            "1": {"start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
+                  "end": (today + timedelta(days=30)).strftime("%Y-%m-%d")},
+            "2": {"start": (today + timedelta(days=31)).strftime("%Y-%m-%d"),
+                  "end": (today + timedelta(days=180)).strftime("%Y-%m-%d")},
+        }
+        assert self._get_module_from_dates(dates) == 1
+
+    def test_today_in_module2_returns_2(self):
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc)
+        dates = {
+            "1": {"start": (today - timedelta(days=180)).strftime("%Y-%m-%d"),
+                  "end": (today - timedelta(days=31)).strftime("%Y-%m-%d")},
+            "2": {"start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
+                  "end": (today + timedelta(days=30)).strftime("%Y-%m-%d")},
+        }
+        assert self._get_module_from_dates(dates) == 2
+
+    def test_before_all_modules_returns_first_module(self):
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc)
+        dates = {
+            "1": {"start": (today + timedelta(days=10)).strftime("%Y-%m-%d"),
+                  "end": (today + timedelta(days=180)).strftime("%Y-%m-%d")},
+        }
+        assert self._get_module_from_dates(dates) == 1
+
+    def test_after_all_modules_returns_last_module(self):
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc)
+        dates = {
+            "1": {"start": (today - timedelta(days=180)).strftime("%Y-%m-%d"),
+                  "end": (today - timedelta(days=60)).strftime("%Y-%m-%d")},
+            "2": {"start": (today - timedelta(days=59)).strftime("%Y-%m-%d"),
+                  "end": (today - timedelta(days=10)).strftime("%Y-%m-%d")},
+        }
+        assert self._get_module_from_dates(dates) == 2
+
+    def test_uses_recovery_close_as_end_boundary(self):
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc)
+        dates = {
+            "1": {"start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
+                  "end": (today - timedelta(days=5)).strftime("%Y-%m-%d"),
+                  "recovery_close": (today + timedelta(days=5)).strftime("%Y-%m-%d")},
+        }
+        # Today is after end but before recovery_close, so module 1 is still active
+        assert self._get_module_from_dates(dates) == 1
+
+
+class TestValidateModuleDatesOrder:
+    """Tests for the validate_module_dates_order utility function."""
+
+    def _validate_order(self, module_dates):
+        """Mirror of validate_module_dates_order from server.py for unit testing."""
+        if not module_dates or len(module_dates) < 2:
+            return None
+        sorted_keys = sorted(module_dates.keys(), key=lambda k: int(k) if str(k).isdigit() else 0)
+        for i in range(len(sorted_keys) - 1):
+            curr_key = sorted_keys[i]
+            next_key = sorted_keys[i + 1]
+            curr_dates = module_dates.get(curr_key) or {}
+            next_dates = module_dates.get(next_key) or {}
+            curr_boundary = curr_dates.get("recovery_close") or curr_dates.get("end")
+            next_start = next_dates.get("start")
+            if curr_boundary and next_start and next_start <= curr_boundary:
+                return (f"La fecha de inicio del Módulo {next_key} ({next_start}) debe ser "
+                        f"posterior al cierre de recuperaciones del Módulo {curr_key} ({curr_boundary})")
+        return None
+
+    def test_valid_order_returns_none(self):
+        dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-07-16", "end": "2026-12-31"},
+        }
+        assert self._validate_order(dates) is None
+
+    def test_single_module_returns_none(self):
+        dates = {"1": {"start": "2026-01-01", "end": "2026-06-30"}}
+        assert self._validate_order(dates) is None
+
+    def test_empty_returns_none(self):
+        assert self._validate_order({}) is None
+
+    def test_module2_starts_same_day_as_module1_recovery_close_is_invalid(self):
+        dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-07-15", "end": "2026-12-31"},
+        }
+        result = self._validate_order(dates)
+        assert result is not None
+        assert "Módulo" in result
+
+    def test_module2_starts_before_module1_end_is_invalid(self):
+        dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30"},
+            "2": {"start": "2026-06-15", "end": "2026-12-31"},
+        }
+        result = self._validate_order(dates)
+        assert result is not None
+
+    def test_module2_starts_after_module1_end_is_valid_when_no_recovery_close(self):
+        dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30"},
+            "2": {"start": "2026-07-01", "end": "2026-12-31"},
+        }
+        # Module 2 starts the day after module 1 ends → valid (strictly after)
+        result = self._validate_order(dates)
+        assert result is None
+
+    def test_valid_gap_between_modules_no_recovery_close(self):
+        dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30"},
+            "2": {"start": "2026-07-01", "end": "2026-12-31"},
+        }
+        # 2026-07-01 <= 2026-06-30 is False... wait
+        # Actually 2026-07-01 <= 2026-06-30 is False, so no error
+        # Wait, the validation checks: next_start <= curr_boundary → error
+        # 2026-07-01 <= 2026-06-30 is False → no error
+        result = self._validate_order(dates)
+        assert result is None
+
+
 # ---------------------------------------------------------------------------
 # Integration tests using FastAPI TestClient
 # ---------------------------------------------------------------------------

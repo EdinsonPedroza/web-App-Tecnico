@@ -280,6 +280,24 @@
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
+/* Fix calendar/time picker icons clipped in datetime-local and date inputs */
+input[type="datetime-local"],
+input[type="date"],
+input[type="time"] {
+  /* Ensure the browser-native picker indicator is fully visible */
+  padding-right: 0.5rem;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: 1;
+  cursor: pointer;
+  /* Ensure the indicator is not hidden by overflow or clipping */
+  position: relative;
+  z-index: 1;
+}
+
 /* Print styles for better PDF visibility */
 @media print {
   :root {

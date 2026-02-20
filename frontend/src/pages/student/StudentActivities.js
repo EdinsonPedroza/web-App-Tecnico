@@ -160,6 +160,7 @@ export default function StudentActivities() {
                         <AccordionTrigger className="flex-1 hover:no-underline py-2">
                           <div className="flex items-center gap-2 w-full">
                             <Badge variant="outline" className="shrink-0 text-xs font-mono">Act {actNum}</Badge>
+                            {act.is_recovery && <Badge variant="warning" className="shrink-0 text-xs">Recuperación</Badge>}
                             <StatusIcon className={`h-4 w-4 shrink-0 ${status.variant === 'destructive' ? 'text-destructive' : status.variant === 'success' ? 'text-success' : 'text-muted-foreground'}`} />
                             <h3 className="text-sm font-semibold truncate">{act.title}</h3>
                             <span className="ml-auto text-xs text-muted-foreground hidden sm:flex items-center gap-1">

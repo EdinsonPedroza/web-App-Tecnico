@@ -555,6 +555,63 @@ async def create_initial_data():
     logger.info(f"Modo de almacenamiento de contraseñas: {PASSWORD_STORAGE_MODE}")
 
 # --- Utility Functions ---
+def get_current_module_from_dates(module_dates: dict) -> Optional[int]:
+    """Determine the current module number based on today's date and module_dates.
+    
+    Returns the module whose date range (start to recovery_close or end) includes today.
+    If today is before all modules, returns the first module.
+    If today is after all modules, returns the last module.
+    Returns None if module_dates is empty or has no valid date ranges.
+    """
+    if not module_dates:
+        return None
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    sorted_keys = sorted(module_dates.keys(), key=lambda k: int(k) if str(k).isdigit() else 0)
+    # Check if today falls within any module's date range
+    for mod_key in sorted_keys:
+        dates = module_dates.get(mod_key) or {}
+        start = dates.get("start")
+        end = dates.get("recovery_close") or dates.get("end")
+        if start and end and start <= today <= end:
+            return int(mod_key)
+    # No direct match - find nearest module
+    modules_with_start = [(int(k), (module_dates.get(k) or {}).get("start")) for k in sorted_keys if (module_dates.get(k) or {}).get("start")]
+    if not modules_with_start:
+        return None
+    modules_with_start.sort()
+    # If today is before the first module start, use first module
+    if today < modules_with_start[0][1]:
+        return modules_with_start[0][0]
+    # Otherwise use the last module that has started
+    current = modules_with_start[0][0]
+    for mod_num, start in modules_with_start:
+        if start <= today:
+            current = mod_num
+    return current
+
+
+def validate_module_dates_order(module_dates: dict) -> Optional[str]:
+    """Validate that module N+1 starts after module N's recovery_close (or end) date.
+    
+    Returns an error message string if invalid, or None if valid.
+    """
+    if not module_dates or len(module_dates) < 2:
+        return None
+    sorted_keys = sorted(module_dates.keys(), key=lambda k: int(k) if str(k).isdigit() else 0)
+    for i in range(len(sorted_keys) - 1):
+        curr_key = sorted_keys[i]
+        next_key = sorted_keys[i + 1]
+        curr_dates = module_dates.get(curr_key) or {}
+        next_dates = module_dates.get(next_key) or {}
+        # Use recovery_close as the boundary if available, otherwise use end
+        curr_boundary = curr_dates.get("recovery_close") or curr_dates.get("end")
+        next_start = next_dates.get("start")
+        if curr_boundary and next_start and next_start <= curr_boundary:
+            return (f"La fecha de inicio del Módulo {next_key} ({next_start}) debe ser "
+                    f"posterior al cierre de recuperaciones del Módulo {curr_key} ({curr_boundary})")
+    return None
+
+
 def sanitize_string(input_str: str, max_length: int = 500) -> str:
     """Sanitize string input to prevent injection attacks"""
     if not input_str or not isinstance(input_str, str):
@@ -1421,6 +1478,31 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
     
+    # Validate: no duplicate group name for the same program
+    existing_group = await db.courses.find_one({"name": req.name, "program_id": req.program_id}, {"_id": 0, "id": 1})
+    if existing_group:
+        raise HTTPException(status_code=400, detail="Ya existe un grupo con ese nombre para este programa")
+    
+    # Validate module date order (next module must start after previous module's recovery close)
+    module_dates = req.module_dates or {}
+    date_order_error = validate_module_dates_order(module_dates)
+    if date_order_error:
+        raise HTTPException(status_code=400, detail=date_order_error)
+    
+    # Validate: a student cannot be in 2+ groups of the same program
+    student_ids_to_add = req.student_ids or []
+    if student_ids_to_add and req.program_id:
+        conflicting_groups = await db.courses.find(
+            {"program_id": req.program_id, "student_ids": {"$in": student_ids_to_add}},
+            {"_id": 0, "name": 1, "student_ids": 1}
+        ).to_list(None)
+        if conflicting_groups:
+            conflict_names = [g["name"] for g in conflicting_groups]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Uno o más estudiantes ya están inscritos en otro grupo del mismo programa: {', '.join(conflict_names)}"
+            )
+    
     # Handle subject_ids: use provided subject_ids, or convert subject_id to list if provided
     # Always ensure subject_ids is a list, never None or empty when subject_id is provided
     subject_ids = []
@@ -1437,11 +1519,11 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         "subject_ids": subject_ids if subject_ids else [],  # Always set as list, never None
         "teacher_id": req.teacher_id,
         "year": req.year,
-        "student_ids": req.student_ids if req.student_ids else [],  # Always list, never None
+        "student_ids": student_ids_to_add,
         "start_date": req.start_date,
         "end_date": req.end_date,
         "grupo": req.grupo,
-        "module_dates": req.module_dates if req.module_dates else {},
+        "module_dates": module_dates,
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -1452,15 +1534,20 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     await db.courses.insert_one(course)
     del course["_id"]
     
-    # Assign module to enrolled students based on the group's subjects
-    if course["student_ids"] and course["subject_ids"]:
-        subject_docs = await db.subjects.find(
-            {"id": {"$in": course["subject_ids"]}}, {"_id": 0, "module_number": 1}
-        ).to_list(None)
-        valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
-        if valid_modules:
-            module_number = min(valid_modules)
-            program_id = course["program_id"]
+    # Assign module to enrolled students based on module_dates (current date) or subject module_number
+    if course["student_ids"]:
+        program_id = course["program_id"]
+        # Prefer date-based module determination
+        module_number = get_current_module_from_dates(course["module_dates"])
+        if module_number is None and course["subject_ids"]:
+            # Fall back to minimum module number from subjects
+            subject_docs = await db.subjects.find(
+                {"id": {"$in": course["subject_ids"]}}, {"_id": 0, "module_number": 1}
+            ).to_list(None)
+            valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
+            if valid_modules:
+                module_number = min(valid_modules)
+        if module_number is not None:
             await db.users.update_many(
                 {"id": {"$in": course["student_ids"]}, "role": "estudiante"},
                 {"$set": {
@@ -1478,6 +1565,12 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
     
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
     
+    # Validate module date order if module_dates are being updated
+    if "module_dates" in update_data and update_data["module_dates"]:
+        date_order_error = validate_module_dates_order(update_data["module_dates"])
+        if date_order_error:
+            raise HTTPException(status_code=400, detail=date_order_error)
+    
     # Handle subject_ids backward compatibility: if subject_ids provided, also update subject_id for compatibility
     if "subject_ids" in update_data and update_data["subject_ids"]:
         if "subject_id" not in update_data:
@@ -1487,31 +1580,53 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
         if "subject_ids" not in update_data:
             update_data["subject_ids"] = [update_data["subject_id"]]
     
+    # Validate: a student cannot be in 2+ groups of the same program
+    if req.student_ids is not None and user["role"] == "admin":
+        # Get the current course to know its program
+        current_course = await db.courses.find_one({"id": course_id}, {"_id": 0, "program_id": 1})
+        if current_course:
+            program_id = current_course.get("program_id")
+            if program_id and req.student_ids:
+                conflicting_groups = await db.courses.find(
+                    {"program_id": program_id, "id": {"$ne": course_id}, "student_ids": {"$in": req.student_ids}},
+                    {"_id": 0, "name": 1, "student_ids": 1}
+                ).to_list(None)
+                if conflicting_groups:
+                    conflict_names = [g["name"] for g in conflicting_groups]
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Uno o más estudiantes ya están inscritos en otro grupo del mismo programa: {', '.join(conflict_names)}"
+                    )
+    
     result = await db.courses.update_one({"id": course_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
     updated = await db.courses.find_one({"id": course_id}, {"_id": 0})
     
-    # Update module for enrolled students when student_ids or subject_ids change
+    # Update module for enrolled students when student_ids or module_dates change
     if updated and req.student_ids is not None:
-        subject_ids_for_module = updated.get("subject_ids") or []
-        if subject_ids_for_module:
-            subject_docs = await db.subjects.find(
-                {"id": {"$in": subject_ids_for_module}}, {"_id": 0, "module_number": 1}
-            ).to_list(None)
-            valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
-            if valid_modules:
-                module_number = min(valid_modules)
-                program_id = updated.get("program_id", "")
-                student_ids = updated.get("student_ids") or []
-                if student_ids:
-                    await db.users.update_many(
-                        {"id": {"$in": student_ids}, "role": "estudiante"},
-                        {"$set": {
-                            "module": module_number,
-                            f"program_modules.{program_id}": module_number
-                        }}
-                    )
+        program_id = updated.get("program_id", "")
+        student_ids = updated.get("student_ids") or []
+        if student_ids:
+            # Prefer date-based module determination
+            module_number = get_current_module_from_dates(updated.get("module_dates") or {})
+            if module_number is None:
+                subject_ids_for_module = updated.get("subject_ids") or []
+                if subject_ids_for_module:
+                    subject_docs = await db.subjects.find(
+                        {"id": {"$in": subject_ids_for_module}}, {"_id": 0, "module_number": 1}
+                    ).to_list(None)
+                    valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
+                    if valid_modules:
+                        module_number = min(valid_modules)
+            if module_number is not None:
+                await db.users.update_many(
+                    {"id": {"$in": student_ids}, "role": "estudiante"},
+                    {"$set": {
+                        "module": module_number,
+                        f"program_modules.{program_id}": module_number
+                    }}
+                )
     
     return updated
 
