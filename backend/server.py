@@ -2625,6 +2625,16 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
     
+    # Build a map of student_id -> cedula for all students referenced in failed records
+    student_ids_in_records = list({r["student_id"] for r in failed_records})
+    cedula_map = {}
+    if student_ids_in_records:
+        student_docs = await db.users.find(
+            {"id": {"$in": student_ids_in_records}, "role": "estudiante"},
+            {"_id": 0, "id": 1, "cedula": 1}
+        ).to_list(len(student_ids_in_records))
+        cedula_map = {s["id"]: s.get("cedula") for s in student_docs}
+    
     # Organize by student
     students_map = {}
     for record in failed_records:
@@ -2633,6 +2643,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             students_map[student_id] = {
                 "student_id": student_id,
                 "student_name": record["student_name"],
+                "student_cedula": cedula_map.get(student_id),
                 "failed_subjects": []
             }
         
@@ -2702,6 +2713,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     students_map[student_id] = {
                         "student_id": student_id,
                         "student_name": student.get("name", "Desconocido"),
+                        "student_cedula": student.get("cedula"),
                         "failed_subjects": []
                     }
                 
