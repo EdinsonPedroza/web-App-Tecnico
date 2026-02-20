@@ -205,9 +205,20 @@ export default function CoursesPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('¿Eliminar este curso?')) return;
+    const course = courses.find(c => c.id === id);
+    const studentCount = course?.student_ids?.length || 0;
+    if (studentCount > 0) {
+      if (!window.confirm(
+        `⚠️ ADVERTENCIA: Este grupo tiene ${studentCount} estudiante(s) inscrito(s).\n\nSolo se puede eliminar si todos los estudiantes han egresado. Si hay estudiantes activos, el sistema rechazará la eliminación.\n\n¿Deseas continuar con el intento de eliminación?`
+      )) return;
+      if (!window.confirm(
+        `Segunda confirmación requerida.\n\n¿Estás SEGURO de que deseas eliminar el grupo "${course?.name}"?\n\nEsta acción no se puede deshacer.`
+      )) return;
+    } else {
+      if (!window.confirm('¿Eliminar este curso?')) return;
+    }
     try { await api.delete(`/courses/${id}`); toast.success('Curso eliminado'); fetchData(); }
-    catch (err) { toast.error('Error eliminando curso'); }
+    catch (err) { toast.error('Error eliminando curso: ' + (err.response?.data?.detail || err.message)); }
   };
 
   return (

@@ -335,6 +335,18 @@ pip install motor python-dotenv
 - **Producción**: Usa `docker-compose.yml` para build optimizado
 - Los cambios en `package.json` o `requirements.txt` requieren reconstruir: `docker compose -f docker-compose.dev.yml up --build`
 
+## ⏰ Procesos Automáticos (Jobs Nocturnos)
+
+El backend ejecuta un job nocturno que:
+- Cierra módulos automáticamente cuando la fecha configurada ha pasado.
+- Remueve del grupo a estudiantes cuya ventana de recuperación (`recovery_close`) venció sin completar la recuperación.
+- Marca como `retirado` a los estudiantes afectados.
+
+**Horario:** **02:30 AM UTC** diariamente.
+**Zona horaria:** UTC (se recomienda configurar el servidor en UTC en producción).
+
+Si necesitas ajustar la hora, modifica el parámetro `CronTrigger(hour=2, minute=30)` en `backend/server.py`.
+
 ---
 
 ¡Feliz desarrollo! 🎉
