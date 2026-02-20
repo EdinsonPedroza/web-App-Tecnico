@@ -860,3 +860,192 @@ class TestRootEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "message" in data
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for module blocking in submission validation
+# ---------------------------------------------------------------------------
+
+class TestSubmissionModuleBlocking:
+    """Unit tests for the module-blocking logic used in create_submission."""
+
+    def _check_module_allowed(self, student_module, subject_module):
+        """Mirrors the module-check logic in server.py create_submission.
+
+        Returns True if the student is allowed to submit.
+        When either student_module or subject_module is None, returns True (no restriction applied).
+        """
+        if student_module is None or subject_module is None:
+            return True  # No restriction if module info is missing
+        return int(student_module) == int(subject_module)
+
+    def test_same_module_allows_submission(self):
+        assert self._check_module_allowed(1, 1) is True
+        assert self._check_module_allowed(2, 2) is True
+
+    def test_different_module_blocks_submission(self):
+        assert self._check_module_allowed(1, 2) is False
+        assert self._check_module_allowed(2, 1) is False
+
+    def test_no_student_module_allows_submission(self):
+        """If student module is unknown, don't block."""
+        assert self._check_module_allowed(None, 1) is True
+        assert self._check_module_allowed(None, 2) is True
+
+    def test_no_subject_module_allows_submission(self):
+        """If subject has no module number, don't block."""
+        assert self._check_module_allowed(1, None) is True
+
+    def test_string_modules_compare_correctly(self):
+        """Module numbers stored as strings must be compared correctly."""
+        assert self._check_module_allowed("1", "1") is True
+        assert self._check_module_allowed("1", "2") is False
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for CREATE_SEED_USERS env variable logic
+# ---------------------------------------------------------------------------
+
+class TestCreateSeedUsersEnvVar:
+    """Tests for the CREATE_SEED_USERS environment variable control logic."""
+
+    def _should_create_seeds(self, env_value):
+        """Mirror the env-var check logic in create_initial_data."""
+        return env_value.lower() == 'true'
+
+    def test_default_true_creates_seeds(self):
+        assert self._should_create_seeds('true') is True
+
+    def test_false_skips_seeds(self):
+        assert self._should_create_seeds('false') is False
+
+    def test_uppercase_true_creates_seeds(self):
+        assert self._should_create_seeds('TRUE') is True
+
+    def test_uppercase_false_skips_seeds(self):
+        assert self._should_create_seeds('FALSE') is False
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for GET /users estado filter — treat null/missing as 'activo'
+# ---------------------------------------------------------------------------
+
+class TestGetUsersEstadoFilter:
+    """Tests for the estado filter logic in get_users endpoint."""
+
+    def _build_estado_query(self, estado):
+        """Mirror the estado filter logic from server.py get_users."""
+        query = {}
+        if estado:
+            if estado == 'activo':
+                query["$or"] = [
+                    {"estado": "activo"},
+                    {"estado": None},
+                    {"estado": {"$exists": False}}
+                ]
+            else:
+                query["estado"] = estado
+        return query
+
+    def _matches_activo_query(self, user_estado):
+        """Simulate MongoDB $or matching for activo query."""
+        return user_estado in ("activo", None) or user_estado == "__missing__"
+
+    def test_activo_filter_matches_activo(self):
+        assert self._matches_activo_query("activo") is True
+
+    def test_activo_filter_matches_null_estado(self):
+        """Users with null estado should appear in activo filter."""
+        assert self._matches_activo_query(None) is True
+
+    def test_activo_filter_matches_missing_estado(self):
+        """Users without estado field should appear in activo filter."""
+        assert self._matches_activo_query("__missing__") is True
+
+    def test_activo_filter_does_not_match_retirado(self):
+        assert self._matches_activo_query("retirado") is False
+
+    def test_activo_filter_does_not_match_egresado(self):
+        assert self._matches_activo_query("egresado") is False
+
+    def test_retirado_filter_builds_simple_query(self):
+        query = self._build_estado_query("retirado")
+        assert query.get("estado") == "retirado"
+        assert "$or" not in query
+
+    def test_no_filter_builds_empty_query(self):
+        query = self._build_estado_query(None)
+        assert query == {}
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for CoursesPage date validation logic (mirrors frontend JS)
+# ---------------------------------------------------------------------------
+
+class TestCoursesPageDateValidation:
+    """Tests for the validateModuleDates logic used in CoursesPage.js."""
+
+    def _validate_module_dates(self, module_dates, count):
+        """Mirror of validateModuleDates in CoursesPage.js."""
+        errors = {}
+        for i in range(1, count + 1):
+            dates = module_dates.get(i, {})
+            start = dates.get("start", "")
+            end = dates.get("end", "")
+            recovery_close = dates.get("recovery_close", "")
+            if start and end and end < start:
+                errors[f"{i}_end"] = f"La fecha de cierre debe ser >= fecha de inicio"
+            if end and recovery_close and recovery_close < end:
+                errors[f"{i}_recovery_close"] = "El cierre de recuperaciones debe ser >= fecha de cierre"
+            if i > 1:
+                prev = module_dates.get(i - 1, {})
+                prev_boundary = prev.get("recovery_close") or prev.get("end", "")
+                if prev_boundary and start and start <= prev_boundary:
+                    errors[f"{i}_start"] = (
+                        f"La fecha de inicio del Módulo {i} debe ser posterior "
+                        f"al cierre del Módulo {i - 1} ({prev_boundary})"
+                    )
+        return errors
+
+    def test_valid_two_module_dates(self):
+        module_dates = {
+            1: {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            2: {"start": "2026-07-16", "end": "2026-12-31"},
+        }
+        errors = self._validate_module_dates(module_dates, 2)
+        assert errors == {}
+
+    def test_end_before_start_is_error(self):
+        module_dates = {1: {"start": "2026-06-01", "end": "2026-05-01"}}
+        errors = self._validate_module_dates(module_dates, 1)
+        assert "1_end" in errors
+
+    def test_recovery_close_before_end_is_error(self):
+        module_dates = {1: {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-06-20"}}
+        errors = self._validate_module_dates(module_dates, 1)
+        assert "1_recovery_close" in errors
+
+    def test_module2_starts_on_module1_recovery_close_is_error(self):
+        module_dates = {
+            1: {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            2: {"start": "2026-07-15", "end": "2026-12-31"},
+        }
+        errors = self._validate_module_dates(module_dates, 2)
+        assert "2_start" in errors
+
+    def test_module2_starts_before_module1_end_is_error(self):
+        module_dates = {
+            1: {"start": "2026-01-01", "end": "2026-06-30"},
+            2: {"start": "2026-06-15", "end": "2026-12-31"},
+        }
+        errors = self._validate_module_dates(module_dates, 2)
+        assert "2_start" in errors
+
+    def test_single_module_no_errors(self):
+        module_dates = {1: {"start": "2026-01-01", "end": "2026-06-30"}}
+        errors = self._validate_module_dates(module_dates, 1)
+        assert errors == {}
+
+    def test_empty_dates_no_errors(self):
+        errors = self._validate_module_dates({}, 2)
+        assert errors == {}

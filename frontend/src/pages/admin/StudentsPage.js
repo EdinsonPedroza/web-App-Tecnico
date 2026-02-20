@@ -279,7 +279,9 @@ export default function StudentsPage() {
         toast.success('Estudiante creado');
       }
 
-      // Update course enrollments
+      // Update course enrollments — handle failures independently so a created student
+      // is never silently lost if a particular enrollment request fails.
+      const enrollmentErrors = [];
       for (const course of courses) {
         const isEnrolled = (course.student_ids || []).includes(studentId);
         const shouldBeEnrolled = (form.course_ids || []).includes(course.id);
@@ -287,16 +289,33 @@ export default function StudentsPage() {
         if (isEnrolled && !shouldBeEnrolled) {
           // Remove from course
           const newIds = (course.student_ids || []).filter(id => id !== studentId);
-          await api.put(`/courses/${course.id}`, { student_ids: newIds });
+          try {
+            await api.put(`/courses/${course.id}`, { student_ids: newIds });
+          } catch (enrollErr) {
+            enrollmentErrors.push(`Error al desinscribir del grupo "${course.name}": ${enrollErr.response?.data?.detail || enrollErr.message}`);
+          }
         } else if (!isEnrolled && shouldBeEnrolled) {
           // Add to course
           const newIds = [...(course.student_ids || []), studentId];
-          await api.put(`/courses/${course.id}`, { student_ids: newIds });
+          try {
+            await api.put(`/courses/${course.id}`, { student_ids: newIds });
+          } catch (enrollErr) {
+            enrollmentErrors.push(`Inscripción en grupo "${course.name}" fallida: ${enrollErr.response?.data?.detail || enrollErr.message}`);
+          }
         }
       }
 
       setDialogOpen(false);
       fetchData();
+
+      // Show enrollment errors as warnings after the dialog closes so the user knows
+      // the student was saved but some enrollments could not be completed.
+      if (enrollmentErrors.length > 0) {
+        const suffix = editing ? '' : ' (estudiante quedó creado sin inscribir en ese grupo)';
+        enrollmentErrors.forEach(msg => {
+          toast.warning(msg + suffix, { duration: 8000 });
+        });
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error guardando estudiante');
     } finally {
