@@ -620,6 +620,21 @@ def get_current_module_from_dates(module_dates: dict) -> Optional[int]:
     return current
 
 
+def can_enroll_in_course(course: dict) -> bool:
+    """Check if enrollment is still open for a course.
+
+    Enrollment is allowed only if today is strictly before module 1's start date.
+    If no module 1 start date is defined, enrollment is always allowed.
+    """
+    module_dates = course.get("module_dates") or {}
+    mod1_dates = module_dates.get("1") or module_dates.get(1) or {}
+    mod1_start = mod1_dates.get("start")
+    if not mod1_start:
+        return True
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return today < mod1_start
+
+
 def validate_module_dates_order(module_dates: dict) -> Optional[str]:
     """Validate that module N+1 starts after module N's recovery_close (or end) date.
     
@@ -1534,8 +1549,17 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     if date_order_error:
         raise HTTPException(status_code=400, detail=date_order_error)
     
-    # Validate: a student cannot be in 2+ groups of the same program
+    # Validate enrollment deadline: only allow students before module 1 starts
     student_ids_to_add = req.student_ids or []
+    if student_ids_to_add:
+        # Build a temporary course-like dict to check the enrollment window
+        if not can_enroll_in_course({"module_dates": module_dates}):
+            raise HTTPException(
+                status_code=400,
+                detail="No se puede matricular estudiantes: el período de matrícula ha cerrado (Módulo 1 ya inició)"
+            )
+
+    # Validate: a student cannot be in 2+ groups of the same program
     if student_ids_to_add and req.program_id:
         conflicting_groups = await db.courses.find(
             {"program_id": req.program_id, "student_ids": {"$in": student_ids_to_add}},
@@ -1627,9 +1651,18 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
     
     # Validate: a student cannot be in 2+ groups of the same program
     if req.student_ids is not None and user["role"] == "admin":
-        # Get the current course to know its program
-        current_course = await db.courses.find_one({"id": course_id}, {"_id": 0, "program_id": 1})
+        # Get the current course to know its program, existing student list, and module_dates
+        current_course = await db.courses.find_one({"id": course_id}, {"_id": 0, "program_id": 1, "student_ids": 1, "module_dates": 1})
         if current_course:
+            # Check enrollment deadline: only allow new students before module 1 starts
+            current_student_ids = set(current_course.get("student_ids") or [])
+            newly_added_ids = set(req.student_ids) - current_student_ids
+            if newly_added_ids and not can_enroll_in_course(current_course):
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede matricular estudiantes: el período de matrícula ha cerrado (Módulo 1 ya inició)"
+                )
+
             program_id = current_course.get("program_id")
             if program_id and req.student_ids:
                 conflicting_groups = await db.courses.find(

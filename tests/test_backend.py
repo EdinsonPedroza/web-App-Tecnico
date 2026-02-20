@@ -413,6 +413,123 @@ class TestValidateModuleDatesOrder:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests for can_enroll_in_course helper
+# ---------------------------------------------------------------------------
+
+class TestCanEnrollInCourse:
+    """Tests for the can_enroll_in_course enrollment deadline check."""
+
+    def _can_enroll(self, course):
+        """Mirror of can_enroll_in_course from server.py for unit testing."""
+        from datetime import datetime, timezone
+        module_dates = course.get("module_dates") or {}
+        mod1_dates = module_dates.get("1") or module_dates.get(1) or {}
+        mod1_start = mod1_dates.get("start")
+        if not mod1_start:
+            return True
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return today < mod1_start
+
+    def test_no_module_dates_allows_enrollment(self):
+        """If no module_dates defined, enrollment is always allowed."""
+        assert self._can_enroll({}) is True
+        assert self._can_enroll({"module_dates": {}}) is True
+        assert self._can_enroll({"module_dates": None}) is True
+
+    def test_no_module1_start_allows_enrollment(self):
+        """If module 1 has no start date, enrollment is always allowed."""
+        course = {"module_dates": {"1": {"end": "2026-12-31"}}}
+        assert self._can_enroll(course) is True
+
+    def test_before_module1_start_allows_enrollment(self):
+        """Enrollment allowed when today < module1.start."""
+        from datetime import datetime, timezone, timedelta
+        future_start = (datetime.now(timezone.utc) + timedelta(days=10)).strftime("%Y-%m-%d")
+        course = {"module_dates": {"1": {"start": future_start, "end": "2099-12-31"}}}
+        assert self._can_enroll(course) is True
+
+    def test_on_module1_start_blocks_enrollment(self):
+        """Enrollment blocked when today == module1.start."""
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        course = {"module_dates": {"1": {"start": today, "end": "2099-12-31"}}}
+        assert self._can_enroll(course) is False
+
+    def test_after_module1_start_blocks_enrollment(self):
+        """Enrollment blocked when today > module1.start."""
+        from datetime import datetime, timezone, timedelta
+        past_start = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
+        course = {"module_dates": {"1": {"start": past_start, "end": "2099-12-31"}}}
+        assert self._can_enroll(course) is False
+
+    def test_integer_key_module1_also_checked(self):
+        """Module dates with integer key 1 should also be checked."""
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        course = {"module_dates": {1: {"start": today}}}
+        assert self._can_enroll(course) is False
+
+    def test_only_module2_dates_allows_enrollment(self):
+        """If only module 2 dates are defined (no module 1), enrollment is allowed."""
+        course = {"module_dates": {"2": {"start": "2026-01-01", "end": "2026-12-31"}}}
+        assert self._can_enroll(course) is True
+
+
+class TestEnrollmentModuleAssignment:
+    """Tests for automatic program_modules assignment when enrolling."""
+
+    def _get_module_for_enrollment(self, module_dates):
+        """Determine the module a student should be assigned at enrollment time.
+
+        Since enrollment is only allowed before M1 starts, the module will always
+        be 1 (the first module, returned when today is before module1.start).
+        """
+        from datetime import datetime, timezone
+        if not module_dates:
+            return None
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        sorted_keys = sorted(module_dates.keys(), key=lambda k: int(k) if str(k).isdigit() else 0)
+        for mod_key in sorted_keys:
+            dates = module_dates.get(mod_key) or {}
+            start = dates.get("start")
+            end = dates.get("recovery_close") or dates.get("end")
+            if start and end and start <= today <= end:
+                return int(mod_key)
+        modules_with_start = [
+            (int(k), (module_dates.get(k) or {}).get("start"))
+            for k in sorted_keys
+            if (module_dates.get(k) or {}).get("start")
+        ]
+        if not modules_with_start:
+            return None
+        modules_with_start.sort()
+        if today < modules_with_start[0][1]:
+            return modules_with_start[0][0]
+        current = modules_with_start[0][0]
+        for mod_num, start in modules_with_start:
+            if start <= today:
+                current = mod_num
+        return current
+
+    def test_before_module1_assigns_module1(self):
+        """When enrolling before M1 starts, student should be assigned module 1."""
+        from datetime import datetime, timezone, timedelta
+        future = datetime.now(timezone.utc) + timedelta(days=10)
+        module_dates = {
+            "1": {
+                "start": future.strftime("%Y-%m-%d"),
+                "end": (future + timedelta(days=180)).strftime("%Y-%m-%d"),
+            }
+        }
+        assert self._get_module_for_enrollment(module_dates) == 1
+
+    def test_no_module_dates_returns_none(self):
+        """Without module_dates, no module can be determined."""
+        assert self._get_module_for_enrollment({}) is None
+        assert self._get_module_for_enrollment(None) is None
+
+
+# ---------------------------------------------------------------------------
 # Integration tests using FastAPI TestClient
 # ---------------------------------------------------------------------------
 
