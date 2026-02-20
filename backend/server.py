@@ -118,7 +118,7 @@ scheduler = AsyncIOScheduler()
 async def check_and_close_modules():
     """
     Check all programs and courses for module close dates that have passed and automatically close them.
-    This function runs daily at 00:01 AM.
+    This function runs daily at 02:30 AM UTC.
     Also checks recovery close dates: students who haven't passed recovery by the deadline are removed.
     """
     try:
@@ -224,10 +224,10 @@ async def check_and_close_modules():
                         {"$pull": {"student_ids": student_id}}
                     )
                     
-                    # Mark record as closed/expired
+                    # Mark record as closed/expired (also marks as rejected to hide from panel)
                     await db.failed_subjects.update_one(
                         {"id": record["id"]},
-                        {"$set": {"recovery_expired": True, "expired_at": now.isoformat()}}
+                        {"$set": {"recovery_expired": True, "recovery_rejected": True, "expired_at": now.isoformat()}}
                     )
                     
                     # Mark student as retirado for this program (do not delete)
@@ -340,13 +340,13 @@ async def startup_event():
         # Note: Uses server's local timezone by default. For production, consider explicitly setting timezone.
         scheduler.add_job(
             check_and_close_modules,
-            CronTrigger(hour=0, minute=1),  # Run at 00:01 AM daily (server local time)
+            CronTrigger(hour=2, minute=30),  # Run at 02:30 AM daily (UTC)
             id='auto_close_modules',
             name='Automatic Module Closure',
             replace_existing=True
         )
         scheduler.start()
-        logger.info("Automatic module closure scheduler started (runs daily at 00:01 AM server local time)")
+        logger.info("Automatic module closure scheduler started (runs daily at 02:30 AM UTC)")
         
         logger.info("Application startup completed successfully")
     except Exception as e:
@@ -672,6 +672,28 @@ def can_enroll_in_course(course: dict) -> bool:
         return True
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return today < mod1_start
+
+
+def can_enroll_student_in_course(course: dict, student_module: Optional[int]) -> bool:
+    """Check if a student with a given module can enroll in a course.
+
+    Rules (per requirement 2.2):
+    - Module 1 students (or no module): today < start_mod1
+    - Module 2 students: recovery_close_mod1 <= today < start_mod2
+    If the relevant date boundaries are not set, enrollment is always allowed.
+    """
+    module_dates = course.get("module_dates") or {}
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if student_module == 2:
+        mod1_dates = module_dates.get("1") or module_dates.get(1) or {}
+        mod2_dates = module_dates.get("2") or module_dates.get(2) or {}
+        recovery_close_mod1 = mod1_dates.get("recovery_close")
+        start_mod2 = mod2_dates.get("start")
+        if not recovery_close_mod1 or not start_mod2:
+            return True  # No boundary defined, allow enrollment
+        return recovery_close_mod1 <= today < start_mod2
+    else:
+        return can_enroll_in_course(course)
 
 
 def validate_module_dates_order(module_dates: dict) -> Optional[str]:
@@ -1653,6 +1675,12 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                     prog_modules = s.get("program_modules") or {}
                     status = prog_statuses.get(req.program_id)
                     student_module = prog_modules.get(req.program_id)
+                    # Check M2 enrollment window for module-2 students.
+                    # A module-2 student is allowed to enroll (or re-enroll) during the M2 window
+                    # (recovery_close_mod1 <= today < start_mod2) regardless of their retirado status.
+                    # Double-enrollment across groups is prevented by the conflicting_groups check below.
+                    if student_module == 2 and can_enroll_student_in_course({"module_dates": module_dates}, 2):
+                        continue  # M2 window enrollment allowed
                     if status == "retirado" and student_module is not None and student_module == course_current_module:
                         continue  # Reingreso allowed
                     raise HTTPException(
@@ -1660,7 +1688,8 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                         detail=(
                             "No se puede matricular estudiantes: el período de matrícula ha cerrado "
                             "(Módulo 1 ya inició). Solo se permite reingreso de estudiantes retirados "
-                            "en el módulo actual del grupo."
+                            "en el módulo actual del grupo, o inscripción de estudiantes de Módulo 2 "
+                            "durante la ventana de inscripción (entre cierre de recuperaciones M1 e inicio M2)."
                         )
                     )
             else:
@@ -1777,6 +1806,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                         {"_id": 0, "id": 1, "program_statuses": 1, "program_modules": 1}
                     ).to_list(None)
                     student_map = {s["id"]: s for s in students_info}
+                    current_module_dates = current_course.get("module_dates") or {}
                     for sid in newly_added_ids:
                         s = student_map.get(sid)
                         if not s:
@@ -1785,6 +1815,12 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                         prog_modules = s.get("program_modules") or {}
                         status = prog_statuses.get(prog_id)
                         student_module = prog_modules.get(prog_id)
+                        # Check M2 enrollment window for module-2 students.
+                        # A module-2 student is allowed to enroll (or re-enroll) during the M2 window
+                        # (recovery_close_mod1 <= today < start_mod2) regardless of their retirado status.
+                        # Double-enrollment across groups is prevented by the conflicting_groups check.
+                        if student_module == 2 and can_enroll_student_in_course({"module_dates": current_module_dates}, 2):
+                            continue  # M2 window enrollment allowed
                         if status == "retirado" and student_module is not None and student_module == course_current_module:
                             continue  # Reingreso allowed
                         raise HTTPException(
@@ -1792,7 +1828,8 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                             detail=(
                                 "No se puede matricular estudiantes: el período de matrícula ha cerrado "
                                 "(Módulo 1 ya inició). Solo se permite reingreso de estudiantes retirados "
-                                "en el módulo actual del grupo."
+                                "en el módulo actual del grupo, o inscripción de estudiantes de Módulo 2 "
+                                "durante la ventana de inscripción (entre cierre de recuperaciones M1 e inicio M2)."
                             )
                         )
                 else:
@@ -2618,21 +2655,33 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede acceder al panel de recuperaciones")
     
-    # Get all failed subject records
-    failed_records = await db.failed_subjects.find({}, {"_id": 0}).to_list(1000)
+    # Get all failed subject records: exclude explicitly rejected ones (recovery_rejected=True)
+    failed_records = await db.failed_subjects.find(
+        {"recovery_rejected": {"$ne": True}}, {"_id": 0}
+    ).to_list(1000)
     
     # Get all programs for reference
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
+    
+    # Batch-fetch real student data (for up-to-date name and cedula)
+    all_student_ids = list({r["student_id"] for r in failed_records})
+    student_docs = await db.users.find(
+        {"id": {"$in": all_student_ids}, "role": "estudiante"},
+        {"_id": 0, "id": 1, "name": 1, "cedula": 1}
+    ).to_list(None)
+    student_info_map = {s["id"]: s for s in student_docs}
     
     # Organize by student
     students_map = {}
     for record in failed_records:
         student_id = record["student_id"]
         if student_id not in students_map:
+            real_student = student_info_map.get(student_id) or {}
             students_map[student_id] = {
                 "student_id": student_id,
-                "student_name": record["student_name"],
+                "student_name": real_student.get("name") or record.get("student_name", "Desconocido"),
+                "cedula": real_student.get("cedula"),
                 "failed_subjects": []
             }
         
@@ -2702,6 +2751,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     students_map[student_id] = {
                         "student_id": student_id,
                         "student_name": student.get("name", "Desconocido"),
+                        "cedula": student.get("cedula"),
                         "failed_subjects": []
                     }
                 
@@ -2775,6 +2825,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             "module_number": module_number,
             "average_grade": round(average, 2),
             "recovery_approved": approve,
+            "recovery_rejected": not approve,
             "recovery_completed": False,
             "approved_by": user["id"],
             "approved_at": datetime.now(timezone.utc).isoformat(),
@@ -2838,13 +2889,16 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
     
     # Update approval status
+    update_set = {
+        "recovery_approved": approve,
+        "approved_by": user["id"],
+        "approved_at": datetime.now(timezone.utc).isoformat()
+    }
+    if not approve:
+        update_set["recovery_rejected"] = True
     await db.failed_subjects.update_one(
         {"id": failed_subject_id},
-        {"$set": {
-            "recovery_approved": approve,
-            "approved_by": user["id"],
-            "approved_at": datetime.now(timezone.utc).isoformat()
-        }}
+        {"$set": update_set}
     )
     
     # If approved, also enable recovery in the recovery_enabled collection

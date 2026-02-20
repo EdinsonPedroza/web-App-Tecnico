@@ -1049,3 +1049,167 @@ class TestCoursesPageDateValidation:
     def test_empty_dates_no_errors(self):
         errors = self._validate_module_dates({}, 2)
         assert errors == {}
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for can_enroll_student_in_course (per-student M1/M2 window rules)
+# ---------------------------------------------------------------------------
+
+class TestCanEnrollStudentInCourse:
+    """Tests for the can_enroll_student_in_course per-student enrollment check."""
+
+    def _can_enroll_student(self, course, student_module):
+        """Mirror of can_enroll_student_in_course from server.py."""
+        from datetime import datetime, timezone
+        module_dates = course.get("module_dates") or {}
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if student_module == 2:
+            mod1_dates = module_dates.get("1") or module_dates.get(1) or {}
+            mod2_dates = module_dates.get("2") or module_dates.get(2) or {}
+            recovery_close_mod1 = mod1_dates.get("recovery_close")
+            start_mod2 = mod2_dates.get("start")
+            if not recovery_close_mod1 or not start_mod2:
+                return True
+            return recovery_close_mod1 <= today < start_mod2
+        else:
+            mod1_dates = module_dates.get("1") or module_dates.get(1) or {}
+            mod1_start = mod1_dates.get("start")
+            if not mod1_start:
+                return True
+            return today < mod1_start
+
+    def test_m1_student_before_start_can_enroll(self):
+        from datetime import datetime, timezone, timedelta
+        future = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%d")
+        course = {"module_dates": {"1": {"start": future}}}
+        assert self._can_enroll_student(course, 1) is True
+
+    def test_m1_student_on_start_cannot_enroll(self):
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        course = {"module_dates": {"1": {"start": today}}}
+        assert self._can_enroll_student(course, 1) is False
+
+    def test_m1_student_after_start_cannot_enroll(self):
+        from datetime import datetime, timezone, timedelta
+        past = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
+        course = {"module_dates": {"1": {"start": past}}}
+        assert self._can_enroll_student(course, 1) is False
+
+    def test_m2_student_in_window_can_enroll(self):
+        """M2 student can enroll when recovery_close_mod1 <= today < start_mod2."""
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc)
+        yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        tomorrow = (today + timedelta(days=1)).strftime("%Y-%m-%d")
+        course = {"module_dates": {
+            "1": {"recovery_close": yesterday},
+            "2": {"start": tomorrow}
+        }}
+        assert self._can_enroll_student(course, 2) is True
+
+    def test_m2_student_on_recovery_close_can_enroll(self):
+        """M2 window is inclusive of recovery_close date."""
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        future = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%d")
+        course = {"module_dates": {
+            "1": {"recovery_close": today},
+            "2": {"start": future}
+        }}
+        assert self._can_enroll_student(course, 2) is True
+
+    def test_m2_student_before_window_cannot_enroll(self):
+        """M2 student cannot enroll before recovery_close_mod1."""
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc)
+        tomorrow = (today + timedelta(days=1)).strftime("%Y-%m-%d")
+        future = (today + timedelta(days=30)).strftime("%Y-%m-%d")
+        course = {"module_dates": {
+            "1": {"recovery_close": tomorrow},
+            "2": {"start": future}
+        }}
+        assert self._can_enroll_student(course, 2) is False
+
+    def test_m2_student_on_start_mod2_cannot_enroll(self):
+        """M2 window is exclusive of start_mod2 (today must be < start_mod2)."""
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        past = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
+        course = {"module_dates": {
+            "1": {"recovery_close": past},
+            "2": {"start": today}
+        }}
+        assert self._can_enroll_student(course, 2) is False
+
+    def test_m2_student_after_window_cannot_enroll(self):
+        """M2 student cannot enroll after start_mod2."""
+        from datetime import datetime, timezone, timedelta
+        today = datetime.now(timezone.utc)
+        past1 = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+        past2 = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        course = {"module_dates": {
+            "1": {"recovery_close": past1},
+            "2": {"start": past2}
+        }}
+        assert self._can_enroll_student(course, 2) is False
+
+    def test_m2_student_no_recovery_close_can_enroll(self):
+        """If no recovery_close defined, M2 enrollment is always allowed."""
+        course = {"module_dates": {"1": {"end": "2026-06-30"}, "2": {"start": "2099-12-31"}}}
+        assert self._can_enroll_student(course, 2) is True
+
+    def test_m2_student_no_start_mod2_can_enroll(self):
+        """If start_mod2 not defined, M2 enrollment is always allowed."""
+        course = {"module_dates": {"1": {"recovery_close": "2026-07-15"}, "2": {}}}
+        assert self._can_enroll_student(course, 2) is True
+
+    def test_m2_student_no_module_dates_can_enroll(self):
+        """If no module_dates defined at all, enrollment is always allowed."""
+        assert self._can_enroll_student({}, 2) is True
+        assert self._can_enroll_student({"module_dates": {}}, 2) is True
+
+    def test_m1_student_no_module_dates_can_enroll(self):
+        """If no module_dates defined, M1 enrollment is always allowed."""
+        assert self._can_enroll_student({}, 1) is True
+        assert self._can_enroll_student({"module_dates": {"1": {}}}, 1) is True
+
+    def test_none_module_falls_back_to_m1_rule(self):
+        """student_module=None uses M1 rule (today < start_mod1)."""
+        from datetime import datetime, timezone, timedelta
+        future = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%d")
+        course = {"module_dates": {"1": {"start": future}}}
+        assert self._can_enroll_student(course, None) is True
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for recovery rejection tracking
+# ---------------------------------------------------------------------------
+
+class TestRecoveryRejectionTracking:
+    """Tests for recovery_rejected flag logic in the recovery panel."""
+
+    def _should_show_in_panel(self, record):
+        """Mirror of the recovery panel filter: exclude rejected records."""
+        return not record.get("recovery_rejected", False)
+
+    def test_pending_record_shown_in_panel(self):
+        record = {"recovery_approved": False, "recovery_completed": False}
+        assert self._should_show_in_panel(record) is True
+
+    def test_approved_in_progress_shown_in_panel(self):
+        record = {"recovery_approved": True, "recovery_completed": False}
+        assert self._should_show_in_panel(record) is True
+
+    def test_rejected_record_hidden_from_panel(self):
+        record = {"recovery_approved": False, "recovery_rejected": True, "recovery_completed": False}
+        assert self._should_show_in_panel(record) is False
+
+    def test_expired_record_hidden_from_panel(self):
+        record = {"recovery_approved": True, "recovery_rejected": True, "recovery_expired": True}
+        assert self._should_show_in_panel(record) is False
+
+    def test_completed_record_no_rejected_flag_shown(self):
+        """Completed records without rejection flag are still shown."""
+        record = {"recovery_approved": True, "recovery_completed": True}
+        assert self._should_show_in_panel(record) is True
