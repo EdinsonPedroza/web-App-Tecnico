@@ -48,7 +48,14 @@ def redact_mongo_url(url: str) -> str:
 
 logger.info(f"Connecting to MongoDB at: {redact_mongo_url(mongo_url)}")
 try:
-    client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+    client = AsyncIOMotorClient(
+        mongo_url,
+        maxPoolSize=100,
+        minPoolSize=10,
+        maxIdleTimeMS=30000,
+        connectTimeoutMS=5000,
+        serverSelectionTimeoutMS=5000,
+    )
     db = client[os.environ.get('DB_NAME', 'WebApp')]
     logger.info(f"MongoDB client initialized for database: {os.environ.get('DB_NAME', 'WebApp')}")
 except Exception as e:
@@ -73,7 +80,9 @@ PASSWORD_STORAGE_MODE = os.environ.get('PASSWORD_STORAGE_MODE', 'bcrypt').lower(
 # For production with multiple instances or persistence across restarts,
 # consider using Redis or another distributed cache for rate limiting.
 login_attempts = defaultdict(list)
-MAX_LOGIN_ATTEMPTS = 5
+login_attempts_by_identifier = defaultdict(list)
+MAX_LOGIN_ATTEMPTS_PER_IP = 50        # límite alto para WiFi compartido
+MAX_LOGIN_ATTEMPTS_PER_USER = 5       # límite estricto por usuario individual
 LOGIN_ATTEMPT_WINDOW = 300  # 5 minutes in seconds
 
 # Module validation constants
@@ -314,6 +323,13 @@ async def startup_event():
         # Test MongoDB connection
         await db.command('ping')
         logger.info("MongoDB connection successful")
+        # Crear índices para rendimiento óptimo
+        try:
+            from create_indexes import create_indexes
+            await create_indexes(db)
+            logger.info("Índices MongoDB verificados/creados exitosamente")
+        except Exception as e:
+            logger.warning(f"No se pudieron crear índices automáticamente: {e}")
         await create_initial_data()
         
         # Start the automatic module closure scheduler
@@ -695,18 +711,28 @@ def create_token(user_id: str, role: str) -> str:
 # Lock for thread-safe access to login_attempts
 login_attempts_lock = asyncio.Lock()
 
-async def check_rate_limit(ip_address: str) -> bool:
-    """Check if IP has exceeded login attempt rate limit"""
+async def check_rate_limit(ip_address: str, identifier: str = None) -> bool:
+    """Verifica límite por IP (50) y por identificador de usuario (5).
+    En redes educativas con WiFi compartido, el límite por IP es alto
+    para no bloquear a todos por los errores de uno."""
     async with login_attempts_lock:
         current_time = datetime.now().timestamp()
-        # Clean old attempts
+        # Limpiar intentos viejos por IP
         login_attempts[ip_address] = [
-            attempt_time for attempt_time in login_attempts[ip_address]
-            if current_time - attempt_time < LOGIN_ATTEMPT_WINDOW
+            t for t in login_attempts[ip_address]
+            if current_time - t < LOGIN_ATTEMPT_WINDOW
         ]
-        # Check if limit exceeded
-        if len(login_attempts[ip_address]) >= MAX_LOGIN_ATTEMPTS:
+        # Verificar límite por IP (protección anti-bots)
+        if len(login_attempts[ip_address]) >= MAX_LOGIN_ATTEMPTS_PER_IP:
             return False
+        # Verificar límite por identificador individual (cédula o email)
+        if identifier:
+            login_attempts_by_identifier[identifier] = [
+                t for t in login_attempts_by_identifier[identifier]
+                if current_time - t < LOGIN_ATTEMPT_WINDOW
+            ]
+            if len(login_attempts_by_identifier[identifier]) >= MAX_LOGIN_ATTEMPTS_PER_USER:
+                return False
         return True
 
 def log_security_event(event_type: str, details: dict):
@@ -982,7 +1008,8 @@ async def login(req: LoginRequest, request: Request):
     client_ip = request.client.host if request.client else "unknown"
     
     # Check rate limit
-    if not await check_rate_limit(client_ip):
+    identifier = req.cedula if req.role == "estudiante" else req.email
+    if not await check_rate_limit(client_ip, identifier):
         log_security_event("RATE_LIMIT_EXCEEDED", {
             "ip": client_ip,
             "role": req.role,
@@ -996,6 +1023,8 @@ async def login(req: LoginRequest, request: Request):
     # Record login attempt (with lock)
     async with login_attempts_lock:
         login_attempts[client_ip].append(datetime.now().timestamp())
+        if identifier:
+            login_attempts_by_identifier[identifier].append(datetime.now().timestamp())
     
     # Validate input and find user
     if req.role == "estudiante":
@@ -1049,6 +1078,8 @@ async def login(req: LoginRequest, request: Request):
     # Successful login - clear attempts for this IP (with lock)
     async with login_attempts_lock:
         login_attempts[client_ip] = []
+        if identifier:
+            login_attempts_by_identifier[identifier] = []
     
     logger.info(f"Successful login: user_id={user['id']}, role={user['role']}, ip={client_ip}")
     
@@ -2194,6 +2225,18 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     # Get all courses/groups
     courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
     
+    # Cargar TODAS las grades de todos los cursos en UNA sola query (optimización crítica)
+    all_course_ids = [c["id"] for c in courses]
+    all_grades_bulk = await db.grades.find(
+        {"course_id": {"$in": all_course_ids}}, {"_id": 0}
+    ).to_list(None)
+    # Indexar por student_id para acceso O(1) en el loop
+    grades_by_student = {}
+    for g in all_grades_bulk:
+        sid = g.get("student_id")
+        if sid:
+            grades_by_student.setdefault(sid, []).append(g)
+    
     for student in students:
         student_id = student["id"]
         student_program_modules = student.get("program_modules", {})
@@ -2217,7 +2260,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
         student_courses = [c for c in courses if student_id in c.get("student_ids", []) and c["program_id"] in programs_in_module]
         
         # Get all grades for the student
-        all_grades = await db.grades.find({"student_id": student_id}, {"_id": 0}).to_list(1000)
+        all_grades = grades_by_student.get(student_id, [])
         
         # Group grades by course
         failed_courses = []
