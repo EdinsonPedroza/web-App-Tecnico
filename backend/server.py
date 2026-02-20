@@ -230,15 +230,18 @@ async def check_and_close_modules():
                         {"$set": {"recovery_expired": True, "expired_at": now.isoformat()}}
                     )
                     
-                    # If student has no other courses, delete from system
-                    other_courses = await db.courses.count_documents({"student_ids": student_id})
-                    if other_courses == 0:
-                        await db.users.delete_one({"id": student_id, "role": "estudiante"})
-                        await db.grades.delete_many({"student_id": student_id})
-                        await db.submissions.delete_many({"student_id": student_id})
-                        await db.failed_subjects.delete_many({"student_id": student_id})
-                        await db.recovery_enabled.delete_many({"student_id": student_id})
-                        logger.info(f"Student {student_id} deleted from system (no other courses)")
+                    # Mark student as retirado for this program (do not delete)
+                    prog_id = course.get("program_id", "")
+                    student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
+                    student_program_statuses = (student_doc or {}).get("program_statuses") or {}
+                    if prog_id:
+                        student_program_statuses[prog_id] = "retirado"
+                    new_estado = derive_estado_from_program_statuses(student_program_statuses)
+                    update_fields = {"estado": new_estado}
+                    if prog_id:
+                        update_fields["program_statuses"] = student_program_statuses
+                    await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": update_fields})
+                    logger.info(f"Student {student_id} marked as retirado for program {prog_id} (recovery expired)")
                     
                     removed_count += 1
         
@@ -580,6 +583,32 @@ async def create_initial_data():
     if fixed_user_count > 0:
         logger.info(f"Fixed {fixed_user_count} users with missing subject_ids field")
     
+    # Soft migration: initialize program_statuses for existing students who don't have it yet
+    logger.info("Checking and migrating student program_statuses field...")
+    students_to_migrate = await db.users.find(
+        {"role": "estudiante", "program_statuses": {"$exists": False}},
+        {"_id": 0, "id": 1, "program_ids": 1, "program_id": 1, "estado": 1, "failed_subjects": 1}
+    ).to_list(5000)
+    
+    migrated_count = 0
+    for student in students_to_migrate:
+        program_ids_list = student.get("program_ids") or []
+        if not program_ids_list and student.get("program_id"):
+            program_ids_list = [student["program_id"]]
+        if not program_ids_list:
+            continue
+        global_estado = student.get("estado", "activo") or "activo"
+        # Map global status to per-program status; all programs get the same status
+        program_statuses = {pid: global_estado for pid in program_ids_list}
+        await db.users.update_one(
+            {"id": student["id"]},
+            {"$set": {"program_statuses": program_statuses}}
+        )
+        migrated_count += 1
+    
+    if migrated_count > 0:
+        logger.info(f"Migrated {migrated_count} students: initialized program_statuses field")
+    
     logger.info("Datos iniciales verificados/creados exitosamente")
     logger.info("5 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
     logger.info(f"Modo de almacenamiento de contraseñas: {PASSWORD_STORAGE_MODE}")
@@ -655,6 +684,27 @@ def validate_module_dates_order(module_dates: dict) -> Optional[str]:
             return (f"La fecha de inicio del Módulo {next_key} ({next_start}) debe ser "
                     f"posterior al cierre de recuperaciones del Módulo {curr_key} ({curr_boundary})")
     return None
+
+
+def derive_estado_from_program_statuses(program_statuses: dict) -> str:
+    """Derive the global 'estado' from per-program statuses.
+
+    Rules (in priority order):
+    1. Any program in 'pendiente_recuperacion' → global 'pendiente_recuperacion'
+    2. All programs 'egresado' → global 'egresado'
+    3. Any program 'activo' → global 'activo'
+    4. All programs 'retirado' (or empty) → global 'retirado'
+    """
+    if not program_statuses:
+        return "activo"
+    statuses = list(program_statuses.values())
+    if "pendiente_recuperacion" in statuses:
+        return "pendiente_recuperacion"
+    if all(s == "egresado" for s in statuses):
+        return "egresado"
+    if "activo" in statuses:
+        return "activo"
+    return "retirado"
 
 
 def sanitize_string(input_str: str, max_length: int = 500) -> str:
@@ -829,7 +879,8 @@ class UserCreate(BaseModel):
     phone: Optional[str] = Field(None, max_length=50)
     module: Optional[int] = Field(None, ge=1, le=2)  # Deprecated: use program_modules
     program_modules: Optional[dict] = None  # Maps program_id to module number, e.g., {"prog-admin": 1, "prog-infancia": 2}
-    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status
+    program_statuses: Optional[dict] = None  # Maps program_id to status, e.g., {"prog-admin": "activo"}
+    estado: Optional[str] = Field(None, pattern="^(activo|egresado|pendiente_recuperacion|retirado)$")  # Student status
 
     @validator('name', 'email', 'phone')
     def sanitize_text_fields(cls, v):
@@ -875,7 +926,8 @@ class UserUpdate(BaseModel):
     active: Optional[bool] = None
     module: Optional[int] = Field(None, ge=1, le=2)  # Deprecated: use program_modules
     program_modules: Optional[dict] = None  # Maps program_id to module number, e.g., {"prog-admin": 1, "prog-infancia": 2}
-    estado: Optional[str] = Field(None, pattern="^(activo|egresado)$")  # Student status
+    program_statuses: Optional[dict] = None  # Maps program_id to status, e.g., {"prog-admin": "activo"}
+    estado: Optional[str] = Field(None, pattern="^(activo|egresado|pendiente_recuperacion|retirado)$")  # Student status
 
     @validator('name', 'email', 'phone')
     def sanitize_text_fields(cls, v):
@@ -1172,6 +1224,20 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
     else:
         program_modules = None
     
+    # Initialize program_statuses for students: use provided value or default all programs to "activo"
+    if req.role == "estudiante":
+        if req.program_statuses:
+            program_statuses = req.program_statuses
+        elif program_ids:
+            program_statuses = {prog_id: "activo" for prog_id in program_ids}
+        else:
+            program_statuses = None
+        # Derive global estado from program_statuses if not explicitly given
+        if program_statuses and not req.estado:
+            estado = derive_estado_from_program_statuses(program_statuses)
+    else:
+        program_statuses = None
+    
     new_user = {
         "id": str(uuid.uuid4()),
         "name": req.name,
@@ -1185,6 +1251,7 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "phone": req.phone,
         "module": req.module,  # Keep for backward compatibility
         "program_modules": program_modules,
+        "program_statuses": program_statuses,
         "estado": estado,
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -1554,10 +1621,39 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     if student_ids_to_add:
         # Build a temporary course-like dict to check the enrollment window
         if not can_enroll_in_course({"module_dates": module_dates}):
-            raise HTTPException(
-                status_code=400,
-                detail="No se puede matricular estudiantes: el período de matrícula ha cerrado (Módulo 1 ya inició)"
-            )
+            # Module 1 has already started – only allow re-enrollment for retirado students
+            # whose module matches the current module of the course
+            course_current_module = get_current_module_from_dates(module_dates)
+            # Check each student: if they are retirado for this program, allow if module matches
+            if req.program_id and course_current_module is not None:
+                students_info = await db.users.find(
+                    {"id": {"$in": student_ids_to_add}, "role": "estudiante"},
+                    {"_id": 0, "id": 1, "program_statuses": 1, "program_modules": 1}
+                ).to_list(None)
+                student_map = {s["id"]: s for s in students_info}
+                for sid in student_ids_to_add:
+                    s = student_map.get(sid)
+                    if not s:
+                        raise HTTPException(status_code=400, detail=f"Estudiante {sid} no encontrado")
+                    prog_statuses = s.get("program_statuses") or {}
+                    prog_modules = s.get("program_modules") or {}
+                    status = prog_statuses.get(req.program_id)
+                    student_module = prog_modules.get(req.program_id)
+                    if status == "retirado" and student_module is not None and student_module == course_current_module:
+                        continue  # Reingreso allowed
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "No se puede matricular estudiantes: el período de matrícula ha cerrado "
+                            "(Módulo 1 ya inició). Solo se permite reingreso de estudiantes retirados "
+                            "en el módulo actual del grupo."
+                        )
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede matricular estudiantes: el período de matrícula ha cerrado (Módulo 1 ya inició)"
+                )
 
     # Validate: a student cannot be in 2+ groups of the same program
     if student_ids_to_add and req.program_id:
@@ -1656,12 +1752,40 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
         if current_course:
             # Check enrollment deadline: only allow new students before module 1 starts
             current_student_ids = set(current_course.get("student_ids") or [])
-            newly_added_ids = set(req.student_ids) - current_student_ids
+            newly_added_ids = list(set(req.student_ids) - current_student_ids)
             if newly_added_ids and not can_enroll_in_course(current_course):
-                raise HTTPException(
-                    status_code=400,
-                    detail="No se puede matricular estudiantes: el período de matrícula ha cerrado (Módulo 1 ya inició)"
-                )
+                # Module 1 has started – only allow reingreso for retirado students whose module matches
+                prog_id = current_course.get("program_id")
+                course_current_module = get_current_module_from_dates(current_course.get("module_dates") or {})
+                if prog_id and course_current_module is not None:
+                    students_info = await db.users.find(
+                        {"id": {"$in": newly_added_ids}, "role": "estudiante"},
+                        {"_id": 0, "id": 1, "program_statuses": 1, "program_modules": 1}
+                    ).to_list(None)
+                    student_map = {s["id"]: s for s in students_info}
+                    for sid in newly_added_ids:
+                        s = student_map.get(sid)
+                        if not s:
+                            raise HTTPException(status_code=400, detail=f"Estudiante {sid} no encontrado")
+                        prog_statuses = s.get("program_statuses") or {}
+                        prog_modules = s.get("program_modules") or {}
+                        status = prog_statuses.get(prog_id)
+                        student_module = prog_modules.get(prog_id)
+                        if status == "retirado" and student_module is not None and student_module == course_current_module:
+                            continue  # Reingreso allowed
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "No se puede matricular estudiantes: el período de matrícula ha cerrado "
+                                "(Módulo 1 ya inició). Solo se permite reingreso de estudiantes retirados "
+                                "en el módulo actual del grupo."
+                            )
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="No se puede matricular estudiantes: el período de matrícula ha cerrado (Módulo 1 ya inició)"
+                    )
 
             program_id = current_course.get("program_id")
             if program_id and req.student_ids:
@@ -1713,28 +1837,39 @@ async def delete_course(course_id: str, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
     
-    # Find the course to get its student list
+    # Find the course to get its student list and program
     course = await db.courses.find_one({"id": course_id}, {"_id": 0})
-    if course:
-        student_ids_in_course = course.get("student_ids", [])
-        if student_ids_in_course:
-            # Find students who are ONLY in this course (not enrolled in any other course)
-            other_courses = await db.courses.find(
-                {"id": {"$ne": course_id}, "student_ids": {"$in": student_ids_in_course}},
-                {"_id": 0, "student_ids": 1}
-            ).to_list(None)
-            # Collect all student IDs that appear in other courses
-            students_in_other_courses = set()
-            for c in other_courses:
-                students_in_other_courses.update(c.get("student_ids", []))
-            # Students exclusively in this course (not in any other)
-            exclusive_student_ids = [
-                sid for sid in student_ids_in_course
-                if sid not in students_in_other_courses
-            ]
-            if exclusive_student_ids:
-                await db.users.delete_many({"id": {"$in": exclusive_student_ids}})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
     
+    program_id = course.get("program_id", "")
+    student_ids_in_course = course.get("student_ids", [])
+    
+    if student_ids_in_course:
+        # Block deletion if any student has a non-egresado status for this program
+        students = await db.users.find(
+            {"id": {"$in": student_ids_in_course}, "role": "estudiante"},
+            {"_id": 0, "id": 1, "program_statuses": 1, "estado": 1}
+        ).to_list(None)
+        blocking_students = []
+        for s in students:
+            program_statuses = s.get("program_statuses") or {}
+            # Check per-program status first; fall back to global estado
+            status = program_statuses.get(program_id) if program_id else s.get("estado")
+            if not status:
+                status = s.get("estado", "activo")
+            if status != "egresado":
+                blocking_students.append(s["id"])
+        if blocking_students:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"No se puede eliminar el grupo: contiene {len(blocking_students)} estudiante(s) "
+                    "que aún no han egresado. Use 'Eliminar Egresados' para limpiar solo egresados."
+                )
+            )
+    
+    # All students are egresados (or group is empty) – delete the course (students are not deleted)
     await db.courses.delete_one({"id": course_id})
     return {"message": "Curso eliminado"}
 
@@ -1877,42 +2012,53 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                     program_id = course.get("program_id") if course else None
                     if program_id:
                         program_modules = student.get("program_modules") or {}
+                        program_statuses = student.get("program_statuses") or {}
                         current_module = program_modules.get(program_id) or student.get("module", 1)
                         program = await db.programs.find_one({"id": program_id}, {"_id": 0})
                         max_modules = len(program.get("modules", [])) if program else 2
                         if current_module >= max_modules:
-                            # Graduate the student
+                            # Graduate the student for this program
+                            program_statuses[program_id] = "egresado"
+                            new_global_estado = derive_estado_from_program_statuses(program_statuses)
                             await db.users.update_one(
                                 {"id": req.student_id},
-                                {"$set": {"estado": "egresado"}}
+                                {"$set": {
+                                    "program_statuses": program_statuses,
+                                    "estado": new_global_estado
+                                }}
                             )
                         else:
-                            # Promote to next module
+                            # Promote to next module and set program status back to activo
                             next_module = current_module + 1
+                            program_statuses[program_id] = "activo"
+                            new_global_estado = derive_estado_from_program_statuses(program_statuses)
                             await db.users.update_one(
                                 {"id": req.student_id},
                                 {"$set": {
                                     "module": next_module,
-                                    "estado": "activo",
-                                    f"program_modules.{program_id}": next_module
+                                    "estado": new_global_estado,
+                                    f"program_modules.{program_id}": next_module,
+                                    "program_statuses": program_statuses
                                 }}
                             )
         else:
-            # Recovery rejected: remove student from the course
+            # Recovery rejected by teacher: remove student from the course and mark retirado
             course = await db.courses.find_one({"id": req.course_id}, {"_id": 0})
             if course:
                 await db.courses.update_one(
                     {"id": req.course_id},
                     {"$pull": {"student_ids": req.student_id}}
                 )
-                # If student has no other courses, delete them from the system
-                other_courses = await db.courses.count_documents({"student_ids": req.student_id})
-                if other_courses == 0:
-                    await db.users.delete_one({"id": req.student_id, "role": "estudiante"})
-                    await db.grades.delete_many({"student_id": req.student_id})
-                    await db.submissions.delete_many({"student_id": req.student_id})
-                    await db.failed_subjects.delete_many({"student_id": req.student_id})
-                    await db.recovery_enabled.delete_many({"student_id": req.student_id})
+                prog_id = course.get("program_id", "")
+                student_doc = await db.users.find_one({"id": req.student_id}, {"_id": 0, "program_statuses": 1})
+                student_program_statuses = (student_doc or {}).get("program_statuses") or {}
+                if prog_id:
+                    student_program_statuses[prog_id] = "retirado"
+                new_estado = derive_estado_from_program_statuses(student_program_statuses)
+                update_fields = {"estado": new_estado}
+                if prog_id:
+                    update_fields["program_statuses"] = student_program_statuses
+                await db.users.update_one({"id": req.student_id}, {"$set": update_fields})
             
             # If rejected, don't create/update a grade (keep existing average)
             # Just update the recovery status if grade already exists
@@ -2334,8 +2480,11 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
         
         # Determine student status
         if failed_courses:
-            # Student failed some courses - mark as pending recovery
+            # Student failed some courses - mark as pending recovery per-program
             recovery_count += 1
+            
+            # Collect programs where student failed
+            failed_program_ids = list({f["program_id"] for f in failed_courses})
             
             # Store failed subjects record
             for failed in failed_courses:
@@ -2353,34 +2502,44 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                     "created_at": datetime.now(timezone.utc).isoformat()
                 })
             
-            # Update student status
+            # Update program_statuses per-program and derive global estado
+            student_program_statuses = student.get("program_statuses") or {}
+            for prog_id in failed_program_ids:
+                student_program_statuses[prog_id] = "pendiente_recuperacion"
+            new_global_estado = derive_estado_from_program_statuses(student_program_statuses)
             await db.users.update_one(
                 {"id": student_id},
-                {"$set": {"estado": "pendiente_recuperacion"}}
+                {"$set": {
+                    "program_statuses": student_program_statuses,
+                    "estado": new_global_estado
+                }}
             )
         else:
             # Student passed all courses
+            student_program_statuses = student.get("program_statuses") or {}
             for prog_id in programs_in_module:
                 current_module = student_program_modules.get(prog_id, 1)
                 
                 if current_module < 2:
                     # Promote to next module
                     student_program_modules[prog_id] = current_module + 1
+                    student_program_statuses[prog_id] = "activo"
                     promoted_count += 1
                 else:
                     # Module 2 completed - graduate
                     graduated_count += 1
-                    await db.users.update_one(
-                        {"id": student_id},
-                        {"$set": {"estado": "egresado"}}
-                    )
+                    student_program_statuses[prog_id] = "egresado"
             
-            # Update program_modules if promoted
-            if student_program_modules:
-                await db.users.update_one(
-                    {"id": student_id},
-                    {"$set": {"program_modules": student_program_modules}}
-                )
+            new_global_estado = derive_estado_from_program_statuses(student_program_statuses)
+            # Update program_modules and program_statuses
+            await db.users.update_one(
+                {"id": student_id},
+                {"$set": {
+                    "program_modules": student_program_modules,
+                    "program_statuses": student_program_statuses,
+                    "estado": new_global_estado
+                }}
+            )
     
     # Bulk insert failed subjects records
     if failed_subjects_records:
@@ -2608,18 +2767,34 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                     {"id": existing["id"]},
                     {"$set": {"enabled": True, "enabled_by": user["id"], "enabled_at": datetime.now(timezone.utc).isoformat()}}
                 )
-            # Update student status
-            await db.users.update_one(
-                {"id": student_id},
-                {"$set": {"estado": "pendiente_recuperacion"}}
-            )
+            # Update program_statuses per-program and derive global estado
+            prog_id = course.get("program_id", "")
+            student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
+            student_program_statuses = (student_doc or {}).get("program_statuses") or {}
+            if prog_id:
+                student_program_statuses[prog_id] = "pendiente_recuperacion"
+            new_estado = derive_estado_from_program_statuses(student_program_statuses)
+            update_fields = {"estado": new_estado}
+            if prog_id:
+                update_fields["program_statuses"] = student_program_statuses
+            await db.users.update_one({"id": student_id}, {"$set": update_fields})
         
         if not approve:
-            # Rejection: remove student from the course group
+            # Rejection: remove student from the course group and mark program status as retirado
+            prog_id = course.get("program_id", "")
             await db.courses.update_one(
                 {"id": course_id},
                 {"$pull": {"student_ids": student_id}}
             )
+            student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
+            student_program_statuses = (student_doc or {}).get("program_statuses") or {}
+            if prog_id:
+                student_program_statuses[prog_id] = "retirado"
+            new_estado = derive_estado_from_program_statuses(student_program_statuses)
+            update_fields = {"estado": new_estado}
+            if prog_id:
+                update_fields["program_statuses"] = student_program_statuses
+            await db.users.update_one({"id": student_id}, {"$set": update_fields})
             logger.info(f"Student {student_id} removed from course {course_id} due to admin recovery rejection")
         
         action = "aprobada" if approve else "rechazada"
@@ -2663,12 +2838,33 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 {"id": existing["id"]},
                 {"$set": {"enabled": True, "enabled_by": user["id"], "enabled_at": datetime.now(timezone.utc).isoformat()}}
             )
+        # Update program_statuses per-program and derive global estado
+        prog_id = failed_record.get("program_id", "")
+        student_doc = await db.users.find_one({"id": failed_record["student_id"]}, {"_id": 0, "program_statuses": 1})
+        student_program_statuses = (student_doc or {}).get("program_statuses") or {}
+        if prog_id:
+            student_program_statuses[prog_id] = "pendiente_recuperacion"
+        new_estado = derive_estado_from_program_statuses(student_program_statuses)
+        update_fields = {"estado": new_estado}
+        if prog_id:
+            update_fields["program_statuses"] = student_program_statuses
+        await db.users.update_one({"id": failed_record["student_id"]}, {"$set": update_fields})
     else:
-        # Rejection: remove student from the course group
+        # Rejection: remove student from the course group and mark program status as retirado
+        prog_id = failed_record.get("program_id", "")
         await db.courses.update_one(
             {"id": failed_record["course_id"]},
             {"$pull": {"student_ids": failed_record["student_id"]}}
         )
+        student_doc = await db.users.find_one({"id": failed_record["student_id"]}, {"_id": 0, "program_statuses": 1})
+        student_program_statuses = (student_doc or {}).get("program_statuses") or {}
+        if prog_id:
+            student_program_statuses[prog_id] = "retirado"
+        new_estado = derive_estado_from_program_statuses(student_program_statuses)
+        update_fields = {"estado": new_estado}
+        if prog_id:
+            update_fields["program_statuses"] = student_program_statuses
+        await db.users.update_one({"id": failed_record["student_id"]}, {"$set": update_fields})
         logger.info(f"Student {failed_record['student_id']} removed from course {failed_record['course_id']} due to admin recovery rejection")
     
     action = "aprobada" if approve else "rechazada"

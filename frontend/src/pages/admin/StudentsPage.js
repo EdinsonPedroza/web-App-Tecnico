@@ -360,6 +360,8 @@ export default function StudentsPage() {
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="activo">Activos</SelectItem>
                 <SelectItem value="egresado">Egresados</SelectItem>
+                <SelectItem value="pendiente_recuperacion">Pendiente Recuperación</SelectItem>
+                <SelectItem value="retirado">Retirados</SelectItem>
               </SelectContent>
             </Select>
           </div>
