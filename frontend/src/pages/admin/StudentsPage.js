@@ -112,20 +112,20 @@ export default function StudentsPage() {
   const getStudentCourseIds = (studentId) => courses.filter(c => (c.student_ids || []).includes(studentId)).map(c => c.id);
 
   // Determine if a group/course is compatible with a student's current module for a given program.
-  // - If studentModule == 1: student can join groups where module 1 hasn't started yet (no module_dates["1"].end in past)
-  // - If studentModule == 2: student can join groups where module 1 is already closed (module_dates["1"].end <= today)
+  // - If studentModule == 1: student can join groups where module 1 hasn't started yet (today < module_dates["1"].start)
+  // - If studentModule == 2: student can join groups where module 1 has already started (module_dates["1"].start <= today)
   const isCourseCompatibleWithModule = (course, studentModule) => {
     const today = new Date().toISOString().slice(0, 10);
     const moduleDates = course.module_dates || {};
     const mod1Dates = moduleDates['1'] || moduleDates[1] || null;
-    const mod1End = mod1Dates?.end || null;
+    const mod1Start = mod1Dates?.start || null;
 
     if (studentModule === 1) {
-      // Student is in module 1: only show groups where module 1 hasn't closed yet
-      return !mod1End || mod1End >= today;
+      // Student is in module 1: only show groups where module 1 hasn't started yet
+      return !mod1Start || mod1Start > today;
     } else if (studentModule >= 2) {
-      // Student is in module 2+: only show groups where module 1 is already closed
-      return mod1End && mod1End < today;
+      // Student is in module 2+: only show groups where module 1 has already started
+      return mod1Start && mod1Start <= today;
     }
     return true;
   };
@@ -678,9 +678,9 @@ export default function StudentsPage() {
                     const programName = getProgramShortName(c.program_id);
                     const studentModule = form.program_modules?.[c.program_id];
                     const mod1Dates = c.module_dates?.['1'] || c.module_dates?.[1];
-                    const mod1End = mod1Dates?.end;
-                    const moduleInfo = mod1End
-                      ? (mod1End < today ? 'M1 cerrado' : 'M1 abierto')
+                    const mod1Start = mod1Dates?.start;
+                    const moduleInfo = mod1Start
+                      ? (mod1Start <= today ? 'Inscripción cerrada' : 'Inscripción abierta')
                       : 'Nuevo grupo';
                     return (
                       <div key={c.id} className="flex items-center gap-2">
