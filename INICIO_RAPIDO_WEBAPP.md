@@ -1,8 +1,8 @@
-# 🚀 Inicio Rápido - Base de Datos webApp
+# 🚀 Inicio Rápido - Base de Datos WebApp
 
 ## ✅ Todo Está Listo
 
-Tu aplicación está configurada para conectarse a la base de datos **webApp** en MongoDB Atlas (Cluster0).
+Tu aplicación está configurada para conectarse a la base de datos **WebApp** en MongoDB Atlas (Cluster0).
 
 ## ⚡ Configuración en 3 Pasos (5 minutos)
 
@@ -24,20 +24,20 @@ El script te preguntará por tu MongoDB URL y nombre de base de datos.
 
 **Linux/Mac:**
 ```bash
-export MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
-export DB_NAME="webApp"
+export MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/WebApp?appName=Cluster0"
+export DB_NAME="WebApp"
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
-$env:DB_NAME="webApp"
+$env:MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/WebApp?appName=Cluster0"
+$env:DB_NAME="WebApp"
 ```
 
 **Windows (CMD):**
 ```cmd
-set MONGO_URL=mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
-set DB_NAME=webApp
+set MONGO_URL=mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/WebApp?appName=Cluster0
+set DB_NAME=WebApp
 ```
 
 ### Paso 2: Configurar MongoDB Atlas (2 minutos)
@@ -110,7 +110,7 @@ Usa cualquiera de estas credenciales:
 
 Al iniciar la aplicación por primera vez:
 
-✅ **Base de datos**: webApp  
+✅ **Base de datos**: WebApp  
 ✅ **Collections**: users, programs, subjects, courses, activities, grades, submissions, App  
 ✅ **7 Usuarios**: 1 editor, 2 admins, 2 profesores, 2 estudiantes  
 ✅ **3 Programas académicos** con todas sus materias  
@@ -131,7 +131,7 @@ Busca estos mensajes al iniciar:
 ### En MongoDB Atlas
 
 1. Ve a MongoDB Atlas → **Database** → **Browse Collections**
-2. Selecciona la base de datos **webApp**
+2. Selecciona la base de datos **WebApp**
 3. Deberías ver:
    - `users` con 7 documentos
    - `programs` con 3 documentos

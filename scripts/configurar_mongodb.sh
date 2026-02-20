@@ -3,7 +3,7 @@
 # Este script crea un archivo .env.local con las credenciales (no se sube a Git)
 
 echo "======================================================================"
-echo "    CONFIGURACIÓN SEGURA DE MONGODB PARA webApp"
+echo "    CONFIGURACIÓN SEGURA DE MONGODB PARA WebApp"
 echo "======================================================================"
 echo ""
 echo "Este script creará un archivo backend/.env.local con tus credenciales."
@@ -15,7 +15,7 @@ echo ""
 
 # Pedir MongoDB URL
 echo "MongoDB Connection String:"
-echo "Formato: mongodb+srv://usuario:password@cluster.mongodb.net/webApp?appName=Cluster0"
+echo "Formato: mongodb+srv://usuario:password@cluster.mongodb.net/WebApp?appName=Cluster0"
 read -p "URL: " MONGO_URL
 
 if [ -z "$MONGO_URL" ]; then
@@ -24,8 +24,8 @@ if [ -z "$MONGO_URL" ]; then
 fi
 
 # Pedir DB Name
-read -p "Nombre de la base de datos [webApp]: " DB_NAME
-DB_NAME=${DB_NAME:-webApp}
+read -p "Nombre de la base de datos [WebApp]: " DB_NAME
+DB_NAME=${DB_NAME:-WebApp}
 
 # Crear archivo .env.local en backend
 ENV_LOCAL_FILE="backend/.env.local"

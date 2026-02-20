@@ -1,8 +1,8 @@
-# Configuración MongoDB - Base de Datos webApp
+# Configuración MongoDB - Base de Datos WebApp
 
 ## ✅ Resumen
 
-La aplicación está lista para conectarse a tu base de datos **webApp** en MongoDB Atlas (Cluster0).
+La aplicación está lista para conectarse a tu base de datos **WebApp** en MongoDB Atlas (Cluster0).
 
 ### 🔒 Seguridad Importante
 
@@ -28,24 +28,24 @@ Configura las variables antes de iniciar la aplicación:
 
 **Linux/Mac:**
 ```bash
-export MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
-export DB_NAME="webApp"
+export MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/WebApp?appName=Cluster0"
+export DB_NAME="WebApp"
 cd backend
 uvicorn server:app --reload
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
-$env:DB_NAME="webApp"
+$env:MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/WebApp?appName=Cluster0"
+$env:DB_NAME="WebApp"
 cd backend
 uvicorn server:app --reload
 ```
 
 **Windows (CMD):**
 ```cmd
-set MONGO_URL=mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0
-set DB_NAME=webApp
+set MONGO_URL=mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/WebApp?appName=Cluster0
+set DB_NAME=WebApp
 cd backend
 uvicorn server:app --reload
 ```
@@ -56,8 +56,8 @@ Crea un archivo `backend/.env.local` (este archivo NO se sube a Git):
 
 ```bash
 # backend/.env.local
-MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/webApp?appName=Cluster0"
-DB_NAME="webApp"
+MONGO_URL="mongodb+srv://USUARIO:PASSWORD@cluster0.avzgmr5.mongodb.net/WebApp?appName=Cluster0"
+DB_NAME="WebApp"
 CORS_ORIGINS="*"
 ```
 
@@ -66,7 +66,7 @@ CORS_ORIGINS="*"
 ## 📊 Detalles de Conexión
 
 - **Cluster**: Cluster0
-- **Base de datos**: webApp
+- **Base de datos**: WebApp
 - **Collection**: App (se creará automáticamente)
 - **Credenciales**: Ver archivo `CREDENCIALES_PRIVADAS.md` (no incluido en repositorio público)
 
@@ -103,7 +103,7 @@ La causa más común de errores de conexión es la restricción de IP. Sigue est
 
 Cuando la aplicación se conecte exitosamente, automáticamente:
 
-1. ✅ Creará la base de datos **webApp** (si no existe)
+1. ✅ Creará la base de datos **WebApp** (si no existe)
 2. ✅ Creará las siguientes colecciones:
    - `users` - Usuarios del sistema (estudiantes, profesores, admins)
    - `programs` - Programas académicos
@@ -185,21 +185,21 @@ Busca en los logs:
 ```
 Settings → Variables → Add Variable
 MONGO_URL=mongodb+srv://...
-DB_NAME=webApp
+DB_NAME=WebApp
 ```
 
 **Render:**
 ```
 Environment → Add Environment Variable
 MONGO_URL=mongodb+srv://...
-DB_NAME=webApp
+DB_NAME=WebApp
 ```
 
 **Heroku:**
 ```
 Settings → Config Vars → Add
 MONGO_URL=mongodb+srv://...
-DB_NAME=webApp
+DB_NAME=WebApp
 ```
 
 ## 🐛 Solución de Problemas

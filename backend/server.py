@@ -87,6 +87,20 @@ def validate_module_number(module_num, field_name="module"):
     return True
 
 app = FastAPI()
+
+# Configure CORS origins
+cors_origins_str = os.environ.get('CORS_ORIGINS', '*')
+cors_origins = cors_origins_str.split(',') if ',' in cors_origins_str else [cors_origins_str]
+allow_credentials = "*" not in cors_origins
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 api_router = APIRouter(prefix="/api")
 
 # Initialize scheduler for automatic module closure
@@ -3234,24 +3248,6 @@ async def root():
     return {"message": "Corporación Social Educando API"}
 
 app.include_router(api_router)
-
-# Configure CORS origins
-cors_origins_str = os.environ.get('CORS_ORIGINS', '*')
-cors_origins = cors_origins_str.split(',') if ',' in cors_origins_str else [cors_origins_str]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

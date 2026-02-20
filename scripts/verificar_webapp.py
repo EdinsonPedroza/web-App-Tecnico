@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script de verificación rápida para la base de datos webApp
+Script de verificación rápida para la base de datos WebApp
 Ejecuta este script para verificar que todo esté configurado correctamente.
 """
 
@@ -28,12 +28,12 @@ load_dotenv(backend_dir / '.env')
 
 async def main():
     print("\n" + "="*80)
-    print("🔍 VERIFICACIÓN DE CONFIGURACIÓN - BASE DE DATOS webApp")
+    print("🔍 VERIFICACIÓN DE CONFIGURACIÓN - BASE DE DATOS WebApp")
     print("="*80 + "\n")
     
     # Verificar variables de entorno
     mongo_url = os.environ.get('MONGO_URL')
-    db_name = os.environ.get('DB_NAME', 'webApp')
+    db_name = os.environ.get('DB_NAME', 'WebApp')
     
     print("📋 Variables de entorno:")
     print(f"   ✅ MONGO_URL: {'Configurada' if mongo_url else '❌ NO CONFIGURADA'}")
@@ -45,8 +45,8 @@ async def main():
         print("\nPara configurar:")
         print("1. Abre: backend/.env")
         print("2. Asegúrate que tenga:")
-        print('   MONGO_URL="mongodb+srv://usuario:password@cluster.mongodb.net/webApp"')
-        print('   DB_NAME="webApp"')
+        print('   MONGO_URL="mongodb+srv://usuario:password@cluster.mongodb.net/WebApp"')
+        print('   DB_NAME="WebApp"')
         sys.exit(1)
     
     # Redactar URL para mostrar
