@@ -243,7 +243,7 @@ export default function RecoveriesPage() {
                     <div>
                       <CardTitle className="text-xl">{student.student_name}</CardTitle>
                       <p className="text-sm text-muted-foreground mt-1">
-                        ID: {student.student_id} • {student.failed_subjects.length} materia(s) reprobada(s)
+                        {student.student_cedula ? `Cédula: ${student.student_cedula}` : `ID: ${student.student_id.slice(0, 8)}…`} • {student.failed_subjects.length} materia(s) reprobada(s)
                       </p>
                     </div>
                     <Badge variant="destructive" className="text-sm">

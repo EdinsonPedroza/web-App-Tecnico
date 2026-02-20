@@ -1049,3 +1049,165 @@ class TestCoursesPageDateValidation:
     def test_empty_dates_no_errors(self):
         errors = self._validate_module_dates({}, 2)
         assert errors == {}
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for can_enroll_in_module (module 2+ enrollment window)
+# ---------------------------------------------------------------------------
+
+class TestCanEnrollInModule:
+    """Tests for the can_enroll_in_module function in server.py."""
+
+    def _can_enroll_in_module(self, module_dates, module_number, today_str):
+        """Mirror of can_enroll_in_module from server.py with injectable today."""
+        mod_key = str(module_number)
+        mod_dates = module_dates.get(mod_key) or module_dates.get(module_number) or {}
+        mod_start = mod_dates.get("start")
+
+        if module_number == 1:
+            if not mod_start:
+                return True
+            return today_str < mod_start
+
+        # Module N > 1: window is recovery_close_mod(N-1) <= today < start_mod(N)
+        prev_key = str(module_number - 1)
+        prev_dates = module_dates.get(prev_key) or module_dates.get(module_number - 1) or {}
+        prev_recovery_close = prev_dates.get("recovery_close") or prev_dates.get("end")
+
+        if not prev_recovery_close and not mod_start:
+            return True
+        if prev_recovery_close and today_str < prev_recovery_close:
+            return False
+        if mod_start and today_str >= mod_start:
+            return False
+        return True
+
+    # ---- Module 1 ----
+    def test_mod1_before_start_allows(self):
+        module_dates = {"1": {"start": "2026-06-01"}}
+        assert self._can_enroll_in_module(module_dates, 1, "2026-05-31") is True
+
+    def test_mod1_on_start_date_blocks(self):
+        module_dates = {"1": {"start": "2026-06-01"}}
+        assert self._can_enroll_in_module(module_dates, 1, "2026-06-01") is False
+
+    def test_mod1_after_start_blocks(self):
+        module_dates = {"1": {"start": "2026-06-01"}}
+        assert self._can_enroll_in_module(module_dates, 1, "2026-06-15") is False
+
+    def test_mod1_no_start_date_allows(self):
+        assert self._can_enroll_in_module({}, 1, "2026-01-01") is True
+
+    # ---- Module 2 ----
+    def test_mod2_in_window_allows(self):
+        """recovery_close_mod1 <= today < start_mod2 → allowed."""
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-07-16"},
+        }
+        # today = exactly recovery_close boundary (inclusive)
+        assert self._can_enroll_in_module(module_dates, 2, "2026-07-15") is True
+
+    def test_mod2_in_window_day_after_recovery_close_allows(self):
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-07-20"},
+        }
+        assert self._can_enroll_in_module(module_dates, 2, "2026-07-16") is True
+
+    def test_mod2_before_recovery_close_blocks(self):
+        """Before previous module recovery closes → not yet allowed."""
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-07-20"},
+        }
+        assert self._can_enroll_in_module(module_dates, 2, "2026-07-14") is False
+
+    def test_mod2_on_or_after_start_blocks(self):
+        """After module 2 has started → window closed."""
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-07-20"},
+        }
+        assert self._can_enroll_in_module(module_dates, 2, "2026-07-20") is False
+
+    def test_mod2_no_dates_allows(self):
+        """When no dates configured, enrollment is always allowed."""
+        assert self._can_enroll_in_module({}, 2, "2026-07-01") is True
+
+    def test_mod2_uses_end_when_no_recovery_close(self):
+        """Falls back to 'end' if 'recovery_close' is missing for mod 1."""
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30"},
+            "2": {"start": "2026-07-20"},
+        }
+        # today is on boundary (end date of mod1)
+        assert self._can_enroll_in_module(module_dates, 2, "2026-06-30") is True
+        # today is before the fallback boundary
+        assert self._can_enroll_in_module(module_dates, 2, "2026-06-29") is False
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for recovery panel filter logic (in-process only)
+# ---------------------------------------------------------------------------
+
+class TestRecoveryPanelFilter:
+    """Tests for the in-process filter applied to failed_subject records."""
+
+    def _is_in_process(self, record):
+        """Mirror the panel filter: exclude rejected and (approved + completed) records."""
+        if record.get("recovery_rejected"):
+            return False
+        if record.get("recovery_approved") and record.get("recovery_completed"):
+            return False
+        return True
+
+    def test_pending_record_is_in_process(self):
+        record = {"recovery_approved": False, "recovery_rejected": False, "recovery_completed": False}
+        assert self._is_in_process(record) is True
+
+    def test_approved_not_completed_is_in_process(self):
+        record = {"recovery_approved": True, "recovery_rejected": False, "recovery_completed": False}
+        assert self._is_in_process(record) is True
+
+    def test_rejected_leaves_panel(self):
+        record = {"recovery_approved": False, "recovery_rejected": True, "recovery_completed": False}
+        assert self._is_in_process(record) is False
+
+    def test_approved_and_completed_leaves_panel(self):
+        record = {"recovery_approved": True, "recovery_rejected": False, "recovery_completed": True}
+        assert self._is_in_process(record) is False
+
+    def test_missing_rejected_field_defaults_to_in_process(self):
+        """Old records without recovery_rejected field should still show."""
+        record = {"recovery_approved": False, "recovery_completed": False}
+        assert self._is_in_process(record) is True
+
+    def test_derive_estado_after_rejection(self):
+        """After rejection program_statuses[prog] = 'retirado'; global estado is derived."""
+        # Simulate derive_estado_from_program_statuses behavior
+        program_statuses = {"prog-1": "retirado"}
+        statuses = list(program_statuses.values())
+        if "pendiente_recuperacion" in statuses:
+            result = "pendiente_recuperacion"
+        elif all(s == "egresado" for s in statuses):
+            result = "egresado"
+        elif "activo" in statuses:
+            result = "activo"
+        else:
+            result = "retirado"
+        assert result == "retirado"
+
+    def test_derive_estado_after_approval(self):
+        """After approval program_statuses[prog] = 'pendiente_recuperacion'."""
+        program_statuses = {"prog-1": "pendiente_recuperacion"}
+        statuses = list(program_statuses.values())
+        if "pendiente_recuperacion" in statuses:
+            result = "pendiente_recuperacion"
+        elif all(s == "egresado" for s in statuses):
+            result = "egresado"
+        elif "activo" in statuses:
+            result = "activo"
+        else:
+            result = "retirado"
+        assert result == "pendiente_recuperacion"
