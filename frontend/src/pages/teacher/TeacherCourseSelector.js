@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, BookOpen, Users, ChevronRight, ArrowLeft, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
+import { getProgramColorClasses } from '@/utils/programColors';
 
 export default function TeacherCourseSelector() {
   const { user } = useAuth();
@@ -133,7 +134,7 @@ export default function TeacherCourseSelector() {
                   return (
                     <Card
                       key={subject.id}
-                      className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
+                      className={`shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 hover:border-primary/40 ${getProgramColorClasses(programs, subject.program_id)}`}
                       onClick={() => { setSelectedSubject(subject); setSearchQuery(''); }}
                     >
                       <CardHeader className="pb-3">
@@ -216,7 +217,7 @@ export default function TeacherCourseSelector() {
                 {filteredGroups.map((course) => (
                   <Card
                     key={course.id}
-                    className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
+                    className={`shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 hover:border-primary/40 ${getProgramColorClasses(programs, course.program_id)}`}
                     onClick={() => navigate(`/teacher/course/${course.id}?subjectId=${selectedSubject.id}`)}
                   >
                     <CardHeader className="pb-3">

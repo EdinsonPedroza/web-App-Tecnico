@@ -186,7 +186,7 @@ export default function RecoveriesPage() {
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por nombre de estudiante o materia..."
+                  placeholder="Buscar por nombre, cédula o materia..."
                   className="pl-9"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -225,6 +225,7 @@ export default function RecoveriesPage() {
                 // Search filter
                 const matchesSearch = searchTerm === '' || 
                   student.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (student.student_cedula && student.student_cedula.includes(searchTerm)) ||
                   student.failed_subjects.some(s => s.course_name.toLowerCase().includes(searchTerm.toLowerCase()));
                 
                 // Status filter

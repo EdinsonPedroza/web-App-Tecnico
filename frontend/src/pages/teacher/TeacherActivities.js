@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock, Upload, Download, File, Eye, Image, Check } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock, Upload, Download, File, Eye, Image, Check, CheckCircle, XCircle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 import { ensureProtocol } from '@/utils/url';
@@ -32,6 +32,7 @@ export default function TeacherActivities() {
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
   const [students, setStudents] = useState([]);
   const [grades, setGrades] = useState({});
+  const [recoveryStatuses, setRecoveryStatuses] = useState({});
   const [savingGrade, setSavingGrade] = useState(null);
 
   const fetchActivities = useCallback(async () => {
@@ -53,6 +54,7 @@ export default function TeacherActivities() {
     setSubmissionsDialog(activity);
     setLoadingSubmissions(true);
     setGrades({});
+    setRecoveryStatuses({});
     try {
       const [subsRes, studentsRes, gradesRes] = await Promise.all([
         api.get(`/submissions?activity_id=${activity.id}`),
@@ -60,10 +62,15 @@ export default function TeacherActivities() {
         api.get(`/grades?activity_id=${activity.id}`)
       ]);
       setSubmissions(subsRes.data);
-      // Cargar notas existentes
+      // Cargar notas existentes y estado de recuperación
       const gradesMap = {};
-      gradesRes.data.forEach(g => { gradesMap[g.student_id] = g.value; });
+      const recoveryMap = {};
+      gradesRes.data.forEach(g => {
+        gradesMap[g.student_id] = g.value;
+        if (g.recovery_status) recoveryMap[g.student_id] = g.recovery_status;
+      });
       setGrades(gradesMap);
+      setRecoveryStatuses(recoveryMap);
       // Obtener lista de estudiantes del curso
       const courseData = studentsRes.data;
       if (courseData.student_ids && courseData.student_ids.length > 0) {
@@ -101,8 +108,11 @@ export default function TeacherActivities() {
         recovery_status: recoveryStatus
       });
       toast.success(recoveryStatus ? `Recuperación ${recoveryStatus === 'approved' ? 'aprobada' : 'rechazada'}` : 'Nota guardada');
+      if (recoveryStatus) {
+        setRecoveryStatuses(prev => ({ ...prev, [studentId]: recoveryStatus }));
+      }
     } catch (err) {
-      toast.error('Error guardando nota');
+      toast.error(err.response?.data?.detail || 'Error guardando nota');
     } finally {
       setSavingGrade(null);
     }
@@ -413,6 +423,7 @@ export default function TeacherActivities() {
               ) : students.map((student) => {
                 const sub = submissions.find(s => s.student_id === student.id);
                 const currentGrade = grades[student.id] !== undefined ? grades[student.id] : '';
+                const recoveryStatus = recoveryStatuses[student.id] || null;
                 return (
                   <Card key={student.id} className={`${sub ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5'}`}>
                     <CardContent className="p-4">
@@ -458,7 +469,16 @@ export default function TeacherActivities() {
                         {/* Campo de calificación */}
                         <div className="flex items-center gap-2 shrink-0">
                           {submissionsDialog?.is_recovery ? (
-                            // Recovery grading: approve/reject buttons
+                            // Recovery grading: show status badge if already decided, otherwise approve/reject buttons
+                            recoveryStatus === 'approved' ? (
+                              <Badge variant="success" className="text-sm px-3 py-1">
+                                <CheckCircle className="h-4 w-4 mr-1" /> APROBADO
+                              </Badge>
+                            ) : recoveryStatus === 'rejected' ? (
+                              <Badge variant="destructive" className="text-sm px-3 py-1">
+                                <XCircle className="h-4 w-4 mr-1" /> RECHAZADO
+                              </Badge>
+                            ) : (
                             <div className="flex items-center gap-2">
                               <Button
                                 size="sm"
@@ -479,6 +499,7 @@ export default function TeacherActivities() {
                                 {savingGrade === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Rechazar'}
                               </Button>
                             </div>
+                            )
                           ) : (
                             // Normal grading: numeric input
                             <>
