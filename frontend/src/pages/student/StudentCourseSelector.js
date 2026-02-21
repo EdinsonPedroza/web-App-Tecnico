@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, BookOpen, ChevronRight, ArrowLeft, Lock, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
+import { getProgramColorClasses } from '@/utils/programColors';
 
 export default function StudentCourseSelector() {
   const { user } = useAuth();
@@ -162,11 +163,12 @@ export default function StudentCourseSelector() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredSubjectCards.map((card) => (
-              card.isLocked ? (
+            {filteredSubjectCards.map((card) => {
+              const programColorCls = getProgramColorClasses(programs, courses.find(c => c.id === card.courseId)?.program_id || '');
+              return card.isLocked ? (
                 <Card
                   key={`${card.courseId}-${card.subjectId}`}
-                  className="shadow-card opacity-50 border-2 border-border/30 cursor-not-allowed"
+                  className={`shadow-card opacity-50 border-2 cursor-not-allowed ${programColorCls}`}
                   title={`Disponible en Módulo ${card.subjectModule}`}
                 >
                   <CardHeader className="pb-4">
@@ -197,7 +199,7 @@ export default function StudentCourseSelector() {
               ) : (
                 <Card
                   key={`${card.courseId}-${card.subjectId}`}
-                  className="shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 border-border/50 hover:border-primary/40"
+                  className={`shadow-card hover:shadow-card-hover transition-all cursor-pointer group border-2 hover:border-primary/40 ${programColorCls}`}
                   onClick={() => navigate(`/student/course/${card.courseId}?subjectId=${card.subjectId}`)}
                 >
                   <CardHeader className="pb-4">
@@ -230,8 +232,8 @@ export default function StudentCourseSelector() {
                     </div>
                   </CardContent>
                 </Card>
-              )
-            ))}
+              );
+            })}
           </div>
           </>
         )}

@@ -1985,6 +1985,17 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
 async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    # Validate: only ONE recovery activity per subject per course
+    if req.is_recovery:
+        recovery_query = {"course_id": req.course_id, "is_recovery": True}
+        if req.subject_id:
+            recovery_query["subject_id"] = req.subject_id
+        existing_recovery = await db.activities.find_one(recovery_query)
+        if existing_recovery:
+            raise HTTPException(
+                status_code=400,
+                detail="Ya existe una actividad de recuperación para esta materia. Solo se permite una por materia."
+            )
     # Auto-number: count existing activities for this course (course-wide numbering)
     count = await db.activities.count_documents({"course_id": req.course_id})
     activity_number = count + 1

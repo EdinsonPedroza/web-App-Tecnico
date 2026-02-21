@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, ClipboardList, Users, BookOpen, Search, Wand2 } from 'lucide-react';
 import api from '@/lib/api';
+import { getProgramColorClasses } from '@/utils/programColors';
 
 export default function CoursesPage() {
   const [courses, setCourses] = useState([]);
@@ -297,10 +298,10 @@ export default function CoursesPage() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {filteredCourses.map((c) => (
-              <Card key={c.id} className="shadow-card hover:shadow-card-hover transition-shadow">
+              <Card key={c.id} className={`shadow-card hover:shadow-card-hover transition-shadow border-2 ${getProgramColorClasses(programs, c.program_id)}`}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
-                    <CardTitle className="text-sm font-heading">{c.name}</CardTitle>
+                    <CardTitle className="text-base font-heading">{c.name}</CardTitle>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(c)}><Pencil className="h-3 w-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(c.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
@@ -311,7 +312,7 @@ export default function CoursesPage() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <BookOpen className="h-4 w-4 text-primary shrink-0" />
-                      <span className="text-base font-semibold text-foreground truncate">{getName(programs, c.program_id)}</span>
+                      <span className="text-lg font-bold text-foreground truncate">{getName(programs, c.program_id)}</span>
                     </div>
                     {c.subject_ids && c.subject_ids.length > 0 && (
                       <div className="flex flex-wrap gap-1">

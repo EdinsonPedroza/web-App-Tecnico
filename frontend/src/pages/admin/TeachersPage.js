@@ -48,8 +48,18 @@ export default function TeachersPage() {
 
   const filtered = teachers.filter(t => (t.name || '').toLowerCase().includes(search.toLowerCase()) || (t.email || '').toLowerCase().includes(search.toLowerCase()));
   
-  // Filter subjects based on search
-  const filteredSubjects = subjects.filter(subject => 
+  // Filter subjects: only show unassigned subjects (or subjects already assigned to the teacher being edited)
+  // This prevents assigning a subject that already belongs to another teacher
+  const filteredSubjects = subjects.filter(subject => {
+    // Always show subjects already assigned to the teacher being edited
+    if (editing && (editing.subject_ids || []).includes(subject.id)) return true;
+    // Check if subject is assigned to any other teacher
+    const assignedToOther = teachers.some(t =>
+      t.id !== (editing?.id) && (t.subject_ids || []).includes(subject.id)
+    );
+    if (assignedToOther) return false;
+    return subject.name.toLowerCase().includes(subjectSearch.toLowerCase());
+  }).filter(subject =>
     subject.name.toLowerCase().includes(subjectSearch.toLowerCase())
   );
 
