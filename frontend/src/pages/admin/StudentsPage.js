@@ -218,6 +218,12 @@ export default function StudentsPage() {
     if (!form.name.trim() || (!editing && !form.cedula.trim())) { toast.error('Nombre y cédula requeridos'); return; }
     if (!editing && !form.password) { toast.error('Contraseña requerida'); return; }
     
+    // Rule 1: Students must be enrolled in at least one technical program
+    if (!form.program_ids || form.program_ids.length === 0) {
+      toast.error('Debes seleccionar al menos un programa técnico');
+      return;
+    }
+    
     // Validate cédula: only numbers
     if (form.cedula && !/^\d+$/.test(form.cedula)) {
       toast.error('La cédula solo debe contener números');
@@ -565,7 +571,7 @@ export default function StudentsPage() {
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-base">Programas Técnicos ({form.program_ids.length} seleccionados)</Label>
+                <Label className="text-base">Programas Técnicos <span className="text-destructive">*</span> ({form.program_ids.length} seleccionados)</Label>
                 {programs.length > 0 && (
                   <Button 
                     type="button" 
@@ -613,7 +619,7 @@ export default function StudentsPage() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Los estudiantes pueden inscribirse en varios técnicos simultáneamente
+                <span className="text-destructive">Requerido.</span> Los estudiantes pueden inscribirse en varios técnicos simultáneamente
               </p>
             </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>

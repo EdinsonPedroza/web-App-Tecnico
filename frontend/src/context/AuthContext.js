@@ -1,11 +1,30 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import api from '@/lib/api';
 
 const AuthContext = createContext(null);
 
+// Auto-logout after 30 minutes of inactivity (configurable via env var)
+const INACTIVITY_TIMEOUT_MS = parseInt(process.env.REACT_APP_INACTIVITY_TIMEOUT_MIN || '30', 10) * 60 * 1000;
+const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const inactivityTimer = useRef(null);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('educando_token');
+    localStorage.removeItem('educando_user');
+    setUser(null);
+  }, []);
+
+  // Reset inactivity timer on user activity
+  const resetInactivityTimer = useCallback(() => {
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    inactivityTimer.current = setTimeout(() => {
+      logout();
+    }, INACTIVITY_TIMEOUT_MS);
+  }, [logout]);
 
   useEffect(() => {
     const token = localStorage.getItem('educando_token');
@@ -21,6 +40,22 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  // Attach/detach inactivity tracking when user logs in/out
+  useEffect(() => {
+    if (!user) {
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
+      return;
+    }
+    // Start the timer and listen for activity
+    resetInactivityTimer();
+    ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, resetInactivityTimer, { passive: true }));
+    return () => {
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
+    };
+  }, [user, resetInactivityTimer]);
+
   const login = useCallback(async (credentials) => {
     const res = await api.post('/auth/login', credentials);
     const { token, user: userData } = res.data;
@@ -28,12 +63,6 @@ export function AuthProvider({ children }) {
     localStorage.setItem('educando_user', JSON.stringify(userData));
     setUser(userData);
     return userData;
-  }, []);
-
-  const logout = useCallback(() => {
-    localStorage.removeItem('educando_token');
-    localStorage.removeItem('educando_user');
-    setUser(null);
   }, []);
 
   return (

@@ -90,14 +90,19 @@ export default function StudentCourseSelector() {
     });
   });
 
-  // Filter subject cards by search query
-  const filteredSubjectCards = searchQuery.trim()
+  // Filter subject cards by search query, then sort: available (unlocked) first, locked last
+  const filteredSubjectCards = (searchQuery.trim()
     ? subjectCards.filter(card =>
         card.subjectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         card.groupName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         card.programName.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : subjectCards;
+    : subjectCards
+  ).sort((a, b) => {
+    if (a.isLocked && !b.isLocked) return 1;
+    if (!a.isLocked && b.isLocked) return -1;
+    return 0;
+  });
 
   const handleBackToPrograms = () => {
     sessionStorage.removeItem('selectedProgramId');

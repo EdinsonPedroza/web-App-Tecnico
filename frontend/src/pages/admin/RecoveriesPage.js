@@ -16,7 +16,7 @@ export default function RecoveriesPage() {
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('pending');
   const [graduatedCount, setGraduatedCount] = useState(0);
   const [deletingGraduated, setDeletingGraduated] = useState(false);
 
@@ -198,10 +198,9 @@ export default function RecoveriesPage() {
                   <SelectValue placeholder="Estado" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos los estados</SelectItem>
-                  <SelectItem value="pending">Pendientes</SelectItem>
-                  <SelectItem value="approved">Aprobadas</SelectItem>
-                  <SelectItem value="completed">Completadas</SelectItem>
+                  <SelectItem value="all">Todos en proceso</SelectItem>
+                  <SelectItem value="pending">Solo pendientes</SelectItem>
+                  <SelectItem value="approved">Solo aprobadas</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -230,9 +229,8 @@ export default function RecoveriesPage() {
                 
                 // Status filter
                 const matchesStatus = statusFilter === 'all' ||
-                  (statusFilter === 'pending' && student.failed_subjects.some(s => !s.recovery_approved && !s.recovery_completed)) ||
-                  (statusFilter === 'approved' && student.failed_subjects.some(s => s.recovery_approved)) ||
-                  (statusFilter === 'completed' && student.failed_subjects.some(s => s.recovery_completed));
+                  (statusFilter === 'pending' && student.failed_subjects.some(s => !s.recovery_approved)) ||
+                  (statusFilter === 'approved' && student.failed_subjects.some(s => s.recovery_approved && !s.recovery_completed));
                 
                 return matchesSearch && matchesStatus;
               })

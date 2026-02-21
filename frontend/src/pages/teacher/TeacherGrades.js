@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
-import { Loader2, ClipboardList, Save } from 'lucide-react';
+import { Loader2, ClipboardList, Save, CheckCircle, XCircle } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function TeacherGrades() {
@@ -36,7 +36,13 @@ export default function TeacherGrades() {
         api.get('/users?role=estudiante')
       ]);
       setCourse(cRes.data);
-      setActivities(aRes.data.sort((a, b) => (a.activity_number || 0) - (b.activity_number || 0)));
+      // Sort: regular activities first (by activity_number), recovery activities last
+      const sorted = [...aRes.data].sort((a, b) => {
+        if (a.is_recovery && !b.is_recovery) return 1;
+        if (!a.is_recovery && b.is_recovery) return -1;
+        return (a.activity_number || 0) - (b.activity_number || 0);
+      });
+      setActivities(sorted);
       setGrades(gRes.data);
       const courseStudents = uRes.data.filter(u => (cRes.data.student_ids || []).includes(u.id));
       setStudents(courseStudents);
@@ -55,6 +61,11 @@ export default function TeacherGrades() {
     if (editedGrades[key] !== undefined) return editedGrades[key];
     const grade = grades.find(g => g.student_id === studentId && g.activity_id === activityId);
     return grade ? String(grade.value) : '';
+  };
+
+  const getRecoveryStatus = (studentId, activityId) => {
+    const grade = grades.find(g => g.student_id === studentId && g.activity_id === activityId);
+    return grade?.recovery_status || null;
   };
 
   const handleGradeChange = (studentId, activityId, value) => {
@@ -102,6 +113,29 @@ export default function TeacherGrades() {
     }
   };
 
+  const saveRecovery = async (studentId, activityId, recoveryStatus) => {
+    const key = `${studentId}-${activityId}`;
+    setSavingGrades(prev => ({ ...prev, [key]: true }));
+    try {
+      await api.post('/grades', {
+        student_id: studentId,
+        course_id: courseId,
+        activity_id: activityId,
+        subject_id: subjectId,
+        recovery_status: recoveryStatus
+      });
+      toast.success(recoveryStatus === 'approved' ? 'Recuperación aprobada' : 'Recuperación rechazada');
+      let gradesUrl = `/grades?course_id=${courseId}`;
+      if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
+      const gRes = await api.get(gradesUrl);
+      setGrades(gRes.data);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error guardando estado de recuperación');
+    } finally {
+      setSavingGrades(prev => ({ ...prev, [key]: false }));
+    }
+  };
+
   const saveAllEdited = async () => {
     const keys = Object.keys(editedGrades);
     if (keys.length === 0) { toast.info('No hay cambios por guardar'); return; }
@@ -124,12 +158,17 @@ export default function TeacherGrades() {
   };
 
   const getStudentAverage = (studentId) => {
-    const studentGrades = grades.filter(g => g.student_id === studentId);
+    // Only count grades for regular (non-recovery) activities
+    const regularActivityIds = new Set(regularActivities.map(a => a.id));
+    const studentGrades = grades.filter(g => g.student_id === studentId && regularActivityIds.has(g.activity_id));
     if (studentGrades.length === 0) return null;
     return studentGrades.reduce((sum, g) => sum + g.value, 0) / studentGrades.length;
   };
 
   const editedCount = Object.keys(editedGrades).length;
+  // Separate regular and recovery activities
+  const regularActivities = activities.filter(a => !a.is_recovery);
+  const recoveryActivities = activities.filter(a => a.is_recovery);
 
   return (
     <DashboardLayout courseId={courseId}>
@@ -163,7 +202,7 @@ export default function TeacherGrades() {
                       <th className="sticky left-0 z-10 bg-muted/50 backdrop-blur-sm text-left px-4 py-3 text-xs font-semibold text-muted-foreground min-w-52 border-r">
                         Estudiante
                       </th>
-                      {activities.map((act) => (
+                      {regularActivities.map((act) => (
                         <th key={act.id} className="text-center px-3 py-3 text-xs font-semibold text-muted-foreground min-w-24 border-r">
                           <div className="flex flex-col items-center gap-0.5">
                             <Badge variant="outline" className="text-xs font-mono">Act {act.activity_number || '?'}</Badge>
@@ -174,6 +213,14 @@ export default function TeacherGrades() {
                       <th className="text-center px-4 py-3 text-xs font-semibold text-foreground min-w-20 bg-primary/5">
                         Promedio
                       </th>
+                      {recoveryActivities.map((act) => (
+                        <th key={act.id} className="text-center px-3 py-3 text-xs font-semibold text-warning min-w-32 border-r bg-warning/5">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <Badge variant="outline" className="text-xs font-mono border-warning text-warning">Recuperación</Badge>
+                            <span className="truncate max-w-28 block" title={act.title}>{act.title}</span>
+                          </div>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -192,7 +239,7 @@ export default function TeacherGrades() {
                               </div>
                             </div>
                           </td>
-                          {activities.map((act) => {
+                          {regularActivities.map((act) => {
                             const key = `${student.id}-${act.id}`;
                             const value = getGradeValue(student.id, act.id);
                             const isEdited = editedGrades[key] !== undefined;
@@ -248,6 +295,47 @@ export default function TeacherGrades() {
                               <span className="text-sm text-muted-foreground">-</span>
                             )}
                           </td>
+                          {recoveryActivities.map((act) => {
+                            const key = `${student.id}-${act.id}`;
+                            const status = getRecoveryStatus(student.id, act.id);
+                            const isSaving = savingGrades[key];
+                            return (
+                              <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5">
+                                {status === 'approved' ? (
+                                  <Badge variant="success" className="text-xs">
+                                    <CheckCircle className="h-3 w-3 mr-1" /> Aprobado
+                                  </Badge>
+                                ) : status === 'rejected' ? (
+                                  <Badge variant="destructive" className="text-xs">
+                                    <XCircle className="h-3 w-3 mr-1" /> Rechazado
+                                  </Badge>
+                                ) : (
+                                  <div className="flex items-center justify-center gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 px-2 text-success hover:text-success hover:bg-success/10"
+                                      onClick={() => saveRecovery(student.id, act.id, 'approved')}
+                                      disabled={isSaving}
+                                      title="Aprobar recuperación"
+                                    >
+                                      {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() => saveRecovery(student.id, act.id, 'rejected')}
+                                      disabled={isSaving}
+                                      title="Rechazar recuperación"
+                                    >
+                                      <XCircle className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
                         </tr>
                       );
                     })}

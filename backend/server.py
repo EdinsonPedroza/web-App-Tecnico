@@ -1255,8 +1255,25 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
     elif req.program_id:
         program_ids = [req.program_id]
     
+    # Rule 1: Students must be enrolled in at least one technical program
+    if req.role == "estudiante" and not program_ids:
+        raise HTTPException(status_code=400, detail="El estudiante debe estar inscrito en al menos un programa técnico")
+    
     # Handle subject_ids for professors
     subject_ids = req.subject_ids if req.subject_ids else []
+    
+    # Rule 2: Teacher-subject uniqueness — a subject can only be assigned to one professor
+    if req.role == "profesor" and subject_ids:
+        for subject_id in subject_ids:
+            conflict = await db.users.find_one(
+                {"role": "profesor", "subject_ids": subject_id},
+                {"_id": 0, "id": 1, "name": 1}
+            )
+            if conflict:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"La materia ya está asignada al profesor '{conflict['name']}'. Desasígnela primero antes de asignarla a otro profesor."
+                )
     
     # Set default estado for students
     estado = req.estado if req.estado else ("activo" if req.role == "estudiante" else None)
@@ -1355,6 +1372,21 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
             })
             raise HTTPException(status_code=400, detail="Este correo ya está registrado")
     
+    # Rule 2: Teacher-subject uniqueness — a subject can only be assigned to one professor
+    if "subject_ids" in update_data and update_data["subject_ids"]:
+        target_user = await db.users.find_one({"id": user_id}, {"_id": 0, "role": 1})
+        if target_user and target_user.get("role") == "profesor":
+            for subject_id in update_data["subject_ids"]:
+                conflict = await db.users.find_one(
+                    {"role": "profesor", "subject_ids": subject_id, "id": {"$ne": user_id}},
+                    {"_id": 0, "id": 1, "name": 1}
+                )
+                if conflict:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"La materia ya está asignada al profesor '{conflict['name']}'. Desasígnela primero antes de asignarla a otro profesor."
+                    )
+
     result = await db.users.update_one({"id": user_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -2017,6 +2049,18 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
 async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    
+    # Rule E: For recovery activities, only approve/reject is allowed — no numeric grade
+    if req.activity_id:
+        activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1})
+        if activity_doc and activity_doc.get("is_recovery"):
+            if req.value is not None and not req.recovery_status:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Las actividades de recuperación no admiten nota numérica. Use Aprobar o Rechazar."
+                )
+            if req.recovery_status not in ("approved", "rejected", None):
+                raise HTTPException(status_code=400, detail="Estado de recuperación inválido")
     
     existing = await db.grades.find_one({
         "student_id": req.student_id,
