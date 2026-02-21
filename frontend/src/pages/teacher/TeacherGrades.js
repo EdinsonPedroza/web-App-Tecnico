@@ -158,8 +158,9 @@ export default function TeacherGrades() {
   };
 
   const getStudentAverage = (studentId) => {
-    // Only count non-recovery grades for the average
-    const studentGrades = grades.filter(g => g.student_id === studentId && !g.recovery_status);
+    // Only count grades for regular (non-recovery) activities
+    const regularActivityIds = new Set(regularActivities.map(a => a.id));
+    const studentGrades = grades.filter(g => g.student_id === studentId && regularActivityIds.has(g.activity_id));
     if (studentGrades.length === 0) return null;
     return studentGrades.reduce((sum, g) => sum + g.value, 0) / studentGrades.length;
   };

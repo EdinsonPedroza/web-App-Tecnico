@@ -1247,6 +1247,10 @@ class TestStudentProgramRequired:
         with pytest.raises(ValueError, match="al menos un programa"):
             self._validate_student_program("estudiante", None)
 
+    def test_student_with_empty_list_and_program_id_fallback_is_valid(self):
+        """Empty program_ids list with a legacy program_id should pass (program_id fallback)."""
+        self._validate_student_program("estudiante", [], program_id="prog-admin")
+
     def test_student_with_empty_list_raises(self):
         """Student with empty program_ids list should raise ValueError."""
         with pytest.raises(ValueError, match="al menos un programa"):
