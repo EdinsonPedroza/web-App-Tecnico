@@ -7,16 +7,26 @@
 # Testing
 **/coverage/
 **/test_reports/
+**/.pytest_cache/
 
 # Production builds
 **/build/
 **/dist/
 
 # Environment variables
+.env
+backend/.env
+backend/.env.local
+frontend/.env
 **/.env.local
 **/.env.development.local
 **/.env.test.local
 **/.env.production.local
+**/.env.private
+
+# Private credential files
+CREDENCIALES_PRIVADAS.md
+USUARIOS_Y_CONTRASEÑAS.txt
 
 # Logs
 *.log
@@ -52,3 +62,7 @@ backend/uploads/*
 *.tmp
 *.temp
 /tmp/
+
+# Tool artifacts
+.emergent/
+memory/

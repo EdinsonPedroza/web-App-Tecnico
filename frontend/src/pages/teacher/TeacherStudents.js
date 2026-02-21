@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -35,7 +35,10 @@ export default function TeacherStudents() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const initials = (name) => name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  const initials = (name) => {
+    if (!name) return '??';
+    return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  };
 
   const getAvg = (studentId) => {
     const sg = grades.filter(g => g.student_id === studentId);

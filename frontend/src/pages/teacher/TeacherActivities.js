@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,11 +12,14 @@ import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock, Upload, Download, File, Eye, Image, Check } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
+import { ensureProtocol } from '@/utils/url';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 
 export default function TeacherActivities() {
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -33,14 +36,16 @@ export default function TeacherActivities() {
 
   const fetchActivities = useCallback(async () => {
     try {
-      const res = await api.get(`/activities?course_id=${courseId}`);
+      let url = `/activities?course_id=${courseId}`;
+      if (subjectId) url += `&subject_id=${subjectId}`;
+      const res = await api.get(url);
       setActivities(res.data);
     } catch (err) {
       toast.error('Error cargando actividades');
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
@@ -91,6 +96,7 @@ export default function TeacherActivities() {
         student_id: studentId,
         course_id: courseId,
         activity_id: submissionsDialog.id,
+        subject_id: subjectId,
         value: value,
         recovery_status: recoveryStatus
       });
@@ -180,6 +186,7 @@ export default function TeacherActivities() {
       } else {
         await api.post('/activities', {
           course_id: courseId,
+          subject_id: subjectId,
           title: form.title,
           description: form.description,
           start_date: startDate,
@@ -313,14 +320,14 @@ export default function TeacherActivities() {
               <Label>Descripción</Label>
               <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Instrucciones de la actividad..." rows={4} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-3">
               <div className="space-y-2">
                 <Label>Fecha de Inicio</Label>
-                <Input type="datetime-local" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+                <Input type="datetime-local" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} className="w-full" />
               </div>
               <div className="space-y-2">
                 <Label>Fecha Límite</Label>
-                <Input type="datetime-local" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+                <Input type="datetime-local" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className="w-full" />
               </div>
             </div>
 
@@ -492,7 +499,7 @@ export default function TeacherActivities() {
                                 size="sm"
                                 className="h-8"
                                 onClick={() => saveGrade(student.id)}
-                                disabled={savingGrade === student.id || currentGrade === ''}
+                                disabled={savingGrade === student.id || currentGrade == null || String(currentGrade).trim() === ''}
                               >
                                 {savingGrade === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                               </Button>

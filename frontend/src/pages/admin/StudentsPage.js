@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight, ArrowUpCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
+
+const DEFAULT_MODULE = 1;
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([]);
@@ -22,17 +24,22 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', course_ids: [], module: '', grupo: '' });
+  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, estado: 'activo' });
   const [saving, setSaving] = useState(false);
-  const [filterProgram, setFilterProgram] = useState('');
-  const [filterModule, setFilterModule] = useState('');
+  const [filterProgram, setFilterProgram] = useState('all');
+  const [filterModule, setFilterModule] = useState('all');
+  const [filterEstado, setFilterEstado] = useState('activo'); // Default to showing only active students
   const [page, setPage] = useState(1);
   const pageSize = 10;
+  const [programSearch, setProgramSearch] = useState('');
+  const [courseSearch, setCourseSearch] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
+      // Fetch students with optional estado filter
+      const studentParams = filterEstado === 'all' ? '?role=estudiante' : `?role=estudiante&estado=${filterEstado}`;
       const [studRes, progRes, courseRes] = await Promise.all([
-        api.get('/users?role=estudiante'),
+        api.get(`/users${studentParams}`),
         api.get('/programs'),
         api.get('/courses')
       ]);
@@ -44,15 +51,34 @@ export default function StudentsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterEstado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const filtered = students.filter(s => {
-    const matchesSearch = s.name.toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search);
-    const matchesProgram = !filterProgram || s.program_id === filterProgram;
-    const matchesModule = !filterModule || String(s.module) === filterModule;
-    return matchesSearch && matchesProgram && matchesModule;
+    const matchesSearch = (s.name || '').toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search);
+    
+    // For program filter: check if student has this program
+    let matchesProgram = filterProgram === 'all';
+    if (!matchesProgram) {
+      const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
+      matchesProgram = studentProgramIds.some(id => String(id) === String(filterProgram));
+    }
+    
+    // For module filter: check if student has this module in any of their programs
+    let matchesModule = filterModule === 'all';
+    if (!matchesModule) {
+      if (s.program_modules) {
+        // New structure: check if any program has this module
+        matchesModule = Object.values(s.program_modules).some(m => String(m) === filterModule);
+      } else if (s.module) {
+        // Old structure: fallback to global module
+        matchesModule = String(s.module) === filterModule;
+      }
+    }
+    
+    const matchesEstado = filterEstado === 'all' || (s.estado || 'activo') === filterEstado;
+    return matchesSearch && matchesProgram && matchesModule && matchesEstado;
   });
   
   const totalPages = Math.ceil(filtered.length / pageSize);
@@ -61,69 +87,182 @@ export default function StudentsPage() {
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin asignar';
   const getProgramShortName = (id) => {
     const program = programs.find(p => p.id === id);
-    if (!program) return 'N/A';
-    const words = program.name.split(' ');
-    return words.length > 3 ? words.slice(2, 5).join(' ') : program.name;
+    if (!program || !program.name) return 'N/A';
+    // Strip leading "Técnico [Laboral] [en/de/para]" prefix for cleaner display
+    const cleaned = program.name.replace(/^[Tt][eé]cnico\s+([Ll]aboral\s+)?([Ee]n\s+|[Dd]e\s+|[Pp]ara\s+)?/, '');
+    return cleaned.length > 0 ? cleaned : program.name;
   };
-  const initials = (name) => name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
   
-  // Format: MOD1-ENERO-2026 (with program short name prefix)
-  const formatCourseInfo = (student) => {
-    if (!student.module || !student.program_id) return '-';
-    const monthNames = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
-    const currentMonth = monthNames[new Date().getMonth()];
-    const currentYear = new Date().getFullYear();
-    const programShort = getProgramShortName(student.program_id);
-    return `${programShort}-MOD${student.module}-${currentMonth}-${currentYear}`;
+  // Get all program names for a student (supports both program_id and program_ids)
+  const getStudentPrograms = (student) => {
+    const programIds = student.program_ids || (student.program_id ? [student.program_id] : []);
+    if (programIds.length === 0) return [{ id: null, name: 'Sin asignar' }];
+    return programIds.map(id => ({
+      id,
+      name: getProgramShortName(id)
+    }));
+  };
+  
+  const initials = (name) => {
+    if (!name) return '??';
+    return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
   };
 
   // Get which courses a student is enrolled in
   const getStudentCourseIds = (studentId) => courses.filter(c => (c.student_ids || []).includes(studentId)).map(c => c.id);
 
+  // Determine if a group/course is compatible with a student's current module for a given program.
+  // - If studentModule == 1: student can join groups where module 1 hasn't started yet (today < module_dates["1"].start)
+  // - If studentModule == 2: student can join groups where module 1 has already started (module_dates["1"].start <= today)
+  const isCourseCompatibleWithModule = (course, studentModule) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const moduleDates = course.module_dates || {};
+    const mod1Dates = moduleDates['1'] || moduleDates[1] || null;
+    const mod1Start = mod1Dates?.start || null;
+
+    if (studentModule === 1) {
+      // Student is in module 1: only show groups where module 1 hasn't started yet
+      return !mod1Start || mod1Start > today;
+    } else if (studentModule >= 2) {
+      // Student is in module 2+: only show groups where module 1 has already started
+      return mod1Start && mod1Start <= today;
+    }
+    return true;
+  };
+
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', course_ids: [], module: '', grupo: '' });
+    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, estado: 'activo' });
+    setProgramSearch('');
+    setCourseSearch('');
     setDialogOpen(true);
   };
 
   const openEdit = (student) => {
     setEditing(student);
+    // Support both single program_id and multiple program_ids
+    const studentProgramIds = student.program_ids || (student.program_id ? [student.program_id] : []);
+    
+    // Initialize program_modules from student data or create empty object
+    const programModules = student.program_modules || {};
+    // If student has old 'module' field but no program_modules, migrate it
+    if (!student.program_modules && student.module && studentProgramIds.length > 0) {
+      studentProgramIds.forEach(progId => {
+        programModules[progId] = student.module;
+      });
+    }
+    
     setForm({
       name: student.name,
       cedula: student.cedula || '',
       password: '',
       phone: student.phone || '',
       program_id: student.program_id || '',
+      program_ids: studentProgramIds,
       course_ids: getStudentCourseIds(student.id),
-      module: student.module || '',
-      grupo: student.grupo || ''
+      program_modules: programModules,
+      estado: student.estado || 'activo'
     });
+    setProgramSearch('');
+    setCourseSearch('');
     setDialogOpen(true);
   };
 
   const toggleCourse = (courseId) => {
-    setForm(prev => ({
-      ...prev,
-      course_ids: prev.course_ids.includes(courseId)
-        ? prev.course_ids.filter(id => id !== courseId)
-        : [...prev.course_ids, courseId]
-    }));
+    setForm(prev => {
+      const courseIds = prev.course_ids || [];
+      const isRemoving = courseIds.includes(courseId);
+      if (isRemoving) {
+        return { ...prev, course_ids: courseIds.filter(id => id !== courseId) };
+      }
+      // Enforce one group per program: remove any existing group for the same program
+      const selectedCourse = courses.find(c => c.id === courseId);
+      const sameProgramIds = selectedCourse
+        ? courseIds.filter(id => {
+            const c = courses.find(x => x.id === id);
+            return c && c.program_id === selectedCourse.program_id;
+          })
+        : [];
+      const filteredIds = courseIds.filter(id => !sameProgramIds.includes(id));
+      return { ...prev, course_ids: [...filteredIds, courseId] };
+    });
+  };
+
+  const toggleProgram = (programId) => {
+    setForm(prev => {
+      const programIds = prev.program_ids || [];
+      const programModules = prev.program_modules || {};
+      const isAdding = !programIds.includes(programId);
+      
+      const newProgramIds = isAdding
+        ? [...programIds, programId]
+        : programIds.filter(id => id !== programId);
+      
+      // Initialize module to DEFAULT_MODULE when adding a new program, remove when removing program
+      const newProgramModules = { ...programModules };
+      if (isAdding) {
+        newProgramModules[programId] = DEFAULT_MODULE;
+      } else {
+        delete newProgramModules[programId];
+      }
+      
+      return {
+        ...prev,
+        program_ids: newProgramIds,
+        program_modules: newProgramModules
+      };
+    });
   };
 
   const handleSave = async () => {
     if (!form.name.trim() || (!editing && !form.cedula.trim())) { toast.error('Nombre y cédula requeridos'); return; }
     if (!editing && !form.password) { toast.error('Contraseña requerida'); return; }
+    
+    // Validate cédula: only numbers
+    if (form.cedula && !/^\d+$/.test(form.cedula)) {
+      toast.error('La cédula solo debe contener números');
+      return;
+    }
+    
+    // Password length validation
+    if (form.password && form.password.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    
+    // Validate program-group relationship: each program should have at least one group
+    if (form.program_ids && form.program_ids.length > 0 && form.course_ids && form.course_ids.length > 0) {
+      // Get the programs for each selected course
+      const selectedCourses = courses.filter(c => form.course_ids.includes(c.id));
+      const courseProgramIds = selectedCourses.map(c => c.program_id);
+      
+      // Check that each selected program has at least one group
+      for (const programId of form.program_ids) {
+        if (!courseProgramIds.includes(programId)) {
+          const programName = programs.find(p => p.id === programId)?.name || 'Programa';
+          toast.error(`Debe seleccionar al menos un grupo para el programa: ${programName}`);
+          return;
+        }
+      }
+    }
+    
     setSaving(true);
     try {
       let studentId;
       if (editing) {
         const updateData = { 
           name: form.name, 
+          cedula: form.cedula, // Always include cedula
           phone: form.phone, 
           program_id: form.program_id || null,
-          module: form.module ? parseInt(form.module) : null,
-          grupo: form.grupo || null
+          program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
+          program_modules: form.program_modules && Object.keys(form.program_modules).length > 0 ? form.program_modules : null,
+          estado: form.estado || 'activo'
         };
+        // Include password only if provided (optional when editing)
+        if (form.password && form.password.trim()) {
+          updateData.password = form.password;
+        }
         await api.put(`/users/${editing.id}`, updateData);
         studentId = editing.id;
         toast.success('Estudiante actualizado');
@@ -131,31 +270,52 @@ export default function StudentsPage() {
         const createData = { 
           ...form, 
           role: 'estudiante',
-          module: form.module ? parseInt(form.module) : null
+          program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
+          program_modules: form.program_modules && Object.keys(form.program_modules).length > 0 ? form.program_modules : null,
+          estado: form.estado || 'activo'
         };
         const res = await api.post('/users', createData);
         studentId = res.data.id;
         toast.success('Estudiante creado');
       }
 
-      // Update course enrollments
+      // Update course enrollments — handle failures independently so a created student
+      // is never silently lost if a particular enrollment request fails.
+      const enrollmentErrors = [];
       for (const course of courses) {
         const isEnrolled = (course.student_ids || []).includes(studentId);
-        const shouldBeEnrolled = form.course_ids.includes(course.id);
+        const shouldBeEnrolled = (form.course_ids || []).includes(course.id);
 
         if (isEnrolled && !shouldBeEnrolled) {
           // Remove from course
           const newIds = (course.student_ids || []).filter(id => id !== studentId);
-          await api.put(`/courses/${course.id}`, { student_ids: newIds });
+          try {
+            await api.put(`/courses/${course.id}`, { student_ids: newIds });
+          } catch (enrollErr) {
+            enrollmentErrors.push(`Error al desinscribir del grupo "${course.name}": ${enrollErr.response?.data?.detail || enrollErr.message}`);
+          }
         } else if (!isEnrolled && shouldBeEnrolled) {
           // Add to course
           const newIds = [...(course.student_ids || []), studentId];
-          await api.put(`/courses/${course.id}`, { student_ids: newIds });
+          try {
+            await api.put(`/courses/${course.id}`, { student_ids: newIds });
+          } catch (enrollErr) {
+            enrollmentErrors.push(`Inscripción en grupo "${course.name}" fallida: ${enrollErr.response?.data?.detail || enrollErr.message}`);
+          }
         }
       }
 
       setDialogOpen(false);
       fetchData();
+
+      // Show enrollment errors as warnings after the dialog closes so the user knows
+      // the student was saved but some enrollments could not be completed.
+      if (enrollmentErrors.length > 0) {
+        const suffix = editing ? '' : ' (estudiante quedó creado sin inscribir en ese grupo)';
+        enrollmentErrors.forEach(msg => {
+          toast.warning(msg + suffix, { duration: 8000 });
+        });
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error guardando estudiante');
     } finally {
@@ -174,20 +334,6 @@ export default function StudentsPage() {
     }
   };
 
-  const handlePromote = async (student) => {
-    if (!student.module || student.module >= 2) {
-      toast.error('El estudiante ya está en el módulo final');
-      return;
-    }
-    if (!window.confirm(`¿Promover a ${student.name} al Módulo ${student.module + 1}?`)) return;
-    try {
-      await api.put(`/users/${student.id}/promote`);
-      toast.success('Estudiante promovido exitosamente');
-      fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error promoviendo estudiante');
-    }
-  };
 
   return (
     <DashboardLayout>
@@ -211,7 +357,7 @@ export default function StudentsPage() {
                 <SelectValue placeholder="Filtrar por técnico" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos los técnicos</SelectItem>
+                <SelectItem value="all">Todos los técnicos</SelectItem>
                 {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -220,9 +366,21 @@ export default function StudentsPage() {
                 <SelectValue placeholder="Filtrar por módulo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos los módulos</SelectItem>
+                <SelectItem value="all">Todos los módulos</SelectItem>
                 <SelectItem value="1">Módulo 1</SelectItem>
                 <SelectItem value="2">Módulo 2</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterEstado} onValueChange={setFilterEstado}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Filtrar por estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="activo">Activos</SelectItem>
+                <SelectItem value="egresado">Egresados</SelectItem>
+                <SelectItem value="pendiente_recuperacion">Pendiente Recuperación</SelectItem>
+                <SelectItem value="retirado">Retirados</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -246,10 +404,9 @@ export default function StudentsPage() {
                   <TableRow>
                     <TableHead>Estudiante</TableHead>
                     <TableHead>Cédula</TableHead>
-                    <TableHead>Programa</TableHead>
-                    <TableHead>Técnico-Módulo-Curso</TableHead>
-                    <TableHead>Grupo</TableHead>
-                    <TableHead>Cursos</TableHead>
+                    <TableHead className="min-w-[200px]">Programa</TableHead>
+                    <TableHead>Módulo Actual</TableHead>
+                    <TableHead>Grupos Inscritos</TableHead>
                     <TableHead>Teléfono</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
@@ -261,30 +418,78 @@ export default function StudentsPage() {
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8"><AvatarFallback className="bg-primary/10 text-primary text-xs">{initials(s.name)}</AvatarFallback></Avatar>
-                          <span className="font-medium text-sm">{s.name}</span>
+                          <span className="font-medium text-sm">{s.name || 'Sin nombre'}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground font-mono">{s.cedula}</TableCell>
-                      <TableCell><Badge variant="secondary" className="text-xs truncate max-w-32">{getProgramName(s.program_id)}</Badge></TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs font-mono">{formatCourseInfo(s)}</Badge>
+                        <div className="flex flex-col gap-1">
+                          {getStudentPrograms(s).map((prog, idx) => (
+                            <Badge key={prog.id ?? `unassigned-${idx}`} variant="secondary" className="text-xs whitespace-normal">
+                              {prog.name}
+                            </Badge>
+                          ))}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{s.grupo || '-'}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{getStudentCourseIds(s.id).length} cursos</Badge></TableCell>
+                      <TableCell>
+                        {(() => {
+                          const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
+                          if (studentProgramIds.length === 0) {
+                            return <Badge variant="outline" className="text-xs font-mono">-</Badge>;
+                          }
+                          
+                          // Use program_modules if available, otherwise fall back to global module
+                          if (s.program_modules && Object.keys(s.program_modules).length > 0) {
+                            return (
+                              <div className="flex flex-col gap-1">
+                                {studentProgramIds.map(progId => {
+                                  const module = s.program_modules[progId];
+                                  const progName = getProgramShortName(progId);
+                                  return (
+                                    <Badge key={progId} variant="outline" className="text-xs font-mono whitespace-nowrap">
+                                      {progName}: Módulo {module || 1}
+                                    </Badge>
+                                  );
+                                })}
+                              </div>
+                            );
+                          } else if (s.module) {
+                            // Fallback to old structure
+                            return <Badge variant="outline" className="text-xs font-mono">Módulo {s.module}</Badge>;
+                          } else {
+                            return <Badge variant="outline" className="text-xs font-mono">-</Badge>;
+                          }
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const studentCourseIds = getStudentCourseIds(s.id);
+                          if (studentCourseIds.length === 0) {
+                            return <span className="text-sm text-muted-foreground">Sin grupos</span>;
+                          }
+                          const studentCourses = courses.filter(c => studentCourseIds.includes(c.id));
+                          return (
+                             <div className="flex flex-col gap-1">
+                               {studentCourses.map(course => {
+                                 const programName = getProgramShortName(course.program_id);
+                                 return (
+                                   <Badge key={course.id} variant="outline" className="text-xs rounded-md px-3 py-1">
+                                     {course.name} <span className="text-muted-foreground ml-1">({programName})</span>
+                                   </Badge>
+                                 );
+                               })}
+                             </div>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{s.phone || '-'}</TableCell>
-                      <TableCell><Badge variant={s.active !== false ? 'success' : 'destructive'}>{s.active !== false ? 'Activo' : 'Inactivo'}</Badge></TableCell>
+                      <TableCell>
+                        <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : 'secondary'}>
+                          {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {s.module && s.module < 2 && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handlePromote(s)}
-                              title="Promover al siguiente módulo"
-                            >
-                              <ArrowUpCircle className="h-4 w-4 text-success" />
-                            </Button>
-                          )}
                           <Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                         </div>
@@ -333,46 +538,185 @@ export default function StudentsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Nombre Completo</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del estudiante" /></div>
-            <div className="space-y-2"><Label>Cédula</Label><Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Número de cédula" disabled={!!editing} /></div>
-            {!editing && <div className="space-y-2"><Label>Contraseña</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Contraseña inicial" /></div>}
             <div className="space-y-2">
-              <Label>Programa</Label>
-              <Select value={form.program_id} onValueChange={(v) => setForm({ ...form, program_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Seleccionar programa" /></SelectTrigger>
-                <SelectContent>
-                  {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>Cédula</Label>
+              <Input 
+                type="text" 
+                inputMode="numeric" 
+                pattern="[0-9]*"
+                value={form.cedula} 
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '');
+                  setForm({ ...form, cedula: value });
+                }} 
+                placeholder="Número de cédula (solo números)" 
+              />
+              {editing && <p className="text-xs text-amber-600 dark:text-amber-500">⚠️ Cambiar la cédula puede afectar el acceso del estudiante. Verifica que no exista duplicado.</p>}
+              <p className="text-xs text-muted-foreground">Solo se permiten números</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Módulo</Label>
-                <Select value={form.module} onValueChange={(v) => setForm({ ...form, module: v })}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar módulo" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">Módulo 1</SelectItem>
-                    <SelectItem value="2">Módulo 2</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="space-y-2">
+              <Label>{editing ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</Label>
+              <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "Dejar vacío para no cambiar" : "Contraseña inicial"} />
+              {editing ? (
+                <p className="text-xs text-muted-foreground">Dejar vacío si no deseas cambiar la contraseña. Mínimo 6 caracteres si se cambia.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Mínimo 6 caracteres</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-base">Programas Técnicos ({form.program_ids.length} seleccionados)</Label>
+                {programs.length > 0 && (
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => {
+                      if (form.program_ids.length === programs.length) {
+                        setForm({ ...form, program_ids: [], course_ids: [] });
+                      } else {
+                        setForm({ ...form, program_ids: programs.map(p => p.id) });
+                      }
+                    }}
+                  >
+                    {form.program_ids.length === programs.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                  </Button>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label>Grupo (Mes y Año)</Label>
-                <Input value={form.grupo} onChange={(e) => setForm({ ...form, grupo: e.target.value })} placeholder="ej: Enero 2025, Febrero 2025" />
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Buscar programas técnicos..." 
+                  value={programSearch}
+                  onChange={(e) => setProgramSearch(e.target.value)}
+                  className="pl-9"
+                />
               </div>
+              <div className="max-h-40 overflow-y-auto rounded-lg border p-3 space-y-2 bg-muted/20">
+                {programs.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay programas disponibles</p>
+                ) : (
+                  programs
+                    .filter(p => {
+                      const name = String(p.name || '');
+                      return name.toLowerCase().includes(programSearch.toLowerCase());
+                    })
+                    .map((p) => (
+                      <div key={p.id} className="flex items-center gap-2">
+                        <Checkbox 
+                          checked={(form.program_ids || []).includes(p.id)} 
+                          onCheckedChange={() => toggleProgram(p.id)} 
+                        />
+                        <span className="text-sm">{p.name}</span>
+                      </div>
+                    ))
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Los estudiantes pueden inscribirse en varios técnicos simultáneamente
+              </p>
             </div>
             <div className="space-y-2"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="300 123 4567" /></div>
             <div className="space-y-2">
-              <Label>Cursos Inscritos</Label>
-              <div className="max-h-36 overflow-y-auto rounded-lg border p-3 space-y-2">
-                {courses.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No hay cursos creados</p>
-                ) : courses.map((c) => (
-                  <div key={c.id} className="flex items-center gap-2">
-                    <Checkbox checked={form.course_ids.includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
-                    <span className="text-sm">{c.name}</span>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between">
+                <Label className="text-base">Grupos Inscritos ({form.course_ids.length} seleccionados)</Label>
+                {(() => {
+                  const filteredCourses = courses.filter(c => {
+                    const matchesProgram = !form.program_ids.length || form.program_ids.includes(c.program_id);
+                    if (!matchesProgram) return false;
+                    if (editing && form.program_modules && c.program_id) {
+                      const studentModule = form.program_modules[c.program_id];
+                      if (studentModule) {
+                        const isCurrentlyEnrolled = (form.course_ids || []).includes(c.id);
+                        if (!isCurrentlyEnrolled && !isCourseCompatibleWithModule(c, studentModule)) return false;
+                      }
+                    }
+                    return true;
+                  });
+                  return filteredCourses.length > 0 && (
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        if (form.course_ids.length === filteredCourses.length) {
+                          setForm({ ...form, course_ids: [] });
+                        } else {
+                          setForm({ ...form, course_ids: filteredCourses.map(c => c.id) });
+                        }
+                      }}
+                    >
+                      {form.course_ids.length === filteredCourses.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                    </Button>
+                  );
+                })()}
               </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Buscar grupos..." 
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <div className="max-h-36 overflow-y-auto rounded-lg border p-3 space-y-2">
+                {(() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const filteredCourses = courses.filter(c => {
+                    const matchesProgram = !form.program_ids.length || form.program_ids.includes(c.program_id);
+                    if (!matchesProgram) return false;
+                    const courseName = String(c.name || '');
+                    const matchesSearch = courseName.toLowerCase().includes(courseSearch.toLowerCase());
+                    if (!matchesSearch) return false;
+                    // When editing an existing student, filter by module compatibility per program
+                    if (editing && form.program_modules && c.program_id) {
+                      const studentModule = form.program_modules[c.program_id];
+                      if (studentModule) {
+                        // Allow currently enrolled groups regardless of module (don't lock out existing)
+                        const isCurrentlyEnrolled = (form.course_ids || []).includes(c.id);
+                        if (!isCurrentlyEnrolled && !isCourseCompatibleWithModule(c, studentModule)) {
+                          return false;
+                        }
+                      }
+                    }
+                    return true;
+                  });
+                  
+                  if (courses.length === 0) {
+                    return <p className="text-sm text-muted-foreground">No hay grupos creados</p>;
+                  }
+                  
+                  if (filteredCourses.length === 0 && form.program_ids.length > 0) {
+                    return <p className="text-sm text-muted-foreground">No hay grupos compatibles con el módulo del estudiante para los técnicos seleccionados</p>;
+                  }
+                  
+                  if (filteredCourses.length === 0 && courseSearch) {
+                    return <p className="text-sm text-muted-foreground">No se encontraron grupos que coincidan con la búsqueda</p>;
+                  }
+                  
+                  return filteredCourses.map((c) => {
+                    const programName = getProgramShortName(c.program_id);
+                    const studentModule = form.program_modules?.[c.program_id];
+                    const mod1Dates = c.module_dates?.['1'] || c.module_dates?.[1];
+                    const mod1Start = mod1Dates?.start;
+                    const moduleInfo = mod1Start
+                      ? (mod1Start <= today ? 'Inscripción cerrada' : 'Inscripción abierta')
+                      : 'Nuevo grupo';
+                    return (
+                      <div key={c.id} className="flex items-center gap-2">
+                        <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
+                        <span className="text-sm flex-1">{c.name}</span>
+                        <span className="text-xs text-muted-foreground">({programName})</span>
+                        <span className="text-xs text-muted-foreground italic">{moduleInfo}</span>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Se muestran grupos compatibles con el módulo del estudiante. Solo se puede elegir un grupo por técnico.
+              </p>
             </div>
           </div>
           <DialogFooter>
