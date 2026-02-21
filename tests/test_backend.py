@@ -1211,3 +1211,207 @@ class TestRecoveryPanelFilter:
         else:
             result = "retirado"
         assert result == "pendiente_recuperacion"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for Rule 1: Student must have at least 1 program
+# ---------------------------------------------------------------------------
+
+class TestStudentProgramRequired:
+    """Tests for Rule 1: students must be enrolled in at least one technical program."""
+
+    def _validate_student_program(self, role, program_ids, program_id=None):
+        """Simulate create_user program validation logic from server.py."""
+        if role != "estudiante":
+            return  # Only applies to students
+        # Mirror: determine effective program_ids
+        if program_ids:
+            effective_program_ids = program_ids
+        elif program_id:
+            effective_program_ids = [program_id]
+        else:
+            effective_program_ids = []
+        if not effective_program_ids:
+            raise ValueError("El estudiante debe estar inscrito en al menos un programa técnico")
+
+    def test_student_with_program_ids_is_valid(self):
+        """Student with program_ids should pass validation."""
+        self._validate_student_program("estudiante", ["prog-admin"])
+
+    def test_student_with_program_id_fallback_is_valid(self):
+        """Student with legacy program_id should pass validation."""
+        self._validate_student_program("estudiante", None, program_id="prog-admin")
+
+    def test_student_without_any_program_raises(self):
+        """Student with no program should raise ValueError."""
+        with pytest.raises(ValueError, match="al menos un programa"):
+            self._validate_student_program("estudiante", None)
+
+    def test_student_with_empty_list_raises(self):
+        """Student with empty program_ids list should raise ValueError."""
+        with pytest.raises(ValueError, match="al menos un programa"):
+            self._validate_student_program("estudiante", [])
+
+    def test_non_student_role_not_affected(self):
+        """Validation should NOT apply to professors or admins."""
+        # Should not raise
+        self._validate_student_program("profesor", None)
+        self._validate_student_program("admin", None)
+
+    def test_student_with_multiple_programs_is_valid(self):
+        """Student enrolled in multiple programs should pass."""
+        self._validate_student_program("estudiante", ["prog-admin", "prog-infancia"])
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for Rule 2: Teacher-subject uniqueness constraint
+# ---------------------------------------------------------------------------
+
+class TestTeacherSubjectUniqueness:
+    """Tests for Rule 2: a subject can only be assigned to one professor at a time."""
+
+    def _check_subject_conflict(self, new_subject_ids, existing_teachers, exclude_teacher_id=None):
+        """Simulate the teacher-subject uniqueness check from server.py create/update_user."""
+        for subject_id in new_subject_ids:
+            for teacher in existing_teachers:
+                if exclude_teacher_id and teacher["id"] == exclude_teacher_id:
+                    continue
+                if subject_id in (teacher.get("subject_ids") or []):
+                    raise ValueError(
+                        f"La materia ya está asignada al profesor '{teacher['name']}'. "
+                        "Desasígnela primero antes de asignarla a otro profesor."
+                    )
+
+    def test_no_conflict_when_no_existing_teachers(self):
+        """No conflict when there are no existing teachers with the subject."""
+        self._check_subject_conflict(["subj-1"], [])
+
+    def test_no_conflict_when_subject_not_assigned(self):
+        """No conflict when the subject is not yet assigned to any teacher."""
+        teachers = [{"id": "t1", "name": "Teacher A", "subject_ids": ["subj-2"]}]
+        self._check_subject_conflict(["subj-1"], teachers)
+
+    def test_conflict_raises_when_subject_already_assigned(self):
+        """Conflict detected when trying to assign a subject already assigned to another teacher."""
+        teachers = [{"id": "t1", "name": "Teacher A", "subject_ids": ["subj-1"]}]
+        with pytest.raises(ValueError, match="ya está asignada al profesor"):
+            self._check_subject_conflict(["subj-1"], teachers)
+
+    def test_no_conflict_when_assigning_to_same_teacher(self):
+        """Updating the same teacher's subjects should not trigger a conflict."""
+        teachers = [{"id": "t1", "name": "Teacher A", "subject_ids": ["subj-1"]}]
+        # Exclude teacher t1 (same teacher being updated)
+        self._check_subject_conflict(["subj-1"], teachers, exclude_teacher_id="t1")
+
+    def test_conflict_with_multiple_subjects_partial(self):
+        """Conflict raised if even one subject in a list is already assigned."""
+        teachers = [{"id": "t1", "name": "Teacher A", "subject_ids": ["subj-2"]}]
+        with pytest.raises(ValueError, match="ya está asignada al profesor"):
+            self._check_subject_conflict(["subj-1", "subj-2"], teachers)
+
+    def test_multiple_teachers_no_overlap(self):
+        """Multiple teachers each with different subjects, no conflict."""
+        teachers = [
+            {"id": "t1", "name": "Teacher A", "subject_ids": ["subj-1"]},
+            {"id": "t2", "name": "Teacher B", "subject_ids": ["subj-2"]},
+        ]
+        self._check_subject_conflict(["subj-3"], teachers)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for Rule E: Recovery activities cannot have numeric grades
+# ---------------------------------------------------------------------------
+
+class TestRecoveryGradeRestriction:
+    """Tests for Rule E: recovery activities only allow approve/reject, not numeric grades."""
+
+    def _validate_recovery_grade(self, is_recovery, value, recovery_status):
+        """Simulate the recovery grade validation from server.py create_grade."""
+        if is_recovery:
+            if value is not None and not recovery_status:
+                raise ValueError(
+                    "Las actividades de recuperación no admiten nota numérica. Use Aprobar o Rechazar."
+                )
+            if recovery_status not in ("approved", "rejected", None):
+                raise ValueError("Estado de recuperación inválido")
+
+    def test_regular_activity_allows_numeric_grade(self):
+        """Regular (non-recovery) activity should allow numeric grade without restriction."""
+        self._validate_recovery_grade(False, 4.5, None)
+
+    def test_recovery_activity_with_only_status_approved_is_valid(self):
+        """Recovery activity with approved status and no numeric value is valid."""
+        self._validate_recovery_grade(True, None, "approved")
+
+    def test_recovery_activity_with_only_status_rejected_is_valid(self):
+        """Recovery activity with rejected status and no numeric value is valid."""
+        self._validate_recovery_grade(True, None, "rejected")
+
+    def test_recovery_activity_with_numeric_value_and_no_status_raises(self):
+        """Recovery activity with a numeric grade but no status should raise."""
+        with pytest.raises(ValueError, match="no admiten nota numérica"):
+            self._validate_recovery_grade(True, 3.5, None)
+
+    def test_recovery_activity_with_zero_value_and_no_status_raises(self):
+        """Recovery activity with grade=0 and no status should raise."""
+        with pytest.raises(ValueError, match="no admiten nota numérica"):
+            self._validate_recovery_grade(True, 0.0, None)
+
+    def test_recovery_activity_invalid_status_raises(self):
+        """Recovery activity with an invalid status string should raise."""
+        with pytest.raises(ValueError, match="Estado de recuperación inválido"):
+            self._validate_recovery_grade(True, None, "invalid_status")
+
+    def test_recovery_activity_none_value_and_none_status_passes(self):
+        """Recovery activity with no value and no status is allowed (nothing submitted yet)."""
+        self._validate_recovery_grade(True, None, None)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for Rule F: Recovery panel only shows in-process records
+# ---------------------------------------------------------------------------
+
+class TestRecoveryPanelInProcessFilter:
+    """Tests for Rule F: recovery panel only shows in-process (pending/approved-not-completed)."""
+
+    def _is_in_process_v2(self, record):
+        """Updated in-process check consistent with backend filter:
+        Excluded: recovery_rejected=True OR (recovery_approved=True AND recovery_completed=True).
+        """
+        if record.get("recovery_rejected") is True:
+            return False
+        if record.get("recovery_approved") is True and record.get("recovery_completed") is True:
+            return False
+        return True
+
+    def test_pending_record_shown(self):
+        """Pending record (not approved, not rejected) should be shown."""
+        record = {"recovery_approved": False, "recovery_rejected": False, "recovery_completed": False}
+        assert self._is_in_process_v2(record) is True
+
+    def test_approved_not_completed_shown(self):
+        """Approved but not yet completed should be shown (waiting for teacher grade)."""
+        record = {"recovery_approved": True, "recovery_rejected": False, "recovery_completed": False}
+        assert self._is_in_process_v2(record) is True
+
+    def test_rejected_not_shown(self):
+        """Rejected records should NOT be shown in the panel."""
+        record = {"recovery_approved": False, "recovery_rejected": True, "recovery_completed": False}
+        assert self._is_in_process_v2(record) is False
+
+    def test_approved_and_completed_not_shown(self):
+        """Approved+completed records should NOT be shown (recovery finished)."""
+        record = {"recovery_approved": True, "recovery_rejected": False, "recovery_completed": True}
+        assert self._is_in_process_v2(record) is False
+
+    def test_filter_list_leaves_only_in_process(self):
+        """Filtering a list of records should retain only in-process ones."""
+        records = [
+            {"id": "r1", "recovery_approved": False, "recovery_rejected": False, "recovery_completed": False},
+            {"id": "r2", "recovery_approved": True, "recovery_rejected": False, "recovery_completed": False},
+            {"id": "r3", "recovery_approved": False, "recovery_rejected": True, "recovery_completed": False},
+            {"id": "r4", "recovery_approved": True, "recovery_rejected": False, "recovery_completed": True},
+        ]
+        in_process = [r for r in records if self._is_in_process_v2(r)]
+        assert len(in_process) == 2
+        assert {r["id"] for r in in_process} == {"r1", "r2"}
