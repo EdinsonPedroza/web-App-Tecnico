@@ -10,7 +10,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, Building2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Building2, Search } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
 
 export default function ProgramsPage() {
@@ -18,8 +19,9 @@ export default function ProgramsPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', description: '', duration: '12 meses', module1_close_date: '', module2_close_date: '' });
+  const [form, setForm] = useState({ name: '', description: '', duration: '12 meses', moduleCount: 2 });
   const [saving, setSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const fetchPrograms = useCallback(async () => {
     try {
@@ -36,7 +38,7 @@ export default function ProgramsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', description: '', duration: '12 meses', module1_close_date: '', module2_close_date: '' });
+    setForm({ name: '', description: '', duration: '12 meses', moduleCount: 2 });
     setDialogOpen(true);
   };
 
@@ -46,8 +48,7 @@ export default function ProgramsPage() {
       name: prog.name, 
       description: prog.description || '', 
       duration: prog.duration || '12 meses',
-      module1_close_date: prog.module1_close_date ? prog.module1_close_date.slice(0, 16) : '',
-      module2_close_date: prog.module2_close_date ? prog.module2_close_date.slice(0, 16) : ''
+      moduleCount: prog.modules?.length || 2
     });
     setDialogOpen(true);
   };
@@ -56,12 +57,21 @@ export default function ProgramsPage() {
     if (!form.name.trim()) { toast.error('Nombre requerido'); return; }
     setSaving(true);
     try {
+      // Generate modules structure based on moduleCount
+      const modules = [];
+      for (let i = 1; i <= form.moduleCount; i++) {
+        modules.push({
+          number: i,
+          name: `MÓDULO ${i}`,
+          subjects: editing?.modules?.[i - 1]?.subjects || []
+        });
+      }
+      
       const saveData = {
         name: form.name,
         description: form.description,
         duration: form.duration,
-        module1_close_date: form.module1_close_date || null,
-        module2_close_date: form.module2_close_date || null
+        modules: modules
       };
       if (editing) {
         await api.put(`/programs/${editing.id}`, saveData);
@@ -95,13 +105,28 @@ export default function ProgramsPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold font-heading">Programas Técnicos</h1>
-            <p className="text-muted-foreground mt-1">Gestiona los técnicos virtuales</p>
+            <h1 className="text-3xl font-bold font-heading">Programas Técnicos</h1>
+            <p className="text-muted-foreground mt-1 text-lg">Gestiona los técnicos virtuales</p>
           </div>
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4" /> Nuevo Programa
           </Button>
         </div>
+
+        {/* Search Bar */}
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar programas por nombre o descripción..."
+                className="pl-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
@@ -113,7 +138,13 @@ export default function ProgramsPage() {
           </CardContent></Card>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {programs.map((prog) => (
+            {programs
+              .filter(prog => 
+                searchTerm === '' || 
+                prog.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (prog.description && prog.description.toLowerCase().includes(searchTerm.toLowerCase()))
+              )
+              .map((prog) => (
               <Card key={prog.id} className="shadow-card hover:shadow-card-hover transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -126,23 +157,11 @@ export default function ProgramsPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground mb-3">{prog.description}</p>
-                  <div className="space-y-2 mb-3">
-                    {prog.module1_close_date && (
-                      <div className="text-xs text-muted-foreground">
-                        <span className="font-medium">Cierre Módulo 1:</span> {new Date(prog.module1_close_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </div>
-                    )}
-                    {prog.module2_close_date && (
-                      <div className="text-xs text-muted-foreground">
-                        <span className="font-medium">Cierre Módulo 2:</span> {new Date(prog.module2_close_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </div>
-                    )}
-                  </div>
                   <div className="flex gap-2 flex-wrap">
                     <Badge variant="secondary">{prog.duration}</Badge>
-                    {prog.modules?.map((m, i) => (
-                      <Badge key={i} variant="outline">{m.name}: {m.subjects?.length || 0} materias</Badge>
-                    ))}
+                    {prog.modules && prog.modules.length > 0 && (
+                      <Badge variant="outline">{prog.modules.length} MÓDULOS</Badge>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -171,24 +190,26 @@ export default function ProgramsPage() {
               <Input value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="12 meses" />
             </div>
             <div className="space-y-2">
-              <Label>Fecha de Cierre Módulo 1</Label>
-              <Input 
-                type="datetime-local" 
-                value={form.module1_close_date} 
-                onChange={(e) => setForm({ ...form, module1_close_date: e.target.value })} 
-                placeholder="Fecha y hora de cierre" 
-              />
-              <p className="text-xs text-muted-foreground">Fecha límite para completar el Módulo 1</p>
+              <Label>Número de Módulos</Label>
+              <Select value={form.moduleCount.toString()} onValueChange={(val) => setForm({ ...form, moduleCount: parseInt(val) })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona cantidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 Módulo</SelectItem>
+                  <SelectItem value="2">2 Módulos</SelectItem>
+                  <SelectItem value="3">3 Módulos</SelectItem>
+                  <SelectItem value="4">4 Módulos</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Define cuántos módulos tiene este programa técnico
+              </p>
             </div>
-            <div className="space-y-2">
-              <Label>Fecha de Cierre Módulo 2</Label>
-              <Input 
-                type="datetime-local" 
-                value={form.module2_close_date} 
-                onChange={(e) => setForm({ ...form, module2_close_date: e.target.value })} 
-                placeholder="Fecha y hora de cierre" 
-              />
-              <p className="text-xs text-muted-foreground">Fecha límite para completar el Módulo 2</p>
+            <div className="rounded-lg bg-muted/50 p-4">
+              <p className="text-sm text-muted-foreground">
+                <strong>Nota:</strong> Las fechas de inicio y cierre de los módulos se configuran por grupo en la sección "Cursos", no a nivel de programa.
+              </p>
             </div>
           </div>
           <DialogFooter>

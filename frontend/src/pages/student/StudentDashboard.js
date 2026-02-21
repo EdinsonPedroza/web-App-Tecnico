@@ -61,8 +61,8 @@ export default function StudentDashboard() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold font-heading">Hola, {user?.name?.split(' ')[0]}!</h1>
-          <p className="text-muted-foreground mt-1">Tu resumen académico</p>
+          <h1 className="text-3xl font-bold font-heading">Hola, {user?.name?.split(' ')[0]}!</h1>
+          <p className="text-muted-foreground mt-1 text-lg">Tu resumen académico</p>
         </div>
 
         {loading ? (
@@ -81,10 +81,10 @@ export default function StudentDashboard() {
                   <Card key={item.label} className="shadow-card">
                     <CardContent className="p-6">
                       <div className="flex items-center justify-between mb-3">
-                        <Icon className={`h-6 w-6 ${item.color}`} />
-                        <Badge variant="secondary" className="text-xs font-medium">{item.label}</Badge>
+                        <Icon className={`h-7 w-7 ${item.color}`} />
+                        <Badge variant="secondary" className="text-sm font-medium">{item.label}</Badge>
                       </div>
-                      <p className="text-3xl font-bold font-heading">{item.value}</p>
+                      <p className="text-4xl font-bold font-heading">{item.value}</p>
                     </CardContent>
                   </Card>
                 );

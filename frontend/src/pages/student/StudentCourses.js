@@ -81,8 +81,8 @@ export default function StudentCourses() {
                         <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
                           <BookOpen className="h-6 w-6" />
                         </div>
-                        <CardTitle className="text-lg font-heading">{course.name}</CardTitle>
-                        <CardDescription className="text-sm">{getName(subjects, course.subject_id)}</CardDescription>
+                        <CardTitle className="text-2xl font-heading font-bold">{getName(subjects, course.subject_id)}</CardTitle>
+                        <CardDescription className="text-base mt-1.5">{course.name}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-2.5">

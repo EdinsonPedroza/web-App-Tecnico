@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, BookOpen, Filter } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, BookOpen, Filter, Search } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function SubjectsPage() {
@@ -16,6 +16,8 @@ export default function SubjectsPage() {
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterProgram, setFilterProgram] = useState('all');
+  const [filterModule, setFilterModule] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', program_id: '', module_number: 1, description: '' });
@@ -35,18 +37,26 @@ export default function SubjectsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const filtered = filterProgram === 'all' ? subjects : subjects.filter(s => s.program_id === filterProgram);
+  const filtered = subjects.filter(s => {
+    if (filterProgram !== 'all' && String(s.program_id) !== String(filterProgram)) return false;
+    if (filterModule !== 'all' && s.module_number !== parseInt(filterModule)) return false;
+    if (searchQuery && !s.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    return true;
+  });
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin programa';
+  
+  // Get unique module numbers from subjects
+  const availableModules = [...new Set(subjects.map(s => s.module_number))].sort();
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', program_id: programs[0]?.id || '', module_number: 1, description: '' });
+    setForm({ name: '', program_id: programs[0]?.id ? String(programs[0].id) : '', module_number: 1, description: '' });
     setDialogOpen(true);
   };
 
   const openEdit = (subj) => {
     setEditing(subj);
-    setForm({ name: subj.name, program_id: subj.program_id, module_number: subj.module_number, description: subj.description || '' });
+    setForm({ name: subj.name, program_id: String(subj.program_id), module_number: subj.module_number, description: subj.description || '' });
     setDialogOpen(true);
   };
 
@@ -86,12 +96,12 @@ export default function SubjectsPage() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold font-heading">Materias</h1>
-            <p className="text-muted-foreground mt-1">Plan de estudios por programa</p>
+            <h1 className="text-3xl font-bold font-heading">Materias</h1>
+            <p className="text-muted-foreground mt-2 text-base">Plan de estudios por programa y módulo</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Select value={filterProgram} onValueChange={setFilterProgram}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-56">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Filtrar por programa" />
               </SelectTrigger>
@@ -100,8 +110,29 @@ export default function SubjectsPage() {
                 {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button onClick={openCreate}><Plus className="h-4 w-4" /> Nueva Materia</Button>
+            <Select value={filterModule} onValueChange={setFilterModule}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Módulo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los módulos</SelectItem>
+                {availableModules.map(num => (
+                  <SelectItem key={num} value={String(num)}>Módulo {num}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nueva Materia</Button>
           </div>
+        </div>
+
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Buscar materias por nombre..." 
+            className="pl-9" 
+            value={searchQuery} 
+            onChange={(e) => setSearchQuery(e.target.value)} 
+          />
         </div>
 
         {loading ? (
@@ -114,7 +145,7 @@ export default function SubjectsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map((subj) => (
-              <Card key={subj.id} className="shadow-card hover:shadow-card-hover transition-shadow flex flex-col">
+              <Card key={subj.id} className="shadow-card hover:shadow-lg transition-all duration-300 hover-lift flex flex-col">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-sm font-heading">{subj.name}</CardTitle>
@@ -126,9 +157,9 @@ export default function SubjectsPage() {
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col">
                   <p className="text-xs text-muted-foreground mb-3 flex-1">{subj.description || 'Sin descripción'}</p>
-                  <div className="flex gap-2 mt-auto">
+                  <div className="flex flex-wrap gap-2 mt-auto">
                     <Badge variant="secondary" className="text-xs">Módulo {subj.module_number}</Badge>
-                    <Badge variant="outline" className="text-xs truncate max-w-40">{getProgramName(subj.program_id)}</Badge>
+                    <Badge variant="outline" className="text-xs break-words">{getProgramName(subj.program_id)}</Badge>
                   </div>
                 </CardContent>
               </Card>

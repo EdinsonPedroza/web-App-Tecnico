@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,8 @@ import api from '@/lib/api';
 
 export default function TeacherGrades() {
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [course, setCourse] = useState(null);
   const [students, setStudents] = useState([]);
   const [activities, setActivities] = useState([]);
@@ -23,10 +25,14 @@ export default function TeacherGrades() {
 
   const fetchData = useCallback(async () => {
     try {
+      let activitiesUrl = `/activities?course_id=${courseId}`;
+      if (subjectId) activitiesUrl += `&subject_id=${subjectId}`;
+      let gradesUrl = `/grades?course_id=${courseId}`;
+      if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
       const [cRes, aRes, gRes, uRes] = await Promise.all([
         api.get(`/courses/${courseId}`),
-        api.get(`/activities?course_id=${courseId}`),
-        api.get(`/grades?course_id=${courseId}`),
+        api.get(activitiesUrl),
+        api.get(gradesUrl),
         api.get('/users?role=estudiante')
       ]);
       setCourse(cRes.data);
@@ -39,7 +45,7 @@ export default function TeacherGrades() {
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -56,6 +62,12 @@ export default function TeacherGrades() {
     setEditedGrades(prev => ({ ...prev, [key]: value }));
   };
 
+  const isGradeInvalid = (value) => {
+    if (value === '' || value === undefined) return false;
+    const num = parseFloat(value);
+    return isNaN(num) || num < 0 || num > 5;
+  };
+
   const saveGrade = async (studentId, activityId) => {
     const key = `${studentId}-${activityId}`;
     const value = parseFloat(editedGrades[key]);
@@ -69,11 +81,14 @@ export default function TeacherGrades() {
         student_id: studentId,
         course_id: courseId,
         activity_id: activityId,
+        subject_id: subjectId,
         value,
         comments: ''
       });
       toast.success('Nota guardada');
-      const gRes = await api.get(`/grades?course_id=${courseId}`);
+      let gradesUrl = `/grades?course_id=${courseId}`;
+      if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
+      const gRes = await api.get(gradesUrl);
       setGrades(gRes.data);
       setEditedGrades(prev => {
         const next = { ...prev };
@@ -90,13 +105,23 @@ export default function TeacherGrades() {
   const saveAllEdited = async () => {
     const keys = Object.keys(editedGrades);
     if (keys.length === 0) { toast.info('No hay cambios por guardar'); return; }
+    const invalidKeys = keys.filter(key => isGradeInvalid(editedGrades[key]));
+    if (invalidKeys.length > 0) {
+      toast.error('Hay notas con valores inválidos (deben estar entre 0.0 y 5.0). Corrígelas antes de guardar.');
+      return;
+    }
     for (const key of keys) {
-      const [studentId, activityId] = key.split('-');
+      // Keys are "{studentId}-{activityId}" where both are 36-char UUIDs
+      const studentId = key.slice(0, 36);
+      const activityId = key.slice(37);
       await saveGrade(studentId, activityId);
     }
   };
 
-  const initials = (name) => name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  const initials = (name) => {
+    if (!name) return '??';
+    return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  };
 
   const getStudentAverage = (studentId) => {
     const studentGrades = grades.filter(g => g.student_id === studentId);
@@ -172,6 +197,7 @@ export default function TeacherGrades() {
                             const value = getGradeValue(student.id, act.id);
                             const isEdited = editedGrades[key] !== undefined;
                             const isSaving = savingGrades[key];
+                            const invalid = isEdited && isGradeInvalid(value);
                             return (
                               <td key={act.id} className="text-center px-2 py-2 border-r">
                                 <div className="relative">
@@ -180,12 +206,24 @@ export default function TeacherGrades() {
                                     min="0"
                                     max="5"
                                     step="0.1"
-                                    className={`w-20 h-8 text-center mx-auto text-sm ${isEdited ? 'border-primary ring-1 ring-primary/30' : ''} ${value && parseFloat(value) >= 3 ? 'text-success' : value ? 'text-destructive' : ''}`}
+                                    className={[
+                                      'w-20 h-8 text-center mx-auto text-sm',
+                                      invalid
+                                        ? 'border-destructive ring-1 ring-destructive/50 text-destructive'
+                                        : isEdited
+                                          ? 'border-primary ring-1 ring-primary/30'
+                                          : '',
+                                      !invalid && value
+                                        ? parseFloat(value) >= 3 ? 'text-success' : 'text-destructive'
+                                        : '',
+                                    ].filter(Boolean).join(' ')}
                                     value={value}
                                     onChange={(e) => handleGradeChange(student.id, act.id, e.target.value)}
                                     onBlur={() => {
-                                      if (isEdited) saveGrade(student.id, act.id);
+                                      if (isEdited && !invalid) saveGrade(student.id, act.id);
+                                      else if (isEdited && invalid) toast.error('La nota debe estar entre 0.0 y 5.0');
                                     }}
+                                    title={invalid ? 'La nota debe estar entre 0.0 y 5.0' : undefined}
                                     placeholder="-"
                                     disabled={isSaving}
                                   />

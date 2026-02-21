@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,20 +11,25 @@ import api from '@/lib/api';
 export default function StudentVideos() {
   const { user } = useAuth();
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const query = courseId ? `course_id=${courseId}` : '';
-      const vRes = await api.get(`/class-videos${query ? '?' + query : ''}`);
+      const params = [];
+      if (courseId) params.push(`course_id=${courseId}`);
+      if (subjectId) params.push(`subject_id=${subjectId}`);
+      const query = params.length > 0 ? '?' + params.join('&') : '';
+      const vRes = await api.get(`/class-videos${query}`);
       setVideos(vRes.data);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

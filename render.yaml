@@ -1,0 +1,99 @@
+services:
+  # Backend API Service
+  - type: web
+    name: educando-backend
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: MONGO_URL
+        sync: false
+        # ⚠️ IMPORTANTE: sync: false significa que esta variable NO se sincroniza desde Git
+        # Razón: La connection string contiene credenciales sensibles (usuario/password)
+        # Esta variable DEBE ser configurada manualmente en el Dashboard de Render
+        # Ver archivo RENDER_MONGODB_SETUP.md para instrucciones completas
+        # Ejemplo: mongodb+srv://usuario:password@cluster.mongodb.net/WebApp?retryWrites=true&w=majority
+      - key: DB_NAME
+        value: WebApp
+      - key: PASSWORD_STORAGE_MODE
+        value: bcrypt
+      - key: CORS_ORIGINS
+        value: "*"
+        # ⚠️ SECURITY WARNING: "*" allows requests from any domain.
+        # For production, replace with your specific domain(s):
+        # value: "https://yourdomain.com,https://www.yourdomain.com"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+    autoDeploy: true
+
+  # Frontend Web Service
+  - type: web
+    name: educando-frontend
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    buildFilter:
+      paths:
+        - frontend/**
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        value: ""
+      - key: BACKEND_URL
+        value: "http://educando-backend:10000"
+      - key: PORT
+        value: 10000
+    autoDeploy: true
+
+################################################################################
+# CONFIGURACIÓN DE MONGODB - ¡MUY IMPORTANTE!
+################################################################################
+#
+# ⚠️  RENDER NO INCLUYE MONGODB AUTOMÁTICAMENTE ⚠️
+#
+# Debes configurar MongoDB manualmente antes de que la aplicación funcione.
+# Sin MongoDB, las credenciales NO FUNCIONARÁN y verás errores de autenticación.
+#
+# 📖 GUÍA COMPLETA: Ver archivo RENDER_MONGODB_SETUP.md
+#
+# OPCIONES PARA MONGODB:
+#
+# ✅ Opción 1: MongoDB Atlas (RECOMENDADO - Gratis hasta 512MB)
+#    1. Crea cuenta en: https://www.mongodb.com/cloud/atlas/register
+#    2. Crea un cluster gratuito (M0)
+#    3. Crea un usuario de base de datos
+#    4. Permite acceso desde cualquier IP (0.0.0.0/0)
+#    5. Copia la connection string
+#    6. En Render Dashboard → educando-backend → Environment
+#       Agrega MONGO_URL con tu connection string
+#
+# ✅ Opción 2: Render Private Services (MongoDB)
+#    1. En Render Dashboard → New + → Private Service → MongoDB
+#    2. Copia la Internal Connection String
+#    3. En educando-backend → Environment
+#       Agrega MONGO_URL con la connection string interna
+#
+# VERIFICAR QUE MONGODB ESTÉ CONECTADO:
+#    1. Ve a Render Dashboard → educando-backend → Logs
+#    2. Busca: "MongoDB connection successful"
+#    3. Busca: "Datos iniciales verificados/creados exitosamente"
+#    4. Busca: "7 usuarios semilla disponibles"
+#
+# IMPORTANTE: La base de datos debe llamarse "WebApp" (con W y A mayúsculas)
+# En tu connection string de MongoDB Atlas, asegúrate de especificar:
+# mongodb+srv://usuario:password@cluster.mongodb.net/WebApp?retryWrites=true&w=majority
+#                                                          ^^^^^^
+# NOTA: Cuando configures MONGO_URL en Render, asegúrate de que incluya "/WebApp"
+# al final de la URL de conexión (antes de los parámetros de query como ?retryWrites=true)
+#
+# Si NO ves estos mensajes, MongoDB no está conectado correctamente.
+#
+# CREDENCIALES DE USUARIOS:
+#    Ver archivo: USUARIOS_Y_CONTRASEÑAS.txt
+#
+################################################################################
