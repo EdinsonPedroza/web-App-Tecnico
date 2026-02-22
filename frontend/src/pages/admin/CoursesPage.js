@@ -596,6 +596,8 @@ export default function CoursesPage() {
                 {(() => {
                   if (!editing && !form.program_id) return null;
                   const eligible = students.filter(s => {
+                    // Always include students already enrolled in the current group
+                    if (editing && form.student_ids.includes(s.id)) return true;
                     // Only active students are eligible to enroll
                     if ((s.estado || 'activo') !== 'activo') return false;
                     if (!form.program_id) return true;
@@ -613,7 +615,7 @@ export default function CoursesPage() {
                       String(c.program_id) === String(form.program_id) &&
                       (c.student_ids || []).includes(s.id)
                     );
-                    if (inOtherGroup && !form.student_ids.includes(s.id)) return false;
+                    if (inOtherGroup) return false;
                     return true;
                   });
                   return eligible.length > 0 && (
@@ -653,6 +655,8 @@ export default function CoursesPage() {
                     const matchesSearch = (s.name || '').toLowerCase().includes(studentSearch.toLowerCase()) ||
                       (s.cedula && s.cedula.includes(studentSearch));
                     if (!matchesSearch) return false;
+                    // Always include students already enrolled in the current group
+                    if (editing && form.student_ids.includes(s.id)) return true;
                     // Only active students are eligible to enroll
                     if ((s.estado || 'activo') !== 'activo') return false;
                     // Filter by program: show only students enrolled in this course's program
@@ -673,7 +677,7 @@ export default function CoursesPage() {
                         String(c.program_id) === String(form.program_id) &&
                         (c.student_ids || []).includes(s.id)
                       );
-                      if (inOtherGroup && !form.student_ids.includes(s.id)) return false;
+                      if (inOtherGroup) return false;
                     }
                     return true;
                   });
@@ -682,7 +686,7 @@ export default function CoursesPage() {
                   return eligible.map((s) => (
                     <div key={s.id} className="flex items-center gap-2.5">
                       <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
-                      <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module}</span></span>
+                      <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module} - {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}</span></span>
                     </div>
                   ));
                 })()}
