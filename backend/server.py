@@ -3028,18 +3028,19 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
 async def get_student_recoveries(user=Depends(get_current_user)):
     """
     Get recovery subjects for the current student.
-    Only returns subjects where recovery has been approved by admin.
+    Returns all pending failed subjects (not completed, not rejected).
+    The 'recovery_approved' field indicates whether admin has approved recovery.
     """
     if user["role"] != "estudiante":
         raise HTTPException(status_code=403, detail="Solo estudiantes pueden acceder a sus recuperaciones")
     
     student_id = user["id"]
     
-    # Get failed subjects where recovery is approved
+    # Get all pending failed subjects (not completed, not rejected by admin/teacher)
     failed_subjects = await db.failed_subjects.find({
         "student_id": student_id,
-        "recovery_approved": True,
-        "recovery_completed": False
+        "recovery_completed": {"$ne": True},
+        "recovery_rejected": {"$ne": True}
     }, {"_id": 0}).to_list(100)
     
     # Get program info for each
@@ -3061,6 +3062,8 @@ async def get_student_recoveries(user=Depends(get_current_user)):
                 recovery_close = module_dates.get("recovery_close")
         subject["recovery_close_date"] = recovery_close
         subject["recovery_closed"] = bool(recovery_close and recovery_close < today_str)
+        # Ensure recovery_approved field is present (backward-compat with older records)
+        subject.setdefault("recovery_approved", False)
     
     return {
         "recoveries": failed_subjects,

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, CheckCircle, BookOpen, RefreshCw, CalendarX } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, BookOpen, RefreshCw, CalendarX, Clock } from 'lucide-react';
 import api from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 
@@ -60,7 +60,7 @@ export default function StudentRecoveriesPage() {
               <CheckCircle className="h-12 w-12 text-success mx-auto mb-3" />
               <p className="text-lg font-medium">¡No tienes materias pendientes de recuperación!</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Has aprobado todas tus materias o no tienes recuperaciones aprobadas aún
+                Has aprobado todas tus materias o no tienes recuperaciones pendientes
               </p>
             </CardContent>
           </Card>
@@ -76,7 +76,7 @@ export default function StudentRecoveriesPage() {
                       Tienes {recoveries.length} materia{recoveries.length !== 1 ? 's' : ''} pendiente{recoveries.length !== 1 ? 's' : ''} de recuperación
                     </p>
                     <p className="text-xs text-blue-800 dark:text-blue-200 mt-1">
-                      Completa las actividades de recuperación en cada curso para mejorar tu calificación
+                      Solo puedes entregar actividades en las materias que el administrador ha aprobado para recuperación
                     </p>
                   </div>
                 </div>
@@ -85,73 +85,88 @@ export default function StudentRecoveriesPage() {
 
             {/* Recovery Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {recoveries.map((recovery) => (
-                <Card 
-                  key={recovery.id} 
-                  className={`shadow-card transition-all ${recovery.recovery_closed ? 'opacity-75 grayscale border-destructive/30' : 'hover:shadow-lg hover-lift cursor-pointer'}`}
-                  onClick={() => !recovery.recovery_closed && navigate(`/student/course/${recovery.course_id}`)}
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-2">
-                      {recovery.recovery_closed
-                        ? <CalendarX className="h-5 w-5 text-destructive shrink-0 mt-1" />
-                        : <BookOpen className="h-5 w-5 text-primary shrink-0 mt-1" />
-                      }
-                      {recovery.recovery_closed
-                        ? <Badge variant="outline" className="text-xs text-destructive border-destructive">Plazo vencido</Badge>
-                        : <Badge variant="destructive" className="text-xs">Recuperación</Badge>
-                      }
-                    </div>
-                    <CardTitle className="text-lg mt-3">{recovery.course_name}</CardTitle>
-                    <CardDescription className="text-sm">
-                      {recovery.program_name}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Módulo:</span>
-                      <Badge variant="outline" className="text-xs">
-                        Módulo {recovery.module_number}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Promedio anterior:</span>
-                      <Badge variant="destructive" className="text-xs font-mono">
-                        {recovery.average_grade.toFixed(2)}
-                      </Badge>
-                    </div>
-                    {recovery.recovery_close_date && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Cierre recuperación:</span>
-                        <span className={`text-xs font-medium ${recovery.recovery_closed ? 'text-destructive' : 'text-foreground'}`}>
-                          {recovery.recovery_close_date}
-                        </span>
+              {recoveries.map((recovery) => {
+                const isApproved = recovery.recovery_approved;
+                const isClosed = recovery.recovery_closed;
+                const canNavigate = isApproved && !isClosed;
+
+                return (
+                  <Card
+                    key={recovery.id}
+                    className={`shadow-card transition-all ${isClosed ? 'opacity-75 grayscale border-destructive/30' : !isApproved ? 'opacity-80 border-muted' : 'hover:shadow-lg hover-lift cursor-pointer'}`}
+                    onClick={() => canNavigate && navigate(`/student/course/${recovery.course_id}`)}
+                  >
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-2">
+                        {isClosed
+                          ? <CalendarX className="h-5 w-5 text-destructive shrink-0 mt-1" />
+                          : isApproved
+                            ? <BookOpen className="h-5 w-5 text-primary shrink-0 mt-1" />
+                            : <Clock className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+                        }
+                        {isClosed
+                          ? <Badge variant="outline" className="text-xs text-destructive border-destructive">Plazo vencido</Badge>
+                          : isApproved
+                            ? <Badge variant="destructive" className="text-xs">Recuperación</Badge>
+                            : <Badge variant="secondary" className="text-xs">Pendiente aprobación</Badge>
+                        }
                       </div>
-                    )}
-                    <div className="pt-2 border-t">
-                      {recovery.recovery_closed ? (
-                        <p className="text-xs text-destructive font-medium">
-                          El plazo de recuperación ha vencido
-                        </p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Haz clic para ver las actividades de recuperación
-                        </p>
+                      <CardTitle className="text-lg mt-3">{recovery.course_name}</CardTitle>
+                      <CardDescription className="text-sm">
+                        {recovery.program_name}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Módulo:</span>
+                        <Badge variant="outline" className="text-xs">
+                          Módulo {recovery.module_number}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Promedio anterior:</span>
+                        <Badge variant="destructive" className="text-xs font-mono">
+                          {recovery.average_grade.toFixed(2)}
+                        </Badge>
+                      </div>
+                      {recovery.recovery_close_date && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Cierre recuperación:</span>
+                          <span className={`text-xs font-medium ${isClosed ? 'text-destructive' : 'text-foreground'}`}>
+                            {recovery.recovery_close_date}
+                          </span>
+                        </div>
                       )}
-                    </div>
-                    <Button 
-                      className="w-full" 
-                      disabled={recovery.recovery_closed}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!recovery.recovery_closed) navigate(`/student/course/${recovery.course_id}`);
-                      }}
-                    >
-                      {recovery.recovery_closed ? 'Plazo vencido' : 'Ver Actividades'}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+                      <div className="pt-2 border-t">
+                        {isClosed ? (
+                          <p className="text-xs text-destructive font-medium">
+                            El plazo de recuperación ha vencido
+                          </p>
+                        ) : !isApproved ? (
+                          <p className="text-xs text-muted-foreground">
+                            El administrador aún no ha aprobado tu solicitud de recuperación
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            Haz clic para ver las actividades de recuperación
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        className="w-full"
+                        disabled={!canNavigate}
+                        variant={isApproved ? 'default' : 'outline'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (canNavigate) navigate(`/student/course/${recovery.course_id}`);
+                        }}
+                      >
+                        {isClosed ? 'Plazo vencido' : !isApproved ? 'Pendiente aprobación' : 'Ver Actividades'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
 
             {/* Instructions Card */}
@@ -161,7 +176,8 @@ export default function StudentRecoveriesPage() {
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground">
                 <ol className="list-decimal list-inside space-y-2">
-                  <li>Ingresa al curso haciendo clic en la tarjeta de la materia</li>
+                  <li>El administrador debe aprobar tu recuperación primero</li>
+                  <li>Una vez aprobada, ingresa al curso haciendo clic en la tarjeta de la materia</li>
                   <li>Busca las actividades marcadas como "Recuperación"</li>
                   <li>Completa las actividades de recuperación según las instrucciones</li>
                   <li>Tu profesor calificará tu trabajo de recuperación</li>

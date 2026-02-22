@@ -579,22 +579,29 @@ export default function CoursesPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>
-                {students.length > 0 && (
-                  <Button 
-                    type="button" 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => {
-                      if (form.student_ids.length === students.length) {
-                        setForm({ ...form, student_ids: [] });
-                      } else {
-                        setForm({ ...form, student_ids: students.map(s => s.id) });
-                      }
-                    }}
-                  >
-                    {form.student_ids.length === students.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
-                  </Button>
-                )}
+                {(() => {
+                  const eligible = students.filter(s => {
+                    if (!form.program_id) return true;
+                    const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
+                    return programIds.length === 0 || programIds.map(String).includes(String(form.program_id));
+                  });
+                  return eligible.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (form.student_ids.length === eligible.length) {
+                          setForm({ ...form, student_ids: [] });
+                        } else {
+                          setForm({ ...form, student_ids: eligible.map(s => s.id) });
+                        }
+                      }}
+                    >
+                      {form.student_ids.length === eligible.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                    </Button>
+                  );
+                })()}
               </div>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -606,17 +613,27 @@ export default function CoursesPage() {
                 />
               </div>
               <div className="max-h-48 overflow-y-auto rounded-lg border p-4 space-y-2.5">
-                {students.length === 0 ? <p className="text-sm text-muted-foreground">No hay estudiantes</p> : students
-                  .filter(s => 
-                    (s.name || '').toLowerCase().includes(studentSearch.toLowerCase()) || 
-                    (s.cedula && s.cedula.includes(studentSearch))
-                  )
-                  .map((s) => (
-                  <div key={s.id} className="flex items-center gap-2.5">
-                    <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
-                    <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module}</span></span>
-                  </div>
-                ))}
+                {(() => {
+                  const eligible = students.filter(s => {
+                    const matchesSearch = (s.name || '').toLowerCase().includes(studentSearch.toLowerCase()) ||
+                      (s.cedula && s.cedula.includes(studentSearch));
+                    if (!matchesSearch) return false;
+                    // Filter by program: show only students enrolled in this course's program
+                    if (form.program_id) {
+                      const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
+                      if (programIds.length > 0 && !programIds.map(String).includes(String(form.program_id))) return false;
+                    }
+                    return true;
+                  });
+                  if (students.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes</p>;
+                  if (eligible.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes compatibles con el técnico seleccionado</p>;
+                  return eligible.map((s) => (
+                    <div key={s.id} className="flex items-center gap-2.5">
+                      <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
+                      <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module}</span></span>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           </div>
