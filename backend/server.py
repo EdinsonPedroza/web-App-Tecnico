@@ -2711,10 +2711,34 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     Excluded: recovery_rejected=True or (recovery_approved=True and recovery_completed=True).
     Also detects students in courses where the module close date has passed
     and they have failing averages, even if they haven't been explicitly processed.
+    Only shows entries where the group's recovery period (recovery_close) is still open.
     """
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede acceder al panel de recuperaciones")
     
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Pre-load all courses and subjects for efficient lookups
+    all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+    course_map = {c["id"]: c for c in all_courses}
+    all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+    subject_map = {s["id"]: s["name"] for s in all_subjects}
+
+    def get_subject_names(course_doc):
+        """Return list of subject names for a course using its subject_ids.
+        Falls back to the course name if no subjects are found, to always return a non-empty list."""
+        sids = course_doc.get("subject_ids") or []
+        if not sids and course_doc.get("subject_id"):
+            sids = [course_doc["subject_id"]]
+        names = [subject_map[sid] for sid in sids if sid in subject_map]
+        return names if names else [course_doc.get("name", "Sin nombre")]
+
+    def get_recovery_close(course_doc, module_number):
+        """Return the recovery_close date string for a given module in a course, or None."""
+        module_dates = course_doc.get("module_dates") or {}
+        dates = module_dates.get(str(module_number)) or {}
+        return dates.get("recovery_close")
+
     # Only fetch in-process records (panel shows these states only):
     #   - Pending (not yet decided): recovery_rejected is not True AND NOT (approved + completed)
     #   - Approved but not yet completed: recovery_approved=True, recovery_completed=False
@@ -2741,9 +2765,15 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
     
-    # Organize by student
+    # Organize by student; skip records whose recovery period has already closed
     students_map = {}
     for record in failed_records:
+        course_doc = course_map.get(record["course_id"]) or {}
+        recovery_close = get_recovery_close(course_doc, record.get("module_number", 1))
+        # If the recovery window has already closed, skip this record
+        if recovery_close and recovery_close < today_str:
+            continue
+
         student_id = record["student_id"]
         if student_id not in students_map:
             student_doc = students_lookup.get(student_id) or {}
@@ -2754,22 +2784,24 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 "failed_subjects": []
             }
         
+        subject_names = get_subject_names(course_doc) if course_doc else [record.get("course_name", "Sin nombre")]
         students_map[student_id]["failed_subjects"].append({
             "id": record["id"],
             "course_id": record["course_id"],
             "course_name": record["course_name"],
+            "subject_names": subject_names,
             "program_id": record["program_id"],
             "program_name": program_map.get(record["program_id"], "Desconocido"),
             "module_number": record["module_number"],
             "average_grade": record["average_grade"],
             "recovery_approved": record["recovery_approved"],
-            "recovery_completed": record["recovery_completed"]
+            "recovery_completed": record["recovery_completed"],
+            "recovery_close": recovery_close
         })
     
     # Also detect students in courses with past module close dates who have failing averages
-    # but are not yet in the failed_subjects collection
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+    # but are not yet in the failed_subjects collection.
+    # Only include entries where the recovery period (recovery_close) is still open.
     
     # Track which (student_id, course_id) combos are already in failed_subjects
     already_tracked = set()
@@ -2782,7 +2814,12 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             close_date = dates.get("end") if dates else None
             if not close_date or close_date > today_str:
                 continue  # Module not closed yet
-            
+
+            recovery_close = dates.get("recovery_close") if dates else None
+            # Only show entries whose recovery window is still open
+            if recovery_close and recovery_close < today_str:
+                continue
+
             module_number = int(module_key) if str(module_key).isdigit() else None
             if not module_number:
                 continue
@@ -2797,6 +2834,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 {"course_id": course["id"]}, {"_id": 0}
             ).to_list(5000)
             
+            subject_names = get_subject_names(course)
             for student_id in student_ids:
                 if (student_id, course["id"]) in already_tracked:
                     continue  # Already tracked
@@ -2820,6 +2858,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     students_map[student_id] = {
                         "student_id": student_id,
                         "student_name": student.get("name", "Desconocido"),
+                        "student_cedula": student.get("cedula") or "",
                         "failed_subjects": []
                     }
                 
@@ -2827,12 +2866,14 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     "id": temp_record_id,
                     "course_id": course["id"],
                     "course_name": course.get("name", "Sin nombre"),
+                    "subject_names": subject_names,
                     "program_id": course.get("program_id", ""),
                     "program_name": program_map.get(course.get("program_id", ""), "Desconocido"),
                     "module_number": module_number,
                     "average_grade": round(average, 2),
                     "recovery_approved": False,
                     "recovery_completed": False,
+                    "recovery_close": recovery_close,
                     "auto_detected": True
                 })
                 already_tracked.add((student_id, course["id"]))
