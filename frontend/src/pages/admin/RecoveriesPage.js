@@ -291,10 +291,9 @@ export default function RecoveriesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {subject.recovery_approved ? (
-                              <Badge variant="success" className="text-xs">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Aprobada
+                            {subject.recovery_approved && !subject.recovery_completed ? (
+                              <Badge variant="warning" className="text-xs bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700">
+                                ⏳ En espera de calificación
                               </Badge>
                             ) : subject.recovery_completed ? (
                               <Badge variant="secondary" className="text-xs">
