@@ -291,7 +291,15 @@ export default function RecoveriesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {subject.recovery_approved && !subject.recovery_completed ? (
+                            {subject.teacher_graded_status === 'approved' ? (
+                              <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700">
+                                ✅ Aprobado por profesor
+                              </Badge>
+                            ) : subject.teacher_graded_status === 'rejected' ? (
+                              <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
+                                ❌ Rechazado por profesor
+                              </Badge>
+                            ) : subject.recovery_approved && !subject.recovery_completed ? (
                               <Badge variant="warning" className="text-xs bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700">
                                 ⏳ En espera de calificación
                               </Badge>

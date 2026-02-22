@@ -34,6 +34,7 @@ export default function TeacherActivities() {
   const [grades, setGrades] = useState({});
   const [recoveryStatuses, setRecoveryStatuses] = useState({});
   const [savingGrade, setSavingGrade] = useState(null);
+  const [recoveryEnabled, setRecoveryEnabled] = useState([]);
 
   const fetchActivities = useCallback(async () => {
     try {
@@ -55,6 +56,7 @@ export default function TeacherActivities() {
     setLoadingSubmissions(true);
     setGrades({});
     setRecoveryStatuses({});
+    setRecoveryEnabled([]);
     try {
       const [subsRes, studentsRes, gradesRes] = await Promise.all([
         api.get(`/submissions?activity_id=${activity.id}`),
@@ -79,6 +81,16 @@ export default function TeacherActivities() {
         setStudents(enrolled);
       } else {
         setStudents([]);
+      }
+      // For recovery activities, fetch which students have admin-approved recovery
+      if (activity.is_recovery) {
+        try {
+          const rRes = await api.get(`/recovery/enabled?course_id=${courseId}`);
+          setRecoveryEnabled((rRes.data || []).map(r => r.student_id));
+        } catch (err) {
+          console.error('Error fetching recovery enabled status:', err);
+          setRecoveryEnabled([]);
+        }
       }
     } catch (err) {
       toast.error('Error cargando entregas');
@@ -477,6 +489,11 @@ export default function TeacherActivities() {
                             ) : recoveryStatus === 'rejected' ? (
                               <Badge variant="destructive" className="text-sm px-3 py-1">
                                 <XCircle className="h-4 w-4 mr-1" /> RECHAZADO
+                              </Badge>
+                            ) : !recoveryEnabled.includes(student.id) ? (
+                              <Badge variant="outline" className="text-xs border-warning/50 text-warning bg-warning/10 gap-1">
+                                <Clock className="h-3 w-3" />
+                                En espera de aprobación del Admin
                               </Badge>
                             ) : (
                             <div className="flex items-center gap-2">

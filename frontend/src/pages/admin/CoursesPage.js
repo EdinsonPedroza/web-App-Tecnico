@@ -606,6 +606,14 @@ export default function CoursesPage() {
                       const studentMod = parseInt((s.program_modules || {})[form.program_id] ?? s.module, 10);
                       if (Number.isFinite(studentMod) && studentMod !== groupModule) return false;
                     }
+                    // Exclude students already enrolled in another group of the same program
+                    const currentEditingId = editing?.id;
+                    const inOtherGroup = courses.some(c =>
+                      c.id !== currentEditingId &&
+                      String(c.program_id) === String(form.program_id) &&
+                      (c.student_ids || []).includes(s.id)
+                    );
+                    if (inOtherGroup && !form.student_ids.includes(s.id)) return false;
                     return true;
                   });
                   return eligible.length > 0 && (
@@ -656,6 +664,16 @@ export default function CoursesPage() {
                     if (groupModule != null && form.program_id) {
                       const studentMod = parseInt((s.program_modules || {})[form.program_id] ?? s.module, 10);
                       if (Number.isFinite(studentMod) && studentMod !== groupModule) return false;
+                    }
+                    // Exclude students already enrolled in another group of the same program
+                    if (form.program_id) {
+                      const currentEditingId = editing?.id;
+                      const inOtherGroup = courses.some(c =>
+                        c.id !== currentEditingId &&
+                        String(c.program_id) === String(form.program_id) &&
+                        (c.student_ids || []).includes(s.id)
+                      );
+                      if (inOtherGroup && !form.student_ids.includes(s.id)) return false;
                     }
                     return true;
                   });
