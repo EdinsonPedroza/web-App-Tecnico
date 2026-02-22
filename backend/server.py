@@ -1412,7 +1412,12 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
                         merged_modules[prog_id] = 1
                 update_data["program_statuses"] = merged_statuses
                 update_data["program_modules"] = merged_modules
-                update_data["estado"] = derive_estado_from_program_statuses(merged_statuses)
+
+    # Always recalculate estado from program_statuses when they are present,
+    # ensuring egresado → activo when a new program is added (covers both the
+    # added_programs path and edge cases where statuses changed without new programs).
+    if update_data.get("program_statuses"):
+        update_data["estado"] = derive_estado_from_program_statuses(update_data["program_statuses"])
 
     result = await db.users.update_one({"id": user_id}, {"$set": update_data})
     if result.matched_count == 0:
