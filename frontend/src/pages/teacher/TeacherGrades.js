@@ -303,10 +303,14 @@ export default function TeacherGrades() {
                             const status = getRecoveryStatus(student.id, act.id);
                             const isSaving = savingGrades[key];
                             const adminApproved = recoveryEnabled.includes(student.id);
-                            // Hide the cell entirely when admin hasn't approved recovery for this student
+                            // Show disabled placeholder when admin hasn't approved recovery for this student
                             if (!adminApproved) {
                               return (
-                                <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5" />
+                                <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5">
+                                  <span className="text-xs text-muted-foreground italic" title="El admin debe aprobar la recuperación primero">
+                                    Pendiente aprobación del admin
+                                  </span>
+                                </td>
                               );
                             }
                             // After teacher grades (approved or rejected), hide cell

@@ -23,7 +23,9 @@ export default function StudentVideos() {
       if (subjectId) params.push(`subject_id=${subjectId}`);
       const query = params.length > 0 ? '?' + params.join('&') : '';
       const vRes = await api.get(`/class-videos${query}`);
-      setVideos(vRes.data);
+      // Frontend backup filter: only show videos whose available_from has passed (or is not set)
+      const now = new Date();
+      setVideos((vRes.data || []).filter(v => !v.available_from || new Date(v.available_from) <= now));
     } catch (err) {
       console.error(err);
     } finally {
