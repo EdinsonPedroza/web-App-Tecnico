@@ -17,7 +17,7 @@ export default function StudentCourseSelector() {
   const [courses, setCourses] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [teachers, setTeachers] = useState([]);
+  const [teachers, setTeachers] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,13 +31,14 @@ export default function StudentCourseSelector() {
         api.get(`/courses?student_id=${user.id}`),
         api.get('/programs'),
         api.get('/subjects'),
-        api.get('/users?role=profesor')
+        api.get('/subjects/teachers')
       ]);
       
       setCourses(cRes.data);
       setPrograms(pRes.data);
       setSubjects(sRes.data);
-      setTeachers(tRes.data);
+      // /subjects/teachers returns {subject_id: teacher_name} map
+      setTeachers(tRes.data || {});
       
       if (programId) {
         setSelectedProgram(pRes.data.find(p => p.id === programId));
@@ -55,8 +56,8 @@ export default function StudentCourseSelector() {
   
   // Find the teacher name who teaches a given subject
   const getTeacherName = (subjectId) => {
-    const teacher = teachers.find(t => (t.subject_ids || []).includes(subjectId));
-    return teacher ? teacher.name : null;
+    if (!teachers || typeof teachers !== 'object') return null;
+    return teachers[subjectId] || null;
   };
 
   // Filter courses by selected program

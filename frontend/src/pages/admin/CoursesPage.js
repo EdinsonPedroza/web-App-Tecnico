@@ -594,6 +594,7 @@ export default function CoursesPage() {
               <div className="flex items-center justify-between">
                 <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>
                 {(() => {
+                  if (!editing && !form.program_id) return null;
                   const eligible = students.filter(s => {
                     // Only active students are eligible to enroll
                     if ((s.estado || 'activo') !== 'activo') return false;
@@ -636,6 +637,10 @@ export default function CoursesPage() {
               </div>
               <div className="max-h-48 overflow-y-auto rounded-lg border p-4 space-y-2.5">
                 {(() => {
+                  // When creating (not editing) and no program selected, show a prompt instead of all students
+                  if (!editing && !form.program_id) {
+                    return <p className="text-sm text-muted-foreground">Selecciona un técnico primero para ver estudiantes elegibles</p>;
+                  }
                   const eligible = students.filter(s => {
                     const matchesSearch = (s.name || '').toLowerCase().includes(studentSearch.toLowerCase()) ||
                       (s.cedula && s.cedula.includes(studentSearch));
