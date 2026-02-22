@@ -2006,7 +2006,31 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
     
     # Delete the course (students are never deleted)
     await db.courses.delete_one({"id": course_id})
-    return {"message": "Curso eliminado"}
+
+    # Delete all associated data
+    activities_deleted = await db.activities.delete_many({"course_id": course_id})
+    grades_deleted = await db.grades.delete_many({"course_id": course_id})
+    submissions_deleted = await db.submissions.delete_many({"course_id": course_id})
+    failed_subjects_deleted = await db.failed_subjects.delete_many({"course_id": course_id})
+    recovery_enabled_deleted = await db.recovery_enabled.delete_many({"course_id": course_id})
+
+    logger.info(
+        f"Course {course_id} deleted with associated data: "
+        f"{activities_deleted.deleted_count} activities, {grades_deleted.deleted_count} grades, "
+        f"{submissions_deleted.deleted_count} submissions, {failed_subjects_deleted.deleted_count} failed_subjects, "
+        f"{recovery_enabled_deleted.deleted_count} recovery_enabled"
+    )
+
+    return {
+        "message": "Grupo eliminado con todos sus datos asociados",
+        "deleted": {
+            "activities": activities_deleted.deleted_count,
+            "grades": grades_deleted.deleted_count,
+            "submissions": submissions_deleted.deleted_count,
+            "failed_subjects": failed_subjects_deleted.deleted_count,
+            "recovery_enabled": recovery_enabled_deleted.deleted_count
+        }
+    }
 
 # --- Activities Routes ---
 @api_router.get("/activities")
@@ -2904,14 +2928,14 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         ).to_list(None)
     # Index: (student_id, course_id, subject_id) -> [grade values]
     grades_index = {}
-    # Index: (student_id, course_id) -> recovery_status (teacher's grading result)
+    # Index: (student_id, course_id, subject_id) -> recovery_status (teacher's grading result)
     teacher_graded_index = {}
     for g in grades_for_records:
         key = (g["student_id"], g["course_id"], g.get("subject_id"))
         if g.get("value") is not None:
             grades_index.setdefault(key, []).append(g["value"])
         if g.get("recovery_status"):
-            teacher_graded_index[(g["student_id"], g["course_id"])] = g["recovery_status"]
+            teacher_graded_index[(g["student_id"], g["course_id"], g.get("subject_id"))] = g["recovery_status"]
 
     # Get all programs for reference
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
@@ -2937,6 +2961,10 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             }
         
         subject_name = record.get("subject_name") or record.get("course_name", "Sin nombre")
+        subject_id_for_record = record.get("subject_id")
+        teacher_status = teacher_graded_index.get((student_id, record["course_id"], subject_id_for_record))
+        if not teacher_status:
+            teacher_status = teacher_graded_index.get((student_id, record["course_id"], None))
         students_map[student_id]["failed_subjects"].append({
             "id": record["id"],
             "course_id": record["course_id"],
@@ -2949,7 +2977,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "recovery_approved": record["recovery_approved"],
             "recovery_completed": record["recovery_completed"],
             "recovery_close": recovery_close,
-            "teacher_graded_status": teacher_graded_index.get((student_id, record["course_id"]))
+            "teacher_graded_status": teacher_status
         })
     
     # Also detect students in courses with past module close dates who have failing averages
@@ -3022,6 +3050,9 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 if failing_subjects:
                     for subj_id, subj_name, subj_avg in failing_subjects:
                         temp_record_id = f"auto-{student_id}-{course['id']}-{subj_id}-{module_number}"
+                        teacher_status = teacher_graded_index.get((student_id, course["id"], subj_id))
+                        if not teacher_status:
+                            teacher_status = teacher_graded_index.get((student_id, course["id"], None))
                         students_map[student_id]["failed_subjects"].append({
                             "id": temp_record_id,
                             "course_id": course["id"],
@@ -3036,7 +3067,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                             "recovery_completed": False,
                             "recovery_close": recovery_close,
                             "auto_detected": True,
-                            "teacher_graded_status": teacher_graded_index.get((student_id, course["id"]))
+                            "teacher_graded_status": teacher_status
                         })
                 else:
                     # Fallback: no subjects defined, use a single course-level record
@@ -3054,7 +3085,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "recovery_completed": False,
                         "recovery_close": recovery_close,
                         "auto_detected": True,
-                        "teacher_graded_status": teacher_graded_index.get((student_id, course["id"]))
+                        "teacher_graded_status": teacher_graded_index.get((student_id, course["id"], None))
                     })
                 already_tracked.add((student_id, course["id"]))
     
