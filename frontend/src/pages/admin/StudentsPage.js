@@ -272,7 +272,7 @@ export default function StudentsPage() {
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
           program_modules: form.program_modules && Object.keys(form.program_modules).length > 0 ? form.program_modules : null,
           program_statuses: form.program_statuses && Object.keys(form.program_statuses).length > 0 ? form.program_statuses : null,
-          estado: form.estado || 'activo'
+          // Do not send estado when editing — let backend derive it from program_statuses
         };
         // Include password only if provided (optional when editing)
         if (form.password && form.password.trim()) {

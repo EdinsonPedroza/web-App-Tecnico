@@ -2615,6 +2615,10 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     # Get all courses/groups
     courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
     
+    # Load subjects for per-subject grade calculations
+    all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+    subject_name_map = {s["id"]: s["name"] for s in all_subjects}
+    
     # Cargar TODAS las grades de todos los cursos en UNA sola query (optimización crítica)
     all_course_ids = [c["id"] for c in courses]
     all_grades_bulk = await db.grades.find(
@@ -2652,66 +2656,75 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
         # Get all grades for the student
         all_grades = grades_by_student.get(student_id, [])
         
-        # Group grades by course
+        # Group grades by course; detect failing subjects individually
         failed_courses = []
         for course in student_courses:
             course_grades = [g for g in all_grades if g.get("course_id") == course["id"]]
             
-            if not course_grades:
-                # No grades = failed
+            subject_ids = course.get("subject_ids") or []
+            if not subject_ids and course.get("subject_id"):
+                subject_ids = [course["subject_id"]]
+            
+            course_has_failing = False
+            if subject_ids:
+                # Create one record per failing subject
+                for subject_id in subject_ids:
+                    subject_grades = [g["value"] for g in course_grades if g.get("subject_id") == subject_id and g.get("value") is not None]
+                    subject_avg = sum(subject_grades) / len(subject_grades) if subject_grades else 0.0
+                    
+                    if subject_avg < 3.0:
+                        course_has_failing = True
+                        subject_name = subject_name_map.get(subject_id, "Desconocido")
+                        failed_subjects_records.append({
+                            "id": str(uuid.uuid4()),
+                            "student_id": student_id,
+                            "student_name": student["name"],
+                            "course_id": course["id"],
+                            "course_name": course["name"],
+                            "subject_id": subject_id,
+                            "subject_name": subject_name,
+                            "program_id": course["program_id"],
+                            "module_number": module_number,
+                            "average_grade": round(subject_avg, 2),
+                            "recovery_approved": False,
+                            "recovery_completed": False,
+                            "created_at": datetime.now(timezone.utc).isoformat()
+                        })
+            else:
+                # Fallback: no subjects defined, use course-level average
+                grade_values = [g["value"] for g in course_grades if g.get("value") is not None]
+                average = sum(grade_values) / len(grade_values) if grade_values else 0.0
+                
+                if average < 3.0:
+                    course_has_failing = True
+                    failed_subjects_records.append({
+                        "id": str(uuid.uuid4()),
+                        "student_id": student_id,
+                        "student_name": student["name"],
+                        "course_id": course["id"],
+                        "course_name": course["name"],
+                        "program_id": course["program_id"],
+                        "module_number": module_number,
+                        "average_grade": round(average, 2),
+                        "recovery_approved": False,
+                        "recovery_completed": False,
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    })
+            
+            if course_has_failing:
                 failed_courses.append({
                     "course_id": course["id"],
                     "course_name": course["name"],
                     "program_id": course["program_id"],
-                    "average": 0.0
-                })
-                continue
-            
-            # Calculate average grade for this course
-            grade_values = [g["value"] for g in course_grades if g.get("value") is not None]
-            if not grade_values:
-                failed_courses.append({
-                    "course_id": course["id"],
-                    "course_name": course["name"],
-                    "program_id": course["program_id"],
-                    "average": 0.0
-                })
-                continue
-            
-            average = sum(grade_values) / len(grade_values)
-            
-            # If average < 3.0, student failed this course
-            if average < 3.0:
-                failed_courses.append({
-                    "course_id": course["id"],
-                    "course_name": course["name"],
-                    "program_id": course["program_id"],
-                    "average": round(average, 2)
                 })
         
         # Determine student status
         if failed_courses:
-            # Student failed some courses - mark as pending recovery per-program
+            # Student failed some subjects - mark as pending recovery per-program
             recovery_count += 1
             
             # Collect programs where student failed
             failed_program_ids = list({f["program_id"] for f in failed_courses})
-            
-            # Store failed subjects record
-            for failed in failed_courses:
-                failed_subjects_records.append({
-                    "id": str(uuid.uuid4()),
-                    "student_id": student_id,
-                    "student_name": student["name"],
-                    "course_id": failed["course_id"],
-                    "course_name": failed["course_name"],
-                    "program_id": failed["program_id"],
-                    "module_number": module_number,
-                    "average_grade": failed["average"],
-                    "recovery_approved": False,  # Admin must approve
-                    "recovery_completed": False,
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                })
             
             # Update program_statuses per-program and derive global estado
             student_program_statuses = student.get("program_statuses") or {}
@@ -2833,6 +2846,21 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 failing.append(subject_map[sid])
         return failing if failing else get_subject_names(course_doc)
 
+    def get_failing_subjects_with_ids(student_id, course_id, course_doc, grades_index):
+        """Return list of (subject_id, subject_name, avg) for each failing subject."""
+        sids = course_doc.get("subject_ids") or []
+        if not sids and course_doc.get("subject_id"):
+            sids = [course_doc["subject_id"]]
+        if not sids:
+            return []
+        failing = []
+        for sid in sids:
+            values = grades_index.get((student_id, course_id, sid), [])
+            avg = sum(values) / len(values) if values else 0.0
+            if avg < 3.0 and sid in subject_map:
+                failing.append((sid, subject_map[sid], round(avg, 2)))
+        return failing
+
     def get_recovery_close(course_doc, module_number):
         """Return the recovery_close date string for a given module in a course, or None."""
         module_dates = course_doc.get("module_dates") or {}
@@ -2903,12 +2931,12 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 "failed_subjects": []
             }
         
-        subject_names = get_failing_subject_names(student_id, record["course_id"], course_doc, grades_index) if course_doc else [record.get("course_name", "Sin nombre")]
+        subject_name = record.get("subject_name") or record.get("course_name", "Sin nombre")
         students_map[student_id]["failed_subjects"].append({
             "id": record["id"],
             "course_id": record["course_id"],
             "course_name": record["course_name"],
-            "subject_names": subject_names,
+            "subject_name": subject_name,
             "program_id": record["program_id"],
             "program_name": program_map.get(record["program_id"], "Desconocido"),
             "module_number": record["module_number"],
@@ -2977,9 +3005,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 if not student:
                     continue
                 
-                # Create a temporary failed record (not persisted yet)
-                temp_record_id = f"auto-{student_id}-{course['id']}-{module_number}"
-                
                 if student_id not in students_map:
                     students_map[student_id] = {
                         "student_id": student_id,
@@ -2988,22 +3013,44 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "failed_subjects": []
                     }
                 
-                failing_subject_names = get_failing_subject_names(student_id, course["id"], course, course_grades_index)
-                students_map[student_id]["failed_subjects"].append({
-                    "id": temp_record_id,
-                    "course_id": course["id"],
-                    "course_name": course.get("name", "Sin nombre"),
-                    "subject_names": failing_subject_names,
-                    "program_id": course.get("program_id", ""),
-                    "program_name": program_map.get(course.get("program_id", ""), "Desconocido"),
-                    "module_number": module_number,
-                    "average_grade": round(average, 2),
-                    "recovery_approved": False,
-                    "recovery_completed": False,
-                    "recovery_close": recovery_close,
-                    "auto_detected": True,
-                    "teacher_graded_status": teacher_graded_index.get((student_id, course["id"]))
-                })
+                failing_subjects = get_failing_subjects_with_ids(student_id, course["id"], course, course_grades_index)
+                if failing_subjects:
+                    for subj_id, subj_name, subj_avg in failing_subjects:
+                        temp_record_id = f"auto-{student_id}-{course['id']}-{subj_id}-{module_number}"
+                        students_map[student_id]["failed_subjects"].append({
+                            "id": temp_record_id,
+                            "course_id": course["id"],
+                            "course_name": course.get("name", "Sin nombre"),
+                            "subject_id": subj_id,
+                            "subject_name": subj_name,
+                            "program_id": course.get("program_id", ""),
+                            "program_name": program_map.get(course.get("program_id", ""), "Desconocido"),
+                            "module_number": module_number,
+                            "average_grade": subj_avg,
+                            "recovery_approved": False,
+                            "recovery_completed": False,
+                            "recovery_close": recovery_close,
+                            "auto_detected": True,
+                            "teacher_graded_status": teacher_graded_index.get((student_id, course["id"]))
+                        })
+                else:
+                    # Fallback: no subjects defined, use a single course-level record
+                    temp_record_id = f"auto-{student_id}-{course['id']}-{module_number}"
+                    students_map[student_id]["failed_subjects"].append({
+                        "id": temp_record_id,
+                        "course_id": course["id"],
+                        "course_name": course.get("name", "Sin nombre"),
+                        "subject_name": course.get("name", "Sin nombre"),
+                        "program_id": course.get("program_id", ""),
+                        "program_name": program_map.get(course.get("program_id", ""), "Desconocido"),
+                        "module_number": module_number,
+                        "average_grade": round(average, 2),
+                        "recovery_approved": False,
+                        "recovery_completed": False,
+                        "recovery_close": recovery_close,
+                        "auto_detected": True,
+                        "teacher_graded_status": teacher_graded_index.get((student_id, course["id"]))
+                    })
                 already_tracked.add((student_id, course["id"]))
     
     return {
@@ -3022,9 +3069,11 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede aprobar recuperaciones")
     
-    # Handle auto-detected entries (not persisted yet): format "auto-{student_id}-{course_id}-{module_number}"
+    # Handle auto-detected entries (not persisted yet).
+    # Formats:
+    #   Old: auto-{student_id}-{course_id}-{module_number}           (sc_part = 73 chars)
+    #   New: auto-{student_id}-{course_id}-{subject_id}-{module_number} (sc_part = 110 chars)
     if failed_subject_id.startswith("auto-"):
-        # Format: auto-{student_id}-{course_id}-{module_number}
         # UUIDs are always exactly 36 chars. Strip 'auto-' prefix then parse fixed-length fields.
         remainder = failed_subject_id[5:]  # strip 'auto-'
         # last '-' separates the module_number (an integer, no dashes)
@@ -3033,12 +3082,22 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
         module_str = remainder[last_dash + 1:]
         sc_part = remainder[:last_dash]
-        # sc_part = "{student_id}-{course_id}" – both are standard UUIDs (36 chars each)
-        # Total length: 36 + 1 (dash) + 36 = 73 chars
-        if len(sc_part) != 73:
+        # sc_part is either:
+        #   "{student_id}-{course_id}"                   → 36 + 1 + 36 = 73 chars (old)
+        #   "{student_id}-{course_id}-{subject_id}"      → 36 + 1 + 36 + 1 + 36 = 110 chars (new)
+        subject_id = None
+        # UUIDs are 36 chars each. sc_part lengths:
+        #   old: 36 (student) + 1 (-) + 36 (course)          = 73
+        #   new: 36 (student) + 1 (-) + 36 (course) + 1 (-) + 36 (subject) = 110
+        if len(sc_part) == 73:
+            student_id = sc_part[:36]
+            course_id = sc_part[37:]
+        elif len(sc_part) == 110:
+            student_id = sc_part[:36]
+            course_id = sc_part[37:73]
+            subject_id = sc_part[74:]
+        else:
             raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
-        student_id = sc_part[:36]
-        course_id = sc_part[37:]
         
         # Validate that both IDs exist in the database
         student = await db.users.find_one({"id": student_id, "role": "estudiante"}, {"_id": 0})
@@ -3049,8 +3108,14 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         # Create a real failed_subject record for this auto-detected entry
         module_number = int(module_str) if module_str.isdigit() else 1
         all_grades = await db.grades.find({"student_id": student_id, "course_id": course_id}, {"_id": 0}).to_list(100)
-        grade_values = [g["value"] for g in all_grades if g.get("value") is not None]
-        average = sum(grade_values) / len(grade_values) if grade_values else 0.0
+        
+        # Compute average: per-subject if subject_id available, otherwise course-level
+        if subject_id:
+            subject_grade_values = [g["value"] for g in all_grades if g.get("subject_id") == subject_id and g.get("value") is not None]
+            average = sum(subject_grade_values) / len(subject_grade_values) if subject_grade_values else 0.0
+        else:
+            grade_values = [g["value"] for g in all_grades if g.get("value") is not None]
+            average = sum(grade_values) / len(grade_values) if grade_values else 0.0
         
         new_record = {
             "id": str(uuid.uuid4()),
@@ -3069,6 +3134,10 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             "approved_at": datetime.now(timezone.utc).isoformat(),
             "created_at": datetime.now(timezone.utc).isoformat()
         }
+        if subject_id:
+            subject_doc = await db.subjects.find_one({"id": subject_id}, {"_id": 0, "name": 1})
+            new_record["subject_id"] = subject_id
+            new_record["subject_name"] = subject_doc.get("name", "Desconocido") if subject_doc else "Desconocido"
         await db.failed_subjects.insert_one(new_record)
         
         if approve:

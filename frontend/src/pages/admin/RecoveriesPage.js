@@ -229,7 +229,7 @@ export default function RecoveriesPage() {
                   (student.student_cedula && student.student_cedula.includes(searchTerm)) ||
                   student.failed_subjects.some(s =>
                     s.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    (s.subject_names || []).some(n => n.toLowerCase().includes(searchTerm.toLowerCase()))
+                    (s.subject_name && s.subject_name.toLowerCase().includes(searchTerm.toLowerCase()))
                   );
                 
                 // Status filter
@@ -272,9 +272,7 @@ export default function RecoveriesPage() {
                       {student.failed_subjects.map((subject) => (
                         <TableRow key={subject.id}>
                           <TableCell className="font-medium">
-                            {subject.subject_names && subject.subject_names.length > 0
-                              ? subject.subject_names.join(', ')
-                              : subject.course_name}
+                            {subject.subject_name || subject.course_name}
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate" title={subject.course_name}>
                             {subject.course_name}
