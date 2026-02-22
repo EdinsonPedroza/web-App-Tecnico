@@ -24,7 +24,7 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, estado: 'activo' });
+  const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, program_statuses: {}, estado: 'activo' });
   const [saving, setSaving] = useState(false);
   const [filterProgram, setFilterProgram] = useState('all');
   const [filterModule, setFilterModule] = useState('all');
@@ -132,7 +132,7 @@ export default function StudentsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, estado: 'activo' });
+    setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, program_statuses: {}, estado: 'activo' });
     setProgramSearch('');
     setCourseSearch('');
     setDialogOpen(true);
@@ -151,6 +151,8 @@ export default function StudentsPage() {
         programModules[progId] = student.module;
       });
     }
+
+    const programStatuses = student.program_statuses || {};
     
     setForm({
       name: student.name,
@@ -161,6 +163,7 @@ export default function StudentsPage() {
       program_ids: studentProgramIds,
       course_ids: getStudentCourseIds(student.id),
       program_modules: programModules,
+      program_statuses: programStatuses,
       estado: student.estado || 'activo'
     });
     setProgramSearch('');
@@ -192,6 +195,7 @@ export default function StudentsPage() {
     setForm(prev => {
       const programIds = prev.program_ids || [];
       const programModules = prev.program_modules || {};
+      const programStatuses = prev.program_statuses || {};
       const isAdding = !programIds.includes(programId);
       
       const newProgramIds = isAdding
@@ -200,16 +204,20 @@ export default function StudentsPage() {
       
       // Initialize module to DEFAULT_MODULE when adding a new program, remove when removing program
       const newProgramModules = { ...programModules };
+      const newProgramStatuses = { ...programStatuses };
       if (isAdding) {
         newProgramModules[programId] = DEFAULT_MODULE;
+        newProgramStatuses[programId] = "activo";
       } else {
         delete newProgramModules[programId];
+        delete newProgramStatuses[programId];
       }
       
       return {
         ...prev,
         program_ids: newProgramIds,
-        program_modules: newProgramModules
+        program_modules: newProgramModules,
+        program_statuses: newProgramStatuses,
       };
     });
   };
@@ -263,6 +271,7 @@ export default function StudentsPage() {
           program_id: form.program_id || null,
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
           program_modules: form.program_modules && Object.keys(form.program_modules).length > 0 ? form.program_modules : null,
+          program_statuses: form.program_statuses && Object.keys(form.program_statuses).length > 0 ? form.program_statuses : null,
           estado: form.estado || 'activo'
         };
         // Include password only if provided (optional when editing)
