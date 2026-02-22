@@ -28,7 +28,7 @@ export default function StudentsPage() {
   const [saving, setSaving] = useState(false);
   const [filterProgram, setFilterProgram] = useState('all');
   const [filterModule, setFilterModule] = useState('all');
-  const [filterEstado, setFilterEstado] = useState('activo'); // Default to showing only active students
+  const [filterEstado, setFilterEstado] = useState('all'); // Show all students by default, including recovery/failed
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const [programSearch, setProgramSearch] = useState('');

@@ -303,6 +303,12 @@ export default function TeacherGrades() {
                             const status = getRecoveryStatus(student.id, act.id);
                             const isSaving = savingGrades[key];
                             const adminApproved = recoveryEnabled.includes(student.id);
+                            // Hide the cell entirely when admin hasn't approved recovery for this student
+                            if (!adminApproved) {
+                              return (
+                                <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5" />
+                              );
+                            }
                             // After teacher grades (approved or rejected), hide cell
                             if (status === 'approved' || status === 'rejected') {
                               return (
@@ -313,32 +319,28 @@ export default function TeacherGrades() {
                             }
                             return (
                               <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5">
-                                {!adminApproved ? (
-                                  <span className="text-xs text-muted-foreground italic">Pendiente admin</span>
-                                ) : (
-                                  <div className="flex items-center justify-center gap-1">
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-7 px-2 text-success hover:text-success hover:bg-success/10"
-                                      onClick={() => saveRecovery(student.id, act.id, 'approved')}
-                                      disabled={isSaving}
-                                      title="Aprobar recuperación"
-                                    >
-                                      {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                      onClick={() => saveRecovery(student.id, act.id, 'rejected')}
-                                      disabled={isSaving}
-                                      title="Rechazar recuperación"
-                                    >
-                                      <XCircle className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                )}
+                                <div className="flex items-center justify-center gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-success hover:text-success hover:bg-success/10"
+                                    onClick={() => saveRecovery(student.id, act.id, 'approved')}
+                                    disabled={isSaving}
+                                    title="Aprobar recuperación"
+                                  >
+                                    {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => saveRecovery(student.id, act.id, 'rejected')}
+                                    disabled={isSaving}
+                                    title="Rechazar recuperación"
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </td>
                             );
                           })}

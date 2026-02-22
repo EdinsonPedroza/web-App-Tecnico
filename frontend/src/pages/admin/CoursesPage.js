@@ -581,6 +581,8 @@ export default function CoursesPage() {
                 <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>
                 {(() => {
                   const eligible = students.filter(s => {
+                    // Only active students are eligible to enroll
+                    if ((s.estado || 'activo') !== 'activo') return false;
                     if (!form.program_id) return true;
                     const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
                     return programIds.length === 0 || programIds.map(String).includes(String(form.program_id));
@@ -618,6 +620,8 @@ export default function CoursesPage() {
                     const matchesSearch = (s.name || '').toLowerCase().includes(studentSearch.toLowerCase()) ||
                       (s.cedula && s.cedula.includes(studentSearch));
                     if (!matchesSearch) return false;
+                    // Only active students are eligible to enroll
+                    if ((s.estado || 'activo') !== 'activo') return false;
                     // Filter by program: show only students enrolled in this course's program
                     if (form.program_id) {
                       const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
@@ -626,7 +630,7 @@ export default function CoursesPage() {
                     return true;
                   });
                   if (students.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes</p>;
-                  if (eligible.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes compatibles con el técnico seleccionado</p>;
+                  if (eligible.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes elegibles (activos, compatibles con el programa seleccionado)</p>;
                   return eligible.map((s) => (
                     <div key={s.id} className="flex items-center gap-2.5">
                       <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />

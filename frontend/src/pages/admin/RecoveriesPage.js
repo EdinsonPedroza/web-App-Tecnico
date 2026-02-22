@@ -226,7 +226,10 @@ export default function RecoveriesPage() {
                 const matchesSearch = searchTerm === '' || 
                   student.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   (student.student_cedula && student.student_cedula.includes(searchTerm)) ||
-                  student.failed_subjects.some(s => s.course_name.toLowerCase().includes(searchTerm.toLowerCase()));
+                  student.failed_subjects.some(s =>
+                    s.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (s.subject_names || []).some(n => n.toLowerCase().includes(searchTerm.toLowerCase()))
+                  );
                 
                 // Status filter
                 const matchesStatus = statusFilter === 'all' ||
@@ -254,7 +257,8 @@ export default function RecoveriesPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Materia</TableHead>
+                        <TableHead>Materia(s)</TableHead>
+                        <TableHead>Grupo</TableHead>
                         <TableHead>Programa</TableHead>
                         <TableHead>Módulo</TableHead>
                         <TableHead>Promedio</TableHead>
@@ -265,7 +269,14 @@ export default function RecoveriesPage() {
                     <TableBody>
                       {student.failed_subjects.map((subject) => (
                         <TableRow key={subject.id}>
-                          <TableCell className="font-medium">{subject.course_name}</TableCell>
+                          <TableCell className="font-medium">
+                            {subject.subject_names && subject.subject_names.length > 0
+                              ? subject.subject_names.join(', ')
+                              : subject.course_name}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate" title={subject.course_name}>
+                            {subject.course_name}
+                          </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {subject.program_name}
                           </TableCell>
