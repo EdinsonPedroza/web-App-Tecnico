@@ -271,7 +271,6 @@ export default function StudentsPage() {
         }
         await api.put(`/users/${editing.id}`, updateData);
         studentId = editing.id;
-        toast.success('Estudiante actualizado');
       } else {
         const createData = { 
           ...form, 
@@ -282,7 +281,6 @@ export default function StudentsPage() {
         };
         const res = await api.post('/users', createData);
         studentId = res.data.id;
-        toast.success('Estudiante creado');
       }
 
       // Update course enrollments — handle failures independently so a created student
@@ -314,9 +312,11 @@ export default function StudentsPage() {
       setDialogOpen(false);
       fetchData();
 
-      // Show enrollment errors as warnings after the dialog closes so the user knows
-      // the student was saved but some enrollments could not be completed.
-      if (enrollmentErrors.length > 0) {
+      // Show success only if all operations completed without enrollment errors
+      if (enrollmentErrors.length === 0) {
+        toast.success(editing ? 'Estudiante actualizado' : 'Estudiante creado');
+      } else {
+        // Show warning for each enrollment error so the user knows what failed
         const suffix = editing ? '' : ' (estudiante quedó creado sin inscribir en ese grupo)';
         enrollmentErrors.forEach(msg => {
           toast.warning(msg + suffix, { duration: 8000 });
@@ -630,7 +630,7 @@ export default function StudentsPage() {
                   const filteredCourses = courses.filter(c => {
                     const matchesProgram = !form.program_ids.length || form.program_ids.includes(c.program_id);
                     if (!matchesProgram) return false;
-                    if (editing && form.program_modules && c.program_id) {
+                    if (form.program_modules && c.program_id) {
                       const studentModule = form.program_modules[c.program_id];
                       if (studentModule) {
                         const isCurrentlyEnrolled = (form.course_ids || []).includes(c.id);
@@ -675,8 +675,8 @@ export default function StudentsPage() {
                     const courseName = String(c.name || '');
                     const matchesSearch = courseName.toLowerCase().includes(courseSearch.toLowerCase());
                     if (!matchesSearch) return false;
-                    // When editing an existing student, filter by module compatibility per program
-                    if (editing && form.program_modules && c.program_id) {
+                    // Filter by module compatibility per program (applies to both new and existing students)
+                    if (form.program_modules && c.program_id) {
                       const studentModule = form.program_modules[c.program_id];
                       if (studentModule) {
                         // Allow currently enrolled groups regardless of module (don't lock out existing)

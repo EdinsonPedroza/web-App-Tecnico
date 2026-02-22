@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { Loader2, ClipboardList, Save, CheckCircle, XCircle } from 'lucide-react';
 import api from '@/lib/api';
@@ -22,6 +22,7 @@ export default function TeacherGrades() {
   const [loading, setLoading] = useState(true);
   const [editedGrades, setEditedGrades] = useState({});
   const [savingGrades, setSavingGrades] = useState({});
+  const [recoveryEnabled, setRecoveryEnabled] = useState([]); // student IDs with admin-approved recovery
 
   const fetchData = useCallback(async () => {
     try {
@@ -29,11 +30,12 @@ export default function TeacherGrades() {
       if (subjectId) activitiesUrl += `&subject_id=${subjectId}`;
       let gradesUrl = `/grades?course_id=${courseId}`;
       if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
-      const [cRes, aRes, gRes, uRes] = await Promise.all([
+      const [cRes, aRes, gRes, uRes, rRes] = await Promise.all([
         api.get(`/courses/${courseId}`),
         api.get(activitiesUrl),
         api.get(gradesUrl),
-        api.get('/users?role=estudiante')
+        api.get('/users?role=estudiante'),
+        api.get(`/recovery/enabled?course_id=${courseId}`)
       ]);
       setCourse(cRes.data);
       // Sort: regular activities first (by activity_number), recovery activities last
@@ -46,6 +48,7 @@ export default function TeacherGrades() {
       setGrades(gRes.data);
       const courseStudents = uRes.data.filter(u => (cRes.data.student_ids || []).includes(u.id));
       setStudents(courseStudents);
+      setRecoveryEnabled((rRes.data || []).map(r => r.student_id));
     } catch (err) {
       toast.error('Error cargando datos');
     } finally {
@@ -299,16 +302,19 @@ export default function TeacherGrades() {
                             const key = `${student.id}-${act.id}`;
                             const status = getRecoveryStatus(student.id, act.id);
                             const isSaving = savingGrades[key];
+                            const adminApproved = recoveryEnabled.includes(student.id);
+                            // After teacher grades (approved or rejected), hide cell
+                            if (status === 'approved' || status === 'rejected') {
+                              return (
+                                <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5">
+                                  <span className="text-xs text-muted-foreground italic">Calificado</span>
+                                </td>
+                              );
+                            }
                             return (
                               <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5">
-                                {status === 'approved' ? (
-                                  <Badge variant="success" className="text-xs">
-                                    <CheckCircle className="h-3 w-3 mr-1" /> Aprobado
-                                  </Badge>
-                                ) : status === 'rejected' ? (
-                                  <Badge variant="destructive" className="text-xs">
-                                    <XCircle className="h-3 w-3 mr-1" /> Rechazado
-                                  </Badge>
+                                {!adminApproved ? (
+                                  <span className="text-xs text-muted-foreground italic">Pendiente admin</span>
                                 ) : (
                                   <div className="flex items-center justify-center gap-1">
                                     <Button
@@ -342,6 +348,7 @@ export default function TeacherGrades() {
                   </tbody>
                 </table>
               </div>
+              <ScrollBar orientation="horizontal" />
             </ScrollArea>
           </Card>
         )}
