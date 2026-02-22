@@ -64,6 +64,14 @@ export default function CoursesPage() {
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
   const filteredSubjects = form.program_id ? subjects.filter(s => String(s.program_id) === String(form.program_id)) : subjects;
 
+  // Returns a student's status for the given program (falls back to global estado)
+  const getStudentStatusForProgram = (student, programId) => {
+    if (programId && student.program_statuses) {
+      return student.program_statuses[programId] || student.estado || 'activo';
+    }
+    return student.estado || 'activo';
+  };
+
   // Derive the module number that this group targets from selected subjects (most common module among selections)
   const groupModule = useMemo(() => {
     if (form.subject_ids.length === 0) return null;
@@ -598,8 +606,8 @@ export default function CoursesPage() {
                   const eligible = students.filter(s => {
                     // Always include students already enrolled in the current group
                     if (editing && form.student_ids.includes(s.id)) return true;
-                    // Only active students are eligible to enroll
-                    if ((s.estado || 'activo') !== 'activo') return false;
+                    // Only active students are eligible to enroll (check per-program status when available)
+                    if (getStudentStatusForProgram(s, form.program_id) !== 'activo') return false;
                     if (!form.program_id) return true;
                     const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
                     if (programIds.length > 0 && !programIds.map(String).includes(String(form.program_id))) return false;
@@ -657,8 +665,8 @@ export default function CoursesPage() {
                     if (!matchesSearch) return false;
                     // Always include students already enrolled in the current group
                     if (editing && form.student_ids.includes(s.id)) return true;
-                    // Only active students are eligible to enroll
-                    if ((s.estado || 'activo') !== 'activo') return false;
+                    // Only active students are eligible to enroll (check per-program status when available)
+                    if (getStudentStatusForProgram(s, form.program_id) !== 'activo') return false;
                     // Filter by program: show only students enrolled in this course's program
                     if (form.program_id) {
                       const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
@@ -686,7 +694,7 @@ export default function CoursesPage() {
                   return eligible.map((s) => (
                     <div key={s.id} className="flex items-center gap-2.5">
                       <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
-                      <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module} - {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}</span></span>
+                      <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module} - {getStudentStatusForProgram(s, form.program_id) === 'activo' ? 'Activo' : 'Egresado'}</span></span>
                     </div>
                   ));
                 })()}
