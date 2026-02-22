@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
-import { Loader2, ClipboardList, Save, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, ClipboardList, Save, CheckCircle, XCircle, Clock } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function TeacherGrades() {
@@ -307,9 +307,10 @@ export default function TeacherGrades() {
                             if (!adminApproved) {
                               return (
                                 <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5">
-                                  <span className="text-xs text-muted-foreground italic" title="El admin debe aprobar la recuperación primero">
-                                    Pendiente aprobación del admin
-                                  </span>
+                                  <Badge variant="outline" className="text-xs border-warning/50 text-warning bg-warning/10 gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    En espera de aprobación del Admin
+                                  </Badge>
                                 </td>
                               );
                             }

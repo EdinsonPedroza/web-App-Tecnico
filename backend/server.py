@@ -510,7 +510,7 @@ async def create_initial_data():
     # CREATE_SEED_USERS: controla si se crean usuarios semilla en startup.
     # Por defecto 'true' para desarrollo local; establecer 'false' en producción (Render/Railway)
     # para evitar que los usuarios semilla se recreen automáticamente.
-    create_seed_users = os.environ.get('CREATE_SEED_USERS', 'true').lower() == 'true'
+    create_seed_users = os.environ.get('CREATE_SEED_USERS', 'false').lower() == 'true'
     
     if not create_seed_users:
         logger.info("CREATE_SEED_USERS=false: Omitiendo creación de usuarios semilla (modo producción)")
@@ -1387,6 +1387,26 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
                         status_code=400,
                         detail=f"La materia ya está asignada al profesor '{conflict['name']}'. Desasígnela primero antes de asignarla a otro profesor."
                     )
+
+    # Rule 3: When adding new programs to a student, initialize program_statuses and program_modules
+    if "program_ids" in update_data and update_data["program_ids"] is not None:
+        current_student = await db.users.find_one({"id": user_id, "role": "estudiante"}, {"_id": 0, "program_ids": 1, "program_id": 1, "program_statuses": 1, "program_modules": 1})
+        if current_student:
+            current_program_ids = current_student.get("program_ids") or (
+                [current_student["program_id"]] if current_student.get("program_id") else []
+            )
+            new_program_ids = update_data["program_ids"]
+            added_programs = [p for p in new_program_ids if p not in current_program_ids]
+            if added_programs:
+                current_statuses = current_student.get("program_statuses") or {}
+                current_modules = current_student.get("program_modules") or {}
+                for prog_id in added_programs:
+                    current_statuses[prog_id] = "activo"
+                    if prog_id not in current_modules:
+                        current_modules[prog_id] = 1
+                update_data["program_statuses"] = current_statuses
+                update_data["program_modules"] = current_modules
+                update_data["estado"] = derive_estado_from_program_statuses(current_statuses)
 
     result = await db.users.update_one({"id": user_id}, {"$set": update_data})
     if result.matched_count == 0:
@@ -2841,14 +2861,18 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     if student_ids_in_records and course_ids_in_records:
         grades_for_records = await db.grades.find(
             {"student_id": {"$in": student_ids_in_records}, "course_id": {"$in": course_ids_in_records}},
-            {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1, "value": 1}
+            {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1, "value": 1, "recovery_status": 1}
         ).to_list(None)
     # Index: (student_id, course_id, subject_id) -> [grade values]
     grades_index = {}
+    # Index: (student_id, course_id) -> recovery_status (teacher's grading result)
+    teacher_graded_index = {}
     for g in grades_for_records:
         key = (g["student_id"], g["course_id"], g.get("subject_id"))
         if g.get("value") is not None:
             grades_index.setdefault(key, []).append(g["value"])
+        if g.get("recovery_status"):
+            teacher_graded_index[(g["student_id"], g["course_id"])] = g["recovery_status"]
 
     # Get all programs for reference
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
@@ -2885,7 +2909,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "average_grade": record["average_grade"],
             "recovery_approved": record["recovery_approved"],
             "recovery_completed": record["recovery_completed"],
-            "recovery_close": recovery_close
+            "recovery_close": recovery_close,
+            "teacher_graded_status": teacher_graded_index.get((student_id, record["course_id"]))
         })
     
     # Also detect students in courses with past module close dates who have failing averages
@@ -2970,7 +2995,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     "recovery_approved": False,
                     "recovery_completed": False,
                     "recovery_close": recovery_close,
-                    "auto_detected": True
+                    "auto_detected": True,
+                    "teacher_graded_status": teacher_graded_index.get((student_id, course["id"]))
                 })
                 already_tracked.add((student_id, course["id"]))
     
@@ -3425,6 +3451,16 @@ async def seed_data():
     if existing_admin:
         return {"message": "Base de datos ya tiene datos iniciales"}
     
+    # Check for protected production users that must never be re-created
+    protected_emails = ["laura.torres@educando.com", "diana.silva@educando.com"]
+    protected_cedulas = ["1001234567"]
+    for email in protected_emails:
+        if await db.users.find_one({"email": email}):
+            return {"message": "Datos de producción ya existen. No se recrearán usuarios existentes."}
+    for cedula in protected_cedulas:
+        if await db.users.find_one({"cedula": cedula}):
+            return {"message": "Datos de producción ya existen. No se recrearán usuarios existentes."}
+    
     # Create Programs
     programs = [
         {
@@ -3762,8 +3798,7 @@ async def seed_data():
     return {
         "message": "Datos iniciales creados exitosamente",
         "users_created": 7,
-        "programs_created": 3,
-        "note": "Las credenciales de acceso están documentadas en el archivo USUARIOS_Y_CONTRASEÑAS.txt del repositorio"
+        "programs_created": 3
     }
 
 # --- Stats Route ---
