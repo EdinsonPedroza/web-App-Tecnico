@@ -17,6 +17,7 @@ export default function StudentCourseSelector() {
   const [courses, setCourses] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,15 +27,17 @@ export default function StudentCourseSelector() {
       // Get selected program from session storage
       const programId = sessionStorage.getItem('selectedProgramId');
       
-      const [cRes, pRes, sRes] = await Promise.all([
+      const [cRes, pRes, sRes, tRes] = await Promise.all([
         api.get(`/courses?student_id=${user.id}`),
         api.get('/programs'),
-        api.get('/subjects')
+        api.get('/subjects'),
+        api.get('/users?role=profesor')
       ]);
       
       setCourses(cRes.data);
       setPrograms(pRes.data);
       setSubjects(sRes.data);
+      setTeachers(tRes.data);
       
       if (programId) {
         setSelectedProgram(pRes.data.find(p => p.id === programId));
@@ -50,6 +53,12 @@ export default function StudentCourseSelector() {
 
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
   
+  // Find the teacher name who teaches a given subject
+  const getTeacherName = (subjectId) => {
+    const teacher = teachers.find(t => (t.subject_ids || []).includes(subjectId));
+    return teacher ? teacher.name : null;
+  };
+
   // Filter courses by selected program
   const filteredCourses = selectedProgram 
     ? courses.filter(c => c.program_id === selectedProgram.id)
@@ -87,6 +96,7 @@ export default function StudentCourseSelector() {
         isLocked,
         subjectModule,
         studentModule,
+        teacherName: getTeacherName(subjectId),
       };
     });
   });
@@ -227,6 +237,11 @@ export default function StudentCourseSelector() {
                     <CardDescription className="text-base">
                       {card.programName}
                     </CardDescription>
+                    {card.teacherName && (
+                      <p className="text-sm text-muted-foreground">
+                        Profesor: <span className="font-medium text-foreground">{card.teacherName}</span>
+                      </p>
+                    )}
                     <div className="flex gap-2 flex-wrap">
                       <Badge variant="outline" className="text-base px-3 py-1">{card.year}</Badge>
                     </div>

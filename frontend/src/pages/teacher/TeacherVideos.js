@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, Video, ExternalLink, Calendar } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Video, ExternalLink, Calendar, Clock } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function TeacherVideos() {
@@ -19,7 +20,7 @@ export default function TeacherVideos() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ title: '', url: '', description: '' });
+  const [form, setForm] = useState({ title: '', url: '', description: '', available_from: '' });
   const [saving, setSaving] = useState(false);
 
   const fetchVideos = useCallback(async () => {
@@ -39,13 +40,15 @@ export default function TeacherVideos() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ title: '', url: '', description: '' });
+    setForm({ title: '', url: '', description: '', available_from: '' });
     setDialogOpen(true);
   };
 
   const openEdit = (vid) => {
     setEditing(vid);
-    setForm({ title: vid.title, url: vid.url, description: vid.description || '' });
+    // Convert stored ISO string to datetime-local format (YYYY-MM-DDTHH:mm)
+    const af = vid.available_from ? new Date(vid.available_from).toISOString().slice(0, 16) : '';
+    setForm({ title: vid.title, url: vid.url, description: vid.description || '', available_from: af });
     setDialogOpen(true);
   };
 
@@ -53,11 +56,17 @@ export default function TeacherVideos() {
     if (!form.title.trim() || !form.url.trim()) { toast.error('Título y URL requeridos'); return; }
     setSaving(true);
     try {
+      const payload = {
+        title: form.title,
+        url: form.url,
+        description: form.description,
+        available_from: form.available_from ? new Date(form.available_from).toISOString() : null
+      };
       if (editing) {
-        await api.put(`/class-videos/${editing.id}`, form);
+        await api.put(`/class-videos/${editing.id}`, payload);
         toast.success('Video actualizado');
       } else {
-        await api.post('/class-videos', { course_id: courseId, subject_id: subjectId, ...form });
+        await api.post('/class-videos', { course_id: courseId, subject_id: subjectId, ...payload });
         toast.success('Video subido exitosamente');
       }
       setDialogOpen(false);
@@ -76,6 +85,8 @@ export default function TeacherVideos() {
   };
 
   const formatDate = (d) => new Date(d).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
+
+  const isScheduled = (vid) => vid.available_from && new Date(vid.available_from) > new Date();
 
   const getEmbedUrl = (url) => {
     const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?/]+)/);
@@ -105,16 +116,35 @@ export default function TeacherVideos() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {videos.map((vid) => {
               const thumb = getEmbedUrl(vid.url);
+              const scheduled = isScheduled(vid);
               return (
                 <Card key={vid.id} className="shadow-card hover:shadow-card-hover transition-shadow overflow-hidden flex flex-col">
                   {thumb && (
-                    <div className="aspect-video bg-muted overflow-hidden">
-                      <img src={thumb} alt={vid.title} className="w-full h-full object-cover" />
+                    <div className="aspect-video bg-muted overflow-hidden relative">
+                      <img src={thumb} alt={vid.title} className={`w-full h-full object-cover ${scheduled ? 'opacity-50' : ''}`} />
+                      {scheduled && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Badge variant="secondary" className="gap-1 text-xs">
+                            <Clock className="h-3 w-3" /> Programado
+                          </Badge>
+                        </div>
+                      )}
                     </div>
                   )}
                   <CardContent className="p-4 flex-1 flex flex-col">
                     <h3 className="text-sm font-semibold text-foreground mb-1">{vid.title}</h3>
+                    {scheduled && (
+                      <Badge variant="outline" className="w-fit text-xs mb-2 gap-1 text-warning border-warning">
+                        <Clock className="h-3 w-3" /> No visible para estudiantes aún
+                      </Badge>
+                    )}
                     <p className="text-xs text-muted-foreground mb-3 flex-1">{vid.description}</p>
+                    {vid.available_from && (
+                      <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Disponible desde: {formatDate(vid.available_from)}
+                      </p>
+                    )}
                     <div className="flex items-center justify-between mt-auto">
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
@@ -152,6 +182,15 @@ export default function TeacherVideos() {
             <div className="space-y-2"><Label>Título</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ej: Clase 3 - Tema..." /></div>
             <div className="space-y-2"><Label>URL de YouTube</Label><Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://youtube.com/watch?v=..." /></div>
             <div className="space-y-2"><Label>Descripción (opcional)</Label><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Breve descripción del contenido..." rows={3} /></div>
+            <div className="space-y-2">
+              <Label>Disponible a partir de (opcional)</Label>
+              <Input
+                type="datetime-local"
+                value={form.available_from}
+                onChange={(e) => setForm({ ...form, available_from: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">Si se define, los estudiantes solo verán este video a partir de esa fecha y hora.</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>

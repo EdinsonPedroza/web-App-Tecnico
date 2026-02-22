@@ -1097,6 +1097,7 @@ class ClassVideoCreate(BaseModel):
     title: str
     url: str
     description: Optional[str] = ""
+    available_from: Optional[str] = None  # ISO datetime; if set, students only see this after this date
 
 class SubmissionCreate(BaseModel):
     activity_id: str
@@ -2063,7 +2064,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     
     # Rule E: For recovery activities, only approve/reject is allowed — no numeric grade
     if req.activity_id:
-        activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1})
+        activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1, "course_id": 1})
         if activity_doc and activity_doc.get("is_recovery"):
             if req.value is not None and not req.recovery_status:
                 raise HTTPException(
@@ -2072,6 +2073,17 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                 )
             if req.recovery_status not in ("approved", "rejected", None):
                 raise HTTPException(status_code=400, detail="Estado de recuperación inválido")
+            # Recovery must be admin-approved before teacher can grade it
+            failed_record = await db.failed_subjects.find_one({
+                "student_id": req.student_id,
+                "course_id": req.course_id,
+                "recovery_approved": True
+            })
+            if not failed_record:
+                raise HTTPException(
+                    status_code=400,
+                    detail="La recuperación debe ser aprobada por el administrador antes de poder calificar"
+                )
     
     existing = await db.grades.find_one({
         "student_id": req.student_id,
@@ -2236,6 +2248,15 @@ async def get_class_videos(course_id: Optional[str] = None, subject_id: Optional
         query["course_id"] = course_id
     if subject_id:
         query["subject_id"] = subject_id
+    # Students only see videos whose available_from has already passed (or is not set)
+    if user["role"] == "estudiante":
+        now_iso = datetime.now(timezone.utc).isoformat()
+        query["$or"] = [
+            {"available_from": {"$exists": False}},
+            {"available_from": None},
+            {"available_from": ""},
+            {"available_from": {"$lte": now_iso}}
+        ]
     videos = await db.class_videos.find(query, {"_id": 0}).to_list(500)
     return videos
 
@@ -2250,6 +2271,7 @@ async def create_class_video(req: ClassVideoCreate, user=Depends(get_current_use
         "title": req.title,
         "url": req.url,
         "description": req.description,
+        "available_from": req.available_from or None,
         "created_by": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -2268,12 +2290,18 @@ class ClassVideoUpdate(BaseModel):
     title: Optional[str] = None
     url: Optional[str] = None
     description: Optional[str] = None
+    available_from: Optional[str] = None  # ISO datetime; empty string clears the restriction
 
 @api_router.put("/class-videos/{video_id}")
 async def update_class_video(video_id: str, req: ClassVideoUpdate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
-    update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    # Build update dict; allow explicit None/empty for available_from to clear it
+    raw = req.model_dump()
+    update_data = {k: v for k, v in raw.items() if v is not None}
+    # Explicitly handle available_from="" or available_from=None to clear the restriction
+    if raw.get("available_from") in ("", None) and "available_from" in raw:
+        update_data["available_from"] = None
     result = await db.class_videos.update_one({"id": video_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Video no encontrado")
@@ -2330,6 +2358,19 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
     
     now = datetime.now(timezone.utc)
+    
+    # Check admin approval for recovery activities
+    if activity.get("is_recovery"):
+        failed_record = await db.failed_subjects.find_one({
+            "student_id": user["id"],
+            "course_id": activity["course_id"],
+            "recovery_approved": True
+        })
+        if not failed_record:
+            raise HTTPException(
+                status_code=400,
+                detail="Tu recuperación debe ser aprobada por el administrador antes de poder entregar actividades"
+            )
     
     # Check start_date
     if activity.get("start_date"):
@@ -2725,13 +2766,29 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     subject_map = {s["id"]: s["name"] for s in all_subjects}
 
     def get_subject_names(course_doc):
-        """Return list of subject names for a course using its subject_ids.
-        Falls back to the course name if no subjects are found, to always return a non-empty list."""
+        """Return list of ALL subject names for a course (fallback)."""
         sids = course_doc.get("subject_ids") or []
         if not sids and course_doc.get("subject_id"):
             sids = [course_doc["subject_id"]]
         names = [subject_map[sid] for sid in sids if sid in subject_map]
         return names if names else [course_doc.get("name", "Sin nombre")]
+
+    def get_failing_subject_names(student_id, course_id, course_doc, grades_index):
+        """Return only the subject names where the student's average is < 3.0.
+        Falls back to all course subjects if per-subject data is unavailable."""
+        sids = course_doc.get("subject_ids") or []
+        if not sids and course_doc.get("subject_id"):
+            sids = [course_doc["subject_id"]]
+        if not sids:
+            return [course_doc.get("name", "Sin nombre")]
+        failing = []
+        for sid in sids:
+            values = grades_index.get((student_id, course_id, sid), [])
+            # No grades or average < 3.0 → consider failed
+            avg = sum(values) / len(values) if values else 0.0
+            if avg < 3.0 and sid in subject_map:
+                failing.append(subject_map[sid])
+        return failing if failing else get_subject_names(course_doc)
 
     def get_recovery_close(course_doc, module_number):
         """Return the recovery_close date string for a given module in a course, or None."""
@@ -2761,6 +2818,21 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         ).to_list(None)
         students_lookup = {s["id"]: s for s in student_docs}
     
+    # Pre-load grades for all relevant student/course pairs to compute per-subject averages
+    course_ids_in_records = list({r["course_id"] for r in failed_records})
+    grades_for_records = []
+    if student_ids_in_records and course_ids_in_records:
+        grades_for_records = await db.grades.find(
+            {"student_id": {"$in": student_ids_in_records}, "course_id": {"$in": course_ids_in_records}},
+            {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1, "value": 1}
+        ).to_list(None)
+    # Index: (student_id, course_id, subject_id) -> [grade values]
+    grades_index = {}
+    for g in grades_for_records:
+        key = (g["student_id"], g["course_id"], g.get("subject_id"))
+        if g.get("value") is not None:
+            grades_index.setdefault(key, []).append(g["value"])
+
     # Get all programs for reference
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
@@ -2784,7 +2856,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 "failed_subjects": []
             }
         
-        subject_names = get_subject_names(course_doc) if course_doc else [record.get("course_name", "Sin nombre")]
+        subject_names = get_failing_subject_names(student_id, record["course_id"], course_doc, grades_index) if course_doc else [record.get("course_name", "Sin nombre")]
         students_map[student_id]["failed_subjects"].append({
             "id": record["id"],
             "course_id": record["course_id"],
@@ -2834,7 +2906,13 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 {"course_id": course["id"]}, {"_id": 0}
             ).to_list(5000)
             
-            subject_names = get_subject_names(course)
+            # Build a per-subject index for this course's grades
+            course_grades_index = {}
+            for g in all_grades:
+                key = (g.get("student_id"), course["id"], g.get("subject_id"))
+                if g.get("value") is not None:
+                    course_grades_index.setdefault(key, []).append(g["value"])
+
             for student_id in student_ids:
                 if (student_id, course["id"]) in already_tracked:
                     continue  # Already tracked
@@ -2862,11 +2940,12 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "failed_subjects": []
                     }
                 
+                failing_subject_names = get_failing_subject_names(student_id, course["id"], course, course_grades_index)
                 students_map[student_id]["failed_subjects"].append({
                     "id": temp_record_id,
                     "course_id": course["id"],
                     "course_name": course.get("name", "Sin nombre"),
-                    "subject_names": subject_names,
+                    "subject_names": failing_subject_names,
                     "program_id": course.get("program_id", ""),
                     "program_name": program_map.get(course.get("program_id", ""), "Desconocido"),
                     "module_number": module_number,

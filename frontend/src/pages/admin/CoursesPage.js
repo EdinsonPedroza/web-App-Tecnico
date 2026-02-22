@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -63,6 +63,20 @@ export default function CoursesPage() {
 
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
   const filteredSubjects = form.program_id ? subjects.filter(s => String(s.program_id) === String(form.program_id)) : subjects;
+
+  // Derive the module number that this group targets from selected subjects (most common module among selections)
+  const groupModule = useMemo(() => {
+    if (form.subject_ids.length === 0) return null;
+    const moduleCounts = {};
+    for (const sid of form.subject_ids) {
+      const s = subjects.find(x => x.id === sid);
+      const mod = s?.module_number != null ? parseInt(s.module_number, 10) : null;
+      if (mod != null && Number.isFinite(mod)) moduleCounts[mod] = (moduleCounts[mod] || 0) + 1;
+    }
+    const entries = Object.entries(moduleCounts);
+    if (entries.length === 0) return null;
+    return parseInt(entries.sort((a, b) => b[1] - a[1])[0][0], 10);
+  }, [form.subject_ids, subjects]);
   
   // Filtered courses for the list view
   const filteredCourses = courses.filter(c => {
@@ -585,7 +599,13 @@ export default function CoursesPage() {
                     if ((s.estado || 'activo') !== 'activo') return false;
                     if (!form.program_id) return true;
                     const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
-                    return programIds.length === 0 || programIds.map(String).includes(String(form.program_id));
+                    if (programIds.length > 0 && !programIds.map(String).includes(String(form.program_id))) return false;
+                    // Filter by module: student's current module for this program must match the group module
+                    if (groupModule != null) {
+                      const studentMod = parseInt((s.program_modules || {})[form.program_id] ?? s.module, 10);
+                      if (Number.isFinite(studentMod) && studentMod !== groupModule) return false;
+                    }
+                    return true;
                   });
                   return eligible.length > 0 && (
                     <Button
@@ -627,10 +647,15 @@ export default function CoursesPage() {
                       const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
                       if (programIds.length > 0 && !programIds.map(String).includes(String(form.program_id))) return false;
                     }
+                    // Filter by module: student's current module for this program must match group module
+                    if (groupModule != null && form.program_id) {
+                      const studentMod = parseInt((s.program_modules || {})[form.program_id] ?? s.module, 10);
+                      if (Number.isFinite(studentMod) && studentMod !== groupModule) return false;
+                    }
                     return true;
                   });
                   if (students.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes</p>;
-                  if (eligible.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes elegibles (activos, compatibles con el programa seleccionado)</p>;
+                  if (eligible.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes elegibles (activos, compatibles con el programa{groupModule != null ? ` y Módulo ${groupModule}` : ''} seleccionado)</p>;
                   return eligible.map((s) => (
                     <div key={s.id} className="flex items-center gap-2.5">
                       <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
