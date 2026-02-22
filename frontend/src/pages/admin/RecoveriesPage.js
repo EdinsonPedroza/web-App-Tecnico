@@ -16,7 +16,7 @@ export default function RecoveriesPage() {
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('pending');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [graduatedCount, setGraduatedCount] = useState(0);
   const [deletingGraduated, setDeletingGraduated] = useState(false);
 
