@@ -2004,6 +2004,14 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
                 f"(students not deleted, only removed from group)"
             )
     
+    # Collect file references before deleting (for disk cleanup)
+    activities_for_files = await db.activities.find(
+        {"course_id": course_id}, {"_id": 0, "files": 1}
+    ).to_list(None)
+    submissions_for_files = await db.submissions.find(
+        {"course_id": course_id}, {"_id": 0, "files": 1}
+    ).to_list(None)
+
     # Delete the course (students are never deleted)
     await db.courses.delete_one({"id": course_id})
 
@@ -2013,6 +2021,18 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
     submissions_deleted = await db.submissions.delete_many({"course_id": course_id})
     failed_subjects_deleted = await db.failed_subjects.delete_many({"course_id": course_id})
     recovery_enabled_deleted = await db.recovery_enabled.delete_many({"course_id": course_id})
+
+    # Clean up uploaded files from disk
+    for doc in activities_for_files + submissions_for_files:
+        for f in (doc.get("files") or []):
+            stored_name = f.get("stored_name") if isinstance(f, dict) else None
+            if stored_name:
+                file_path = UPLOAD_DIR / stored_name
+                if file_path.exists():
+                    try:
+                        file_path.unlink()
+                    except Exception as e:
+                        logger.warning(f"Failed to delete file {stored_name}: {e}")
 
     logger.info(
         f"Course {course_id} deleted with associated data: "
