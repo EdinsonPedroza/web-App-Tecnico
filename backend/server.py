@@ -1398,15 +1398,21 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
             new_program_ids = update_data["program_ids"]
             added_programs = [p for p in new_program_ids if p not in current_program_ids]
             if added_programs:
-                current_statuses = current_student.get("program_statuses") or {}
-                current_modules = current_student.get("program_modules") or {}
+                stored_statuses = current_student.get("program_statuses") or {}
+                stored_modules = current_student.get("program_modules") or {}
+                # Merge: stored as base, frontend-sent values take priority
+                sent_statuses = update_data.get("program_statuses") if update_data.get("program_statuses") is not None else {}
+                sent_modules = update_data.get("program_modules") if update_data.get("program_modules") is not None else {}
+                merged_statuses = {**stored_statuses, **sent_statuses}
+                merged_modules = {**stored_modules, **sent_modules}
                 for prog_id in added_programs:
-                    current_statuses[prog_id] = "activo"
-                    if prog_id not in current_modules:
-                        current_modules[prog_id] = 1
-                update_data["program_statuses"] = current_statuses
-                update_data["program_modules"] = current_modules
-                update_data["estado"] = derive_estado_from_program_statuses(current_statuses)
+                    if prog_id not in merged_statuses:
+                        merged_statuses[prog_id] = "activo"
+                    if prog_id not in merged_modules:
+                        merged_modules[prog_id] = 1
+                update_data["program_statuses"] = merged_statuses
+                update_data["program_modules"] = merged_modules
+                update_data["estado"] = derive_estado_from_program_statuses(merged_statuses)
 
     result = await db.users.update_one({"id": user_id}, {"$set": update_data})
     if result.matched_count == 0:

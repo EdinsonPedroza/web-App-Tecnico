@@ -200,7 +200,8 @@ export default function RecoveriesPage() {
                 <SelectContent>
                   <SelectItem value="all">Todos en proceso</SelectItem>
                   <SelectItem value="pending">Solo pendientes</SelectItem>
-                  <SelectItem value="approved">Solo aprobadas</SelectItem>
+                  <SelectItem value="approved">Aprobadas por admin</SelectItem>
+                  <SelectItem value="graded">Calificadas por profesor</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -234,7 +235,8 @@ export default function RecoveriesPage() {
                 // Status filter
                 const matchesStatus = statusFilter === 'all' ||
                   (statusFilter === 'pending' && student.failed_subjects.some(s => !s.recovery_approved)) ||
-                  (statusFilter === 'approved' && student.failed_subjects.some(s => s.recovery_approved && !s.recovery_completed));
+                  (statusFilter === 'approved' && student.failed_subjects.some(s => s.recovery_approved && !s.recovery_completed)) ||
+                  (statusFilter === 'graded' && student.failed_subjects.some(s => s.teacher_graded_status !== null && s.teacher_graded_status !== undefined));
                 
                 return matchesSearch && matchesStatus;
               })
@@ -299,9 +301,9 @@ export default function RecoveriesPage() {
                               <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
                                 ❌ Rechazado por profesor
                               </Badge>
-                            ) : subject.recovery_approved && !subject.recovery_completed ? (
+                            ) : subject.recovery_approved === true && (subject.teacher_graded_status === null || subject.teacher_graded_status === undefined) ? (
                               <Badge variant="warning" className="text-xs bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700">
-                                ⏳ En espera de calificación
+                                ⏳ En espera de calificación del profesor
                               </Badge>
                             ) : subject.recovery_completed ? (
                               <Badge variant="secondary" className="text-xs">
@@ -345,11 +347,6 @@ export default function RecoveriesPage() {
                                     Rechazar
                                   </Button>
                                 </>
-                              )}
-                              {subject.recovery_approved && (
-                                <Badge variant="outline" className="text-xs text-muted-foreground">
-                                  Esperando completar
-                                </Badge>
                               )}
                             </div>
                           </TableCell>
