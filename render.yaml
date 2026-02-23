@@ -7,6 +7,7 @@ services:
     plan: starter
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
+    healthCheckPath: /api/health
     envVars:
       - key: MONGO_URL
         sync: false
@@ -20,14 +21,22 @@ services:
       - key: PASSWORD_STORAGE_MODE
         value: bcrypt
       - key: CORS_ORIGINS
-        value: "*"
-        # ⚠️ SECURITY WARNING: "*" allows requests from any domain.
-        # For production, replace with your specific domain(s):
-        # value: "https://yourdomain.com,https://www.yourdomain.com"
+        value: "https://tu-dominio.com"
+        # ⚠️ PRODUCCIÓN: Cambia este valor por tu dominio real antes de desplegar.
+        # Ejemplo: "https://educando.com,https://www.educando.com"
+        # Nunca uses "*" en producción ya que permite solicitudes desde cualquier origen.
       - key: JWT_SECRET
         generateValue: true
       - key: PORT
         value: 10000
+      - key: WORKERS
+        value: "2"
+        # Render Starter tiene 512MB RAM. 2 workers es el máximo recomendado.
+        # Aumentar a 4 si se actualiza a plan con 1GB RAM.
+      - key: DEBUG
+        value: false
+      - key: ALLOW_USER_RESET
+        value: false
     autoDeploy: true
 
   # Frontend Web Service
