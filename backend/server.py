@@ -349,13 +349,34 @@ async def global_exception_handler(request: Request, exc: Exception):
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Check if we're in a production environment and warn about ephemeral storage
-if os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DYNO'):
-    logger.warning(
-        "⚠️  PRODUCTION WARNING: Files are stored on ephemeral disk storage. "
-        "Uploaded files will be LOST on redeployment. "
-        "Consider migrating to Cloudinary, AWS S3, or similar persistent storage services."
-    )
+# Cloudinary configuration (optional – enables persistent cloud storage for uploads)
+CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME')
+CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY')
+CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET')
+USE_CLOUDINARY = bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)
+
+if USE_CLOUDINARY:
+    try:
+        import cloudinary
+        import cloudinary.uploader
+        cloudinary.config(
+            cloud_name=CLOUDINARY_CLOUD_NAME,
+            api_key=CLOUDINARY_API_KEY,
+            api_secret=CLOUDINARY_API_SECRET,
+            secure=True
+        )
+        logger.info("Cloudinary configured – uploads will use persistent cloud storage.")
+    except ImportError:
+        USE_CLOUDINARY = False
+        logger.warning("cloudinary package not installed. Falling back to local disk storage.")
+else:
+    # Check if we're in a production environment and warn about ephemeral storage
+    if os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DYNO'):
+        logger.warning(
+            "⚠️  PRODUCTION WARNING: Files are stored on ephemeral disk storage. "
+            "Uploaded files will be LOST on redeployment. "
+            "Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET to use persistent storage."
+        )
 
 # --- Startup Event - Crear datos iniciales ---
 @app.on_event("startup")
@@ -2091,11 +2112,28 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
     recovery_enabled_deleted = await db.recovery_enabled.delete_many({"course_id": course_id})
     videos_deleted = await db.class_videos.delete_many({"course_id": course_id})
 
-    # Clean up uploaded files from disk
+    # Clean up uploaded files from disk or Cloudinary
     for doc in activities_for_files + submissions_for_files:
         for f in (doc.get("files") or []):
             stored_name = f.get("stored_name") if isinstance(f, dict) else None
-            if stored_name:
+            if not stored_name:
+                continue
+            # Determine storage backend: use the 'storage' field set by the upload endpoint,
+            # or detect Cloudinary by whether the public_id starts with the known upload folder.
+            storage = f.get("storage") if isinstance(f, dict) else None
+            is_cloudinary_file = (
+                USE_CLOUDINARY and (
+                    storage == "cloudinary" or
+                    (isinstance(stored_name, str) and stored_name.startswith("educando/"))
+                )
+            )
+            if is_cloudinary_file:
+                try:
+                    import cloudinary.uploader
+                    cloudinary.uploader.destroy(stored_name, resource_type="auto")
+                except Exception as e:
+                    logger.warning(f"Failed to delete Cloudinary file {stored_name}: {e}")
+            else:
                 file_path = UPLOAD_DIR / stored_name
                 if file_path.exists():
                     try:
@@ -2435,19 +2473,43 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     if user["role"] not in ["profesor", "admin", "estudiante"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     
+    original_name = file.filename
+    file_content = await file.read()
+    file_size = len(file_content)
+
+    if USE_CLOUDINARY:
+        import cloudinary.uploader
+        import io as _io
+        result = cloudinary.uploader.upload(
+            _io.BytesIO(file_content),
+            folder="educando/uploads",
+            resource_type="auto",
+            use_filename=True,
+            unique_filename=True
+        )
+        return {
+            "filename": original_name,
+            "stored_name": result["public_id"],
+            "url": result["secure_url"],
+            "size": file_size,
+            "storage": "cloudinary"
+        }
+
+    # Fallback: local disk storage (development / no Cloudinary configured)
     file_id = str(uuid.uuid4())
-    ext = Path(file.filename).suffix
+    ext = Path(original_name).suffix
     safe_name = f"{file_id}{ext}"
     file_path = UPLOAD_DIR / safe_name
-    
+
     with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    
+        f.write(file_content)
+
     return {
-        "filename": file.filename,
+        "filename": original_name,
         "stored_name": safe_name,
         "url": f"/api/files/{safe_name}",
-        "size": os.path.getsize(file_path)
+        "size": os.path.getsize(file_path),
+        "storage": "local"
     }
 
 @api_router.get("/files/{filename}")
@@ -2945,14 +3007,15 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         dates = module_dates.get(str(module_number)) or {}
         return dates.get("recovery_close")
 
-    # Only fetch in-process records (panel shows these states only):
-    #   - Pending (not yet decided): recovery_rejected is not True AND NOT (approved + completed)
-    #   - Approved but not yet completed: recovery_approved=True, recovery_completed=False
-    # Excluded: recovery_rejected=True OR (recovery_approved=True AND recovery_completed=True)
+    # Fetch all records that haven't been processed yet, plus recently processed ones (last 30 days)
+    # This ensures admins can see the full status of each recovery even after recovery_close passes.
+    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     failed_records = await db.failed_subjects.find(
         {
-            "recovery_rejected": {"$ne": True},
-            "$nor": [{"recovery_approved": True, "recovery_completed": True}]
+            "$or": [
+                {"recovery_processed": {"$ne": True}},
+                {"processed_at": {"$gte": thirty_days_ago}}
+            ]
         },
         {"_id": 0}
     ).to_list(1000)
@@ -2990,14 +3053,11 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
     
-    # Organize by student; skip records whose recovery period has already closed
+    # Organize by student; include all non-processed records regardless of recovery_close date
     students_map = {}
     for record in failed_records:
         course_doc = course_map.get(record["course_id"]) or {}
         recovery_close = get_recovery_close(course_doc, record.get("module_number", 1))
-        # If the recovery window has already closed, skip this record
-        if recovery_close and recovery_close < today_str:
-            continue
 
         student_id = record["student_id"]
         if student_id not in students_map:
@@ -3014,6 +3074,20 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         teacher_status = teacher_graded_index.get((student_id, record["course_id"], subject_id_for_record))
         if not teacher_status:
             teacher_status = teacher_graded_index.get((student_id, record["course_id"], None))
+
+        # Compute a human-readable status for the record
+        if record.get("recovery_processed"):
+            if record.get("recovery_approved") and record.get("teacher_graded_status") == "approved":
+                rec_status = "processed_passed"
+            else:
+                rec_status = "processed_failed"
+        elif record.get("recovery_completed"):
+            ts = record.get("teacher_graded_status") or teacher_status
+            rec_status = "teacher_approved" if ts == "approved" else "teacher_rejected"
+        else:
+            # Not yet graded by teacher (may or may not be admin-approved)
+            rec_status = "pending"
+
         students_map[student_id]["failed_subjects"].append({
             "id": record["id"],
             "course_id": record["course_id"],
@@ -3026,12 +3100,13 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "recovery_approved": record["recovery_approved"],
             "recovery_completed": record["recovery_completed"],
             "recovery_close": recovery_close,
-            "teacher_graded_status": teacher_status
+            "teacher_graded_status": teacher_status,
+            "status": rec_status
         })
     
     # Also detect students in courses with past module close dates who have failing averages
     # but are not yet in the failed_subjects collection.
-    # Only include entries where the recovery period (recovery_close) is still open.
+    # Show entries where the recovery period is still open (auto-detected records can only be approved before close).
     
     # Track which (student_id, course_id, subject_id) combos are already in failed_subjects
     already_tracked = set()
@@ -3046,7 +3121,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 continue  # Module not closed yet
 
             recovery_close = dates.get("recovery_close") if dates else None
-            # Only show entries whose recovery window is still open
+            # Auto-detected entries can only be approved while the recovery window is open
             if recovery_close and recovery_close < today_str:
                 continue
 
@@ -3115,7 +3190,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                             "recovery_completed": False,
                             "recovery_close": recovery_close,
                             "auto_detected": True,
-                            "teacher_graded_status": teacher_status
+                            "teacher_graded_status": teacher_status,
+                            "status": "pending"
                         })
                         already_tracked.add((student_id, course["id"], subj_id))
                 else:
@@ -3136,7 +3212,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "recovery_completed": False,
                         "recovery_close": recovery_close,
                         "auto_detected": True,
-                        "teacher_graded_status": teacher_graded_index.get((student_id, course["id"], None))
+                        "teacher_graded_status": teacher_graded_index.get((student_id, course["id"], None)),
+                        "status": "pending"
                     })
                     already_tracked.add((student_id, course["id"], None))
     
@@ -3350,10 +3427,11 @@ async def get_student_recoveries(user=Depends(get_current_user)):
     
     student_id = user["id"]
     
-    # Get all pending failed subjects (not completed, not rejected by admin/teacher)
+    # Get all failed subjects not yet fully processed for this student
+    # Includes records where teacher has graded (recovery_completed) so student can see the outcome
     failed_subjects = await db.failed_subjects.find({
         "student_id": student_id,
-        "recovery_completed": {"$ne": True},
+        "recovery_processed": {"$ne": True},
         "recovery_rejected": {"$ne": True}
     }, {"_id": 0}).to_list(100)
     
@@ -3420,51 +3498,72 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
             key = (g["student_id"], g.get("subject_id"))
             grades_index.setdefault(key, []).append(g["value"])
     
-    # Build per-(student, subject) average
+    # Determine module number for the group (from first subject, or from course module_dates)
+    # A course group targets a single module; all subjects in the course should share the same
+    # module_number in practice. We use the first available value as a best-effort.
+    module_number = None
+    if all_subjects:
+        module_number = all_subjects[0].get("module_number")
+    if module_number is None:
+        module_dates = course.get("module_dates") or {}
+        if module_dates:
+            module_number = next(iter(module_dates.keys()), None)
+
+    # Build per-student summary rows (one row per student, columns for each subject average)
     rows = []
     for student in students:
         sid = student["id"]
-        student_rows = []
-        if subject_ids:
-            for subj_id in subject_ids:
-                values = grades_index.get((sid, subj_id), [])
-                avg = round(sum(values) / len(values), 2) if values else 0.0
-                status = "Aprobado" if avg >= 3.0 else "Reprobado"
-                student_rows.append({
-                    "student_name": student["name"],
-                    "student_cedula": student.get("cedula", ""),
-                    "subject_name": subject_map.get(subj_id, subj_id),
-                    "average": avg,
-                    "status": status,
-                    "course_name": course.get("name", ""),
-                    "course_id": course_id,
-                    "student_id": sid,
-                    "subject_id": subj_id,
-                })
+        subject_avgs = {}
+        for subj_id in subject_ids:
+            values = grades_index.get((sid, subj_id), [])
+            subject_avgs[subj_id] = round(sum(values) / len(values), 2) if values else 0.0
+        # General average: use only the subjects that belong to this course
+        all_values = [v for subj_id in subject_ids for v in grades_index.get((sid, subj_id), [])]
+        if not all_values:
+            # Fall back: no subject_ids configured – use all grades for this course
+            all_values = [v for (s, _subj), vals in grades_index.items() if s == sid for v in vals]
+        general_avg = round(sum(all_values) / len(all_values), 2) if all_values else 0.0
+        # Check recovery status
+        recovery_record = await db.failed_subjects.find_one(
+            {"student_id": sid, "course_id": course_id, "recovery_processed": {"$ne": True}},
+            {"_id": 0, "recovery_approved": 1}
+        )
+        if general_avg >= 3.0:
+            status = "Aprobado"
+        elif recovery_record:
+            status = "En Recuperación"
         else:
-            # Fallback: single row per student with course-level average
-            values = [v for (s, _), vals in grades_index.items() if s == sid for v in vals]
-            avg = round(sum(values) / len(values), 2) if values else 0.0
-            status = "Aprobado" if avg >= 3.0 else "Reprobado"
-            student_rows.append({
-                "student_name": student["name"],
-                "student_cedula": student.get("cedula", ""),
-                "subject_name": course.get("name", ""),
-                "average": avg,
-                "status": status,
-                "course_name": course.get("name", ""),
-                "course_id": course_id,
-                "student_id": sid,
-                "subject_id": None,
-            })
-        rows.extend(student_rows)
+            status = "Reprobado"
+        row = {
+            "student_name": student["name"],
+            "student_cedula": student.get("cedula", ""),
+            "module": module_number,
+            "course_name": course.get("name", ""),
+            "general_average": general_avg,
+            "status": status,
+            "student_id": sid,
+            "course_id": course_id,
+        }
+        for subj_id in subject_ids:
+            row[f"subject_{subj_id}"] = subject_avgs[subj_id]
+            row[f"subject_name_{subj_id}"] = subject_map.get(subj_id, subj_id)
+        rows.append(row)
     
     if format and format.lower() == "csv":
         output = io.StringIO()
-        fieldnames = ["student_name", "student_cedula", "subject_name", "average", "status", "course_name"]
-        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
+        # Build CSV columns: Nombre, Cédula, Módulo, [Subject1], [Subject2], ..., Promedio General, Estado
+        subject_headers = [subject_map.get(sid, sid) for sid in subject_ids]
+        base_headers = ["Nombre", "Cédula", "Módulo"]
+        end_headers = ["Promedio General", "Estado"]
+        all_headers = base_headers + subject_headers + end_headers
+        writer = csv.writer(output)
+        writer.writerow(all_headers)
+        for row in rows:
+            csv_row = [row["student_name"], row["student_cedula"], row.get("module", "")]
+            for subj_id in subject_ids:
+                csv_row.append(row.get(f"subject_{subj_id}", 0.0))
+            csv_row.extend([row["general_average"], row["status"]])
+            writer.writerow(csv_row)
         output.seek(0)
         safe_name = re.sub(r'[^\w\-]', '_', course.get('name', course_id))
         filename = f"resultados_{safe_name}.csv"
@@ -3477,6 +3576,8 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
     return {
         "course_id": course_id,
         "course_name": course.get("name", ""),
+        "module": module_number,
+        "subjects": [{"id": sid, "name": subject_map.get(sid, sid)} for sid in subject_ids],
         "rows": rows,
         "total": len(rows)
     }

@@ -21,7 +21,7 @@ services:
       - key: PASSWORD_STORAGE_MODE
         value: bcrypt
       - key: CORS_ORIGINS
-        value: "https://tu-dominio.com"
+        value: "https://corporacioneducando.com,https://www.corporacioneducando.com"
         # ⚠️ PRODUCCIÓN: Cambia este valor por tu dominio real antes de desplegar.
         # Ejemplo: "https://educando.com,https://www.educando.com"
         # Nunca uses "*" en producción ya que permite solicitudes desde cualquier origen.
@@ -37,6 +37,12 @@ services:
         value: false
       - key: ALLOW_USER_RESET
         value: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
     autoDeploy: true
 
   # Frontend Web Service
