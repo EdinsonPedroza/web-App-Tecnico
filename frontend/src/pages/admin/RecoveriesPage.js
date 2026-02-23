@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, Trash2, GraduationCap, AlertCircle } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, Trash2, GraduationCap, AlertCircle, Download } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function RecoveriesPage() {
@@ -76,6 +76,24 @@ export default function RecoveriesPage() {
       console.error(err);
     } finally {
       setDeletingGraduated(false);
+    }
+  };
+
+  const handleDownloadCourseReport = async (courseId, courseName) => {
+    try {
+      const response = await api.get(`/reports/course-results?course_id=${courseId}&format=csv`, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `resultados_${(courseName || courseId).replace(/[^\w\-]/g, '_')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('Error descargando reporte del grupo');
     }
   };
 
@@ -250,9 +268,21 @@ export default function RecoveriesPage() {
                         {student.student_cedula ? `Cédula: ${student.student_cedula}` : `ID: ${student.student_id.slice(0, 8)}…`} • {student.failed_subjects.length} materia(s) reprobada(s)
                       </p>
                     </div>
-                    <Badge variant="destructive" className="text-sm">
-                      En Recuperación
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="destructive" className="text-sm">
+                        En Recuperación
+                      </Badge>
+                      {student.failed_subjects.length > 0 && student.failed_subjects[0].course_id && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDownloadCourseReport(student.failed_subjects[0].course_id, student.failed_subjects[0].course_name)}
+                        >
+                          <Download className="h-3 w-3 mr-1" />
+                          CSV
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

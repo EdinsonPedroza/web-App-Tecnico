@@ -1,11 +1,13 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import csv
+import io
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, validator
 from typing import List, Optional
@@ -228,9 +230,11 @@ async def check_and_close_modules():
                 prog_id = course.get("program_id", "")
                 
                 for student_id, records in students_records.items():
-                    # A student passes only if ALL their records are completed AND approved by teacher
+                    # A student passes only if ALL their records are approved by admin AND completed AND approved by teacher
                     all_passed = all(
-                        r.get("recovery_completed") is True and r.get("teacher_graded_status") == "approved"
+                        r.get("recovery_approved") is True and
+                        r.get("recovery_completed") is True and
+                        r.get("teacher_graded_status") == "approved"
                         for r in records
                     )
                     
@@ -270,7 +274,10 @@ async def check_and_close_modules():
                         logger.info(f"Recovery close: student {student_id} did not pass all subjects in course {course['id']} – removing from group")
                         await db.courses.update_one(
                             {"id": course["id"]},
-                            {"$pull": {"student_ids": student_id}}
+                            {
+                                "$pull": {"student_ids": student_id},
+                                "$addToSet": {"removed_student_ids": student_id}
+                            }
                         )
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         student_program_statuses = (student_doc or {}).get("program_statuses") or {}
@@ -1973,6 +1980,19 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                         status_code=400,
                         detail=f"Uno o más estudiantes ya están inscritos en otro grupo del mismo programa: {', '.join(conflict_names)}"
                     )
+            
+            # Block students who previously failed and were removed from this specific group
+            removed_ids = set(current_course.get("removed_student_ids") or [])
+            if removed_ids and newly_added_ids:
+                blocked = [sid for sid in newly_added_ids if sid in removed_ids]
+                if blocked:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"No se puede re-matricular a {len(blocked)} estudiante(s) que fueron retirados "
+                            "de este grupo por no pasar la recuperación. Deben inscribirse en un nuevo grupo."
+                        )
+                    )
     
     result = await db.courses.update_one({"id": course_id}, {"$set": update_data})
     if result.matched_count == 0:
@@ -3176,8 +3196,18 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         if not student or not course:
             raise HTTPException(status_code=404, detail="Estudiante o grupo no encontrado")
         
-        # Create a real failed_subject record for this auto-detected entry
+        # Module alignment: recovery can only be approved for the student's current module
+        prog_id = course.get("program_id", "")
+        student_module = (student.get("program_modules") or {}).get(prog_id) or student.get("module")
         module_number = int(module_str) if module_str.isdigit() else 1
+        if student_module is not None and student_module != module_number:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"No se puede aprobar: la recuperación es del Módulo {module_number} "
+                    f"pero el estudiante está en el Módulo {student_module}."
+                )
+            )
         all_grades = await db.grades.find({"student_id": student_id, "course_id": course_id}, {"_id": 0}).to_list(100)
         
         # Compute average: per-subject if subject_id available, otherwise course-level
@@ -3244,6 +3274,22 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
     failed_record = await db.failed_subjects.find_one({"id": failed_subject_id}, {"_id": 0})
     if not failed_record:
         raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
+    
+    # Module alignment: reject approval if subject module doesn't match student's current module
+    record_module = failed_record.get("module_number")
+    if record_module is not None:
+        stud_doc = await db.users.find_one({"id": failed_record["student_id"]}, {"_id": 0, "program_modules": 1, "module": 1})
+        if stud_doc:
+            rec_prog_id = failed_record.get("program_id", "")
+            stud_mod = (stud_doc.get("program_modules") or {}).get(rec_prog_id) or stud_doc.get("module")
+            if stud_mod is not None and stud_mod != record_module:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"No se puede aprobar: la recuperación es del Módulo {record_module} "
+                        f"pero el estudiante está en el Módulo {stud_mod}."
+                    )
+                )
     
     # Update approval status
     await db.failed_subjects.update_one(
@@ -3338,7 +3384,104 @@ async def get_student_recoveries(user=Depends(get_current_user)):
         "total": len(failed_subjects)
     }
 
-@api_router.delete("/admin/delete-graduated-students")
+@api_router.get("/reports/course-results")
+async def get_course_results_report(course_id: str, format: Optional[str] = None, user=Depends(get_current_user)):
+    """
+    Returns a report of approved/reproved students per course/group.
+    Accessible by admin and professor.
+    When format=csv, returns a CSV file download; otherwise returns JSON.
+    """
+    if user["role"] not in ["admin", "profesor"]:
+        raise HTTPException(status_code=403, detail="Solo admin o profesor pueden acceder a reportes")
+    
+    course = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Grupo no encontrado")
+    
+    # Load subjects
+    subject_ids = course.get("subject_ids") or []
+    if not subject_ids and course.get("subject_id"):
+        subject_ids = [course["subject_id"]]
+    all_subjects = await db.subjects.find({"id": {"$in": subject_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(None) if subject_ids else []
+    subject_map = {s["id"]: s["name"] for s in all_subjects}
+    
+    # Load enrolled students
+    student_ids = course.get("student_ids") or []
+    students = await db.users.find(
+        {"id": {"$in": student_ids}, "role": "estudiante"},
+        {"_id": 0, "id": 1, "name": 1, "cedula": 1}
+    ).to_list(None) if student_ids else []
+    
+    # Load grades for this course and build an index: (student_id, subject_id) -> [values]
+    grades = await db.grades.find({"course_id": course_id}, {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}).to_list(None)
+    grades_index = {}
+    for g in grades:
+        if g.get("value") is not None:
+            key = (g["student_id"], g.get("subject_id"))
+            grades_index.setdefault(key, []).append(g["value"])
+    
+    # Build per-(student, subject) average
+    rows = []
+    for student in students:
+        sid = student["id"]
+        student_rows = []
+        if subject_ids:
+            for subj_id in subject_ids:
+                values = grades_index.get((sid, subj_id), [])
+                avg = round(sum(values) / len(values), 2) if values else 0.0
+                status = "Aprobado" if avg >= 3.0 else "Reprobado"
+                student_rows.append({
+                    "student_name": student["name"],
+                    "student_cedula": student.get("cedula", ""),
+                    "subject_name": subject_map.get(subj_id, subj_id),
+                    "average": avg,
+                    "status": status,
+                    "course_name": course.get("name", ""),
+                    "course_id": course_id,
+                    "student_id": sid,
+                    "subject_id": subj_id,
+                })
+        else:
+            # Fallback: single row per student with course-level average
+            values = [v for (s, _), vals in grades_index.items() if s == sid for v in vals]
+            avg = round(sum(values) / len(values), 2) if values else 0.0
+            status = "Aprobado" if avg >= 3.0 else "Reprobado"
+            student_rows.append({
+                "student_name": student["name"],
+                "student_cedula": student.get("cedula", ""),
+                "subject_name": course.get("name", ""),
+                "average": avg,
+                "status": status,
+                "course_name": course.get("name", ""),
+                "course_id": course_id,
+                "student_id": sid,
+                "subject_id": None,
+            })
+        rows.extend(student_rows)
+    
+    if format and format.lower() == "csv":
+        output = io.StringIO()
+        fieldnames = ["student_name", "student_cedula", "subject_name", "average", "status", "course_name"]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        output.seek(0)
+        safe_name = re.sub(r'[^\w\-]', '_', course.get('name', course_id))
+        filename = f"resultados_{safe_name}.csv"
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    return {
+        "course_id": course_id,
+        "course_name": course.get("name", ""),
+        "rows": rows,
+        "total": len(rows)
+    }
+
+
 async def delete_graduated_students(user=Depends(get_current_user)):
     """
     Admin/Editor deletes all graduated students from the system.

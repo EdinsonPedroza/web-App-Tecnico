@@ -529,7 +529,7 @@ export default function StudentsPage() {
                             );
                           }
                           return (
-                            <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : 'secondary'}>
+                            <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : 'secondary'} className="text-xs rounded-md font-medium">
                               {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}
                             </Badge>
                           );

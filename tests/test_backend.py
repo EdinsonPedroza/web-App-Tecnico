@@ -1499,3 +1499,324 @@ class TestRecoveryPanelAlreadyTracked:
         # Only subj-B should be auto-detected
         assert added == ["subj-B"]
         assert ("s1", "c1", "subj-B") in already_tracked
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for promotion requiring BOTH admin AND professor approval
+# ---------------------------------------------------------------------------
+
+class TestPromotionRequiresBothApprovals:
+    """Tests for the fix: promotion at recovery close requires recovery_approved=True
+    (admin) AND recovery_completed=True AND teacher_graded_status='approved' (professor)."""
+
+    def _all_passed(self, records):
+        """Mirror the fixed all_passed check from check_and_close_modules."""
+        return all(
+            r.get("recovery_approved") is True and
+            r.get("recovery_completed") is True and
+            r.get("teacher_graded_status") == "approved"
+            for r in records
+        )
+
+    def test_all_approved_by_both_passes(self):
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._all_passed(records) is True
+
+    def test_multiple_subjects_all_approved_passes(self):
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._all_passed(records) is True
+
+    def test_missing_admin_approval_blocks_promotion(self):
+        """Teacher approved but admin did not approve → must NOT promote."""
+        records = [
+            {"recovery_approved": False, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._all_passed(records) is False
+
+    def test_missing_teacher_approval_blocks_promotion(self):
+        """Admin approved but teacher did not mark completed → must NOT promote."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._all_passed(records) is False
+
+    def test_teacher_rejected_blocks_promotion(self):
+        """Teacher rejected → must NOT promote even if admin approved."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "rejected"},
+        ]
+        assert self._all_passed(records) is False
+
+    def test_mixed_subjects_one_missing_admin_blocks_promotion(self):
+        """Mixed case: one subject with admin approval, one without → no promotion."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": False, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._all_passed(records) is False
+
+    def test_mixed_subjects_one_teacher_rejected_blocks_promotion(self):
+        """Mixed case: one subject teacher-rejected → no promotion."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "rejected"},
+        ]
+        assert self._all_passed(records) is False
+
+    def test_empty_records_passes(self):
+        """Edge case: no records → all() vacuously true → passes (no subjects failed)."""
+        assert self._all_passed([]) is True
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for module alignment validation in approve_recovery_for_subject
+# ---------------------------------------------------------------------------
+
+class TestModuleAlignmentValidation:
+    """Tests for module alignment: recovery can only be approved for the student's current module."""
+
+    def _check_module_alignment(self, record_module, student_module):
+        """Mirror the module alignment check in approve_recovery_for_subject."""
+        if record_module is not None and student_module is not None:
+            if student_module != record_module:
+                return False, (
+                    f"No se puede aprobar: la recuperación es del Módulo {record_module} "
+                    f"pero el estudiante está en el Módulo {student_module}."
+                )
+        return True, None
+
+    def test_matching_module_is_allowed(self):
+        ok, err = self._check_module_alignment(1, 1)
+        assert ok is True
+        assert err is None
+
+    def test_matching_module2_is_allowed(self):
+        ok, err = self._check_module_alignment(2, 2)
+        assert ok is True
+        assert err is None
+
+    def test_mismatched_module_is_rejected(self):
+        """Student is in module 2 but recovery is for module 1 → rejected."""
+        ok, err = self._check_module_alignment(1, 2)
+        assert ok is False
+        assert "Módulo 1" in err
+        assert "Módulo 2" in err
+
+    def test_mismatched_reverse_is_rejected(self):
+        """Student is in module 1 but recovery is for module 2 → rejected."""
+        ok, err = self._check_module_alignment(2, 1)
+        assert ok is False
+
+    def test_none_record_module_skips_check(self):
+        """If record has no module_number, skip validation."""
+        ok, err = self._check_module_alignment(None, 1)
+        assert ok is True
+
+    def test_none_student_module_skips_check(self):
+        """If student has no module set, skip validation."""
+        ok, err = self._check_module_alignment(1, None)
+        assert ok is True
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for removed_student_ids tracking and re-enrollment blocking
+# ---------------------------------------------------------------------------
+
+class TestRemovedStudentReenrollmentBlocking:
+    """Tests for the removed_student_ids feature that prevents re-enrollment in the same group."""
+
+    def _check_blocked(self, removed_ids, newly_added_ids):
+        """Mirror the removed_student_ids check in update_course."""
+        removed_set = set(removed_ids)
+        if removed_set and newly_added_ids:
+            blocked = [sid for sid in newly_added_ids if sid in removed_set]
+            if blocked:
+                return False, f"No se puede re-matricular a {len(blocked)} estudiante(s) que fueron retirados de este grupo"
+        return True, None
+
+    def test_no_removed_allows_enrollment(self):
+        ok, err = self._check_blocked([], ["s1", "s2"])
+        assert ok is True
+
+    def test_non_removed_student_allowed(self):
+        ok, err = self._check_blocked(["s3"], ["s1", "s2"])
+        assert ok is True
+
+    def test_removed_student_blocked(self):
+        ok, err = self._check_blocked(["s1"], ["s1", "s2"])
+        assert ok is False
+        assert "retirados" in err
+
+    def test_all_removed_blocked(self):
+        ok, err = self._check_blocked(["s1", "s2"], ["s1", "s2"])
+        assert ok is False
+
+    def test_empty_newly_added_no_error(self):
+        ok, err = self._check_blocked(["s1"], [])
+        assert ok is True
+
+    def test_removed_student_can_join_different_group(self):
+        """A removed student is only blocked from THIS group; a different group has no removed_ids for them."""
+        # Simulating a different course: removed_student_ids is [] or doesn't include them
+        ok, err = self._check_blocked([], ["s1"])  # different group → no removed_ids
+        assert ok is True
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for report CSV headers and structure
+# ---------------------------------------------------------------------------
+
+class TestReportCsvStructure:
+    """Tests for the /reports/course-results endpoint output structure."""
+
+    def _build_report_rows(self, students, grades, subject_ids, subject_map, course_id, course_name):
+        """Mirror the row-building logic from get_course_results_report."""
+        rows = []
+        for student in students:
+            sid = student["id"]
+            if subject_ids:
+                for subj_id in subject_ids:
+                    values = [g["value"] for g in grades
+                              if g.get("student_id") == sid and g.get("subject_id") == subj_id
+                              and g.get("value") is not None]
+                    avg = round(sum(values) / len(values), 2) if values else 0.0
+                    status = "Aprobado" if avg >= 3.0 else "Reprobado"
+                    rows.append({
+                        "student_name": student["name"],
+                        "student_cedula": student.get("cedula", ""),
+                        "subject_name": subject_map.get(subj_id, subj_id),
+                        "average": avg,
+                        "status": status,
+                        "course_name": course_name,
+                    })
+            else:
+                values = [g["value"] for g in grades
+                          if g.get("student_id") == sid and g.get("value") is not None]
+                avg = round(sum(values) / len(values), 2) if values else 0.0
+                status = "Aprobado" if avg >= 3.0 else "Reprobado"
+                rows.append({
+                    "student_name": student["name"],
+                    "student_cedula": student.get("cedula", ""),
+                    "subject_name": course_name,
+                    "average": avg,
+                    "status": status,
+                    "course_name": course_name,
+                })
+        return rows
+
+    def _csv_headers(self):
+        return ["student_name", "student_cedula", "subject_name", "average", "status", "course_name"]
+
+    def test_csv_headers_present(self):
+        headers = self._csv_headers()
+        assert "student_name" in headers
+        assert "student_cedula" in headers
+        assert "subject_name" in headers
+        assert "average" in headers
+        assert "status" in headers
+        assert "course_name" in headers
+
+    def test_approved_student_status(self):
+        students = [{"id": "s1", "name": "Ana", "cedula": "111"}]
+        grades = [{"student_id": "s1", "subject_id": "subj-A", "value": 4.0}]
+        rows = self._build_report_rows(students, grades, ["subj-A"], {"subj-A": "Matemáticas"}, "c1", "Grupo A")
+        assert len(rows) == 1
+        assert rows[0]["status"] == "Aprobado"
+        assert rows[0]["average"] == 4.0
+
+    def test_reproved_student_status(self):
+        students = [{"id": "s1", "name": "Ana", "cedula": "111"}]
+        grades = [{"student_id": "s1", "subject_id": "subj-A", "value": 2.0}]
+        rows = self._build_report_rows(students, grades, ["subj-A"], {"subj-A": "Matemáticas"}, "c1", "Grupo A")
+        assert rows[0]["status"] == "Reprobado"
+
+    def test_boundary_exactly_3_is_approved(self):
+        students = [{"id": "s1", "name": "Ana", "cedula": "111"}]
+        grades = [{"student_id": "s1", "subject_id": "subj-A", "value": 3.0}]
+        rows = self._build_report_rows(students, grades, ["subj-A"], {"subj-A": "Mat"}, "c1", "G")
+        assert rows[0]["status"] == "Aprobado"
+
+    def test_no_grades_reproved(self):
+        students = [{"id": "s1", "name": "Ana", "cedula": "111"}]
+        grades = []
+        rows = self._build_report_rows(students, grades, ["subj-A"], {"subj-A": "Mat"}, "c1", "G")
+        assert rows[0]["status"] == "Reprobado"
+        assert rows[0]["average"] == 0.0
+
+    def test_per_subject_rows_generated(self):
+        """One row per subject per student."""
+        students = [{"id": "s1", "name": "Ana", "cedula": "111"}]
+        grades = [
+            {"student_id": "s1", "subject_id": "subj-A", "value": 4.0},
+            {"student_id": "s1", "subject_id": "subj-B", "value": 2.0},
+        ]
+        rows = self._build_report_rows(students, grades, ["subj-A", "subj-B"],
+                                       {"subj-A": "Mat", "subj-B": "Fis"}, "c1", "G")
+        assert len(rows) == 2
+        statuses = {r["subject_name"]: r["status"] for r in rows}
+        assert statuses["Mat"] == "Aprobado"
+        assert statuses["Fis"] == "Reprobado"
+
+    def test_no_cross_subject_grade_contamination(self):
+        """Grade for subj-A must not affect subj-B average (isolation)."""
+        students = [{"id": "s1", "name": "Ana", "cedula": "111"}]
+        grades = [
+            {"student_id": "s1", "subject_id": "subj-A", "value": 1.0},  # low
+            {"student_id": "s1", "subject_id": "subj-B", "value": 5.0},  # high
+        ]
+        rows = self._build_report_rows(students, grades, ["subj-A", "subj-B"],
+                                       {"subj-A": "Mat", "subj-B": "Fis"}, "c1", "G")
+        by_subj = {r["subject_name"]: r for r in rows}
+        # Mat fails (1.0 < 3), Fis passes (5.0 >= 3)
+        assert by_subj["Mat"]["status"] == "Reprobado"
+        assert by_subj["Fis"]["status"] == "Aprobado"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for grade isolation (re-enrollment resets averages per-course)
+# ---------------------------------------------------------------------------
+
+class TestGradeIsolationPerCourse:
+    """Tests that grades are isolated per course_id; re-enrolling in a new group
+    starts with no prior grades since grades are keyed by course_id."""
+
+    def _get_course_grades(self, all_grades, student_id, course_id):
+        """Return grades for a student in a specific course."""
+        return [g for g in all_grades
+                if g.get("student_id") == student_id and g.get("course_id") == course_id]
+
+    def _compute_average(self, grades):
+        values = [g["value"] for g in grades if g.get("value") is not None]
+        return sum(values) / len(values) if values else 0.0
+
+    def test_old_course_grades_do_not_appear_in_new_course(self):
+        all_grades = [
+            {"student_id": "s1", "course_id": "old-course", "value": 1.0},
+            {"student_id": "s1", "course_id": "old-course", "value": 2.0},
+        ]
+        new_course_grades = self._get_course_grades(all_grades, "s1", "new-course")
+        assert new_course_grades == []
+        assert self._compute_average(new_course_grades) == 0.0
+
+    def test_new_course_starts_fresh(self):
+        """After re-enrollment in a new group, no prior grades carry over."""
+        all_grades = [
+            {"student_id": "s1", "course_id": "old-course", "value": 5.0},
+        ]
+        new_grades = self._get_course_grades(all_grades, "s1", "new-course")
+        assert self._compute_average(new_grades) == 0.0
+
+    def test_different_students_isolated_per_course(self):
+        all_grades = [
+            {"student_id": "s1", "course_id": "c1", "value": 4.0},
+            {"student_id": "s2", "course_id": "c1", "value": 2.0},
+        ]
+        s1_grades = self._get_course_grades(all_grades, "s1", "c1")
+        s2_grades = self._get_course_grades(all_grades, "s2", "c1")
+        assert self._compute_average(s1_grades) == 4.0
+        assert self._compute_average(s2_grades) == 2.0
