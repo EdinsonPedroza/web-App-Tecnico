@@ -207,12 +207,15 @@ async def check_and_close_modules():
                 if not recovery_close or recovery_close > today_str:
                     continue  # Recovery period not closed yet
                 
-                # Find students with pending (not completed) recovery for this course
+                # Find students with pending (not completed, not expired) recovery for this course/module.
+                # This includes both records the admin never approved (recovery_approved=False)
+                # and records approved by admin but not yet graded by teacher (recovery_completed=False).
                 pending_records = await db.failed_subjects.find({
                     "course_id": course["id"],
-                    "recovery_approved": True,
-                    "recovery_completed": False
-                }, {"_id": 0}).to_list(100)
+                    "module_number": int(module_key),
+                    "recovery_completed": {"$ne": True},
+                    "recovery_expired": {"$ne": True}
+                }, {"_id": 0}).to_list(None)
                 
                 for record in pending_records:
                     student_id = record["student_id"]
@@ -230,18 +233,18 @@ async def check_and_close_modules():
                         {"$set": {"recovery_expired": True, "expired_at": now.isoformat()}}
                     )
                     
-                    # Mark student as retirado for this program (do not delete)
+                    # Mark student as activo for this program so they can re-enroll in another group
                     prog_id = course.get("program_id", "")
                     student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                     student_program_statuses = (student_doc or {}).get("program_statuses") or {}
                     if prog_id:
-                        student_program_statuses[prog_id] = "retirado"
+                        student_program_statuses[prog_id] = "activo"
                     new_estado = derive_estado_from_program_statuses(student_program_statuses)
                     update_fields = {"estado": new_estado}
                     if prog_id:
                         update_fields["program_statuses"] = student_program_statuses
                     await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": update_fields})
-                    logger.info(f"Student {student_id} marked as retirado for program {prog_id} (recovery expired)")
+                    logger.info(f"Student {student_id} marked as activo for program {prog_id} (recovery expired, can re-enroll)")
                     
                     removed_count += 1
         
@@ -2255,7 +2258,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                                 }}
                             )
         else:
-            # Recovery rejected by teacher: remove student from the course and mark retirado
+            # Recovery rejected by teacher: remove student from the course; mark activo so they can re-enroll
             course = await db.courses.find_one({"id": req.course_id}, {"_id": 0})
             if course:
                 await db.courses.update_one(
@@ -2266,7 +2269,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                 student_doc = await db.users.find_one({"id": req.student_id}, {"_id": 0, "program_statuses": 1})
                 student_program_statuses = (student_doc or {}).get("program_statuses") or {}
                 if prog_id:
-                    student_program_statuses[prog_id] = "retirado"
+                    student_program_statuses[prog_id] = "activo"
                 new_estado = derive_estado_from_program_statuses(student_program_statuses)
                 update_fields = {"estado": new_estado}
                 if prog_id:

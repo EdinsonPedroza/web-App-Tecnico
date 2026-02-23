@@ -334,16 +334,6 @@ export default function RecoveriesPage() {
                                       </>
                                     )}
                                   </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleApproveRecovery(subject.id, false)}
-                                    disabled={processingId === subject.id}
-                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  >
-                                    <XCircle className="h-4 w-4" />
-                                    Rechazar
-                                  </Button>
                                 </>
                               )}
                             </div>
