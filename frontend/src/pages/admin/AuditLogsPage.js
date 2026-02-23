@@ -250,7 +250,7 @@ export default function AuditLogsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs">
-                          <span className="font-medium">{log.user_name || log.user_id}</span>
+                          <span className="font-medium">{log.user_name || log.user_id || '-'}</span>
                           {log.user_name && log.user_name !== log.user_id && (
                             <span className="text-muted-foreground ml-1">({log.user_id})</span>
                           )}

@@ -4256,9 +4256,11 @@ async def get_audit_logs(
     if from_date or to_date:
         ts_filter: dict = {}
         if from_date:
-            ts_filter["$gte"] = from_date
+            # Normalize: treat date-only strings as start of day UTC
+            ts_filter["$gte"] = from_date if "T" in from_date else from_date + "T00:00:00+00:00"
         if to_date:
-            ts_filter["$lte"] = to_date + "Z" if not to_date.endswith("Z") else to_date
+            # Normalize: treat date-only strings as end of day UTC
+            ts_filter["$lte"] = to_date if "T" in to_date else to_date + "T23:59:59+00:00"
         query["timestamp"] = ts_filter
 
     total = await db.audit_logs.count_documents(query)
@@ -4273,7 +4275,11 @@ async def get_audit_logs(
         actor_map = {a["id"]: a["name"] for a in actors}
 
     for log in logs:
-        log["user_name"] = actor_map.get(log.get("user_id"), log.get("user_id", ""))
+        uid = log.get("user_id", "")
+        if uid == "system":
+            log["user_name"] = "Sistema"
+        else:
+            log["user_name"] = actor_map.get(uid, uid or "-")
 
     return {
         "logs": logs,
