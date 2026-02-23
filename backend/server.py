@@ -1556,6 +1556,11 @@ async def delete_user(user_id: str, user=Depends(get_current_user)):
         {"student_ids": user_id},
         {"$pull": {"student_ids": user_id}}
     )
+    # Delete all data associated with this user to avoid orphaned records
+    await db.grades.delete_many({"student_id": user_id})
+    await db.submissions.delete_many({"student_id": user_id})
+    await db.failed_subjects.delete_many({"student_id": user_id})
+    await db.recovery_enabled.delete_many({"student_id": user_id})
     await log_audit("user_deleted", user["id"], user["role"], {"deleted_user_id": user_id, "deleted_user_name": (target or {}).get("name", ""), "deleted_user_role": (target or {}).get("role", "")})
     return {"message": "Usuario eliminado"}
 
@@ -3470,16 +3475,21 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
     await db.users.update_one({"id": failed_record["student_id"]}, {"$set": update_fields})
     await log_audit("recovery_approved", user["id"], user["role"], {"student_id": failed_record["student_id"], "failed_subject_id": failed_subject_id, "subject_name": failed_record.get("subject_name", ""), "course_id": failed_record.get("course_id", "")})
     return {"message": "Recuperación aprobada exitosamente"}
+
+@api_router.get("/student/my-recoveries")
 async def get_student_recoveries(user=Depends(get_current_user)):
     """
     Get recovery subjects for the current student.
-    Returns all pending failed subjects (not completed, not rejected).
+    Returns all pending failed subjects (not completed, not rejected)
+    that match the student's current module for each program.
     The 'recovery_approved' field indicates whether admin has approved recovery.
     """
     if user["role"] != "estudiante":
         raise HTTPException(status_code=403, detail="Solo estudiantes pueden acceder a sus recuperaciones")
     
     student_id = user["id"]
+    program_modules = user.get("program_modules") or {}
+    student_global_module = user.get("module", 1)
     
     # Get all failed subjects not yet fully processed for this student
     # Includes records where teacher has graded (recovery_completed) so student can see the outcome
@@ -3488,6 +3498,19 @@ async def get_student_recoveries(user=Depends(get_current_user)):
         "recovery_processed": {"$ne": True},
         "recovery_rejected": {"$ne": True}
     }, {"_id": 0}).to_list(100)
+    
+    # Filter by student's current module for each program
+    filtered = []
+    for subject in failed_subjects:
+        prog_id = subject.get("program_id", "")
+        subject_module = subject.get("module_number")
+        if subject_module is None:
+            filtered.append(subject)
+            continue
+        current_module = program_modules.get(prog_id, student_global_module)
+        if subject_module == current_module:
+            filtered.append(subject)
+    failed_subjects = filtered
     
     # Get program info for each
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
@@ -4280,7 +4303,7 @@ async def get_stats(user=Depends(get_current_user)):
     teachers = await db.users.count_documents({"role": "profesor", "active": True})
     programs = await db.programs.count_documents({"active": True})
     courses = await db.courses.count_documents({"active": True})
-    activities = await db.activities.count_documents({"active": True})
+    activities = await db.activities.count_documents({})
     
     return {
         "students": students,
