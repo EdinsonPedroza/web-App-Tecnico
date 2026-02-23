@@ -521,7 +521,7 @@ export default function StudentsPage() {
                                 {studentProgramIds.map(progId => {
                                   const st = s.program_statuses[progId] || s.estado || 'activo';
                                   return (
-                                    <Badge key={progId} variant={statusVariant(st)} className="text-xs rounded-md font-medium">
+                                    <Badge key={progId} variant={statusVariant(st)} className="text-xs font-semibold px-2 py-0.5">
                                       {getProgramShortName(progId)}: {statusLabel(st)}
                                     </Badge>
                                   );
@@ -530,7 +530,7 @@ export default function StudentsPage() {
                             );
                           }
                           return (
-                            <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : (s.estado === 'egresado' ? 'blue' : 'secondary')} className="text-xs font-medium">
+                            <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : (s.estado === 'egresado' ? 'blue' : 'secondary')} className="text-xs font-semibold px-2 py-0.5">
                               {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}
                             </Badge>
                           );
