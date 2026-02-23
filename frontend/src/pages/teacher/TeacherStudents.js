@@ -4,8 +4,9 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, GraduationCap } from 'lucide-react';
+import { Loader2, GraduationCap, Download } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -46,12 +47,39 @@ export default function TeacherStudents() {
     return (sg.reduce((s, g) => s + g.value, 0) / sg.length).toFixed(1);
   };
 
+  const handleDownloadReport = async () => {
+    try {
+      const response = await api.get(`/reports/course-results?course_id=${courseId}&format=csv`, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const safeName = (course?.name || courseId).replace(/[^\w\-]/g, '_');
+      link.setAttribute('download', `resultados_${safeName}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('Error descargando reporte');
+    }
+  };
+
   return (
     <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold font-heading">Estudiantes del Curso</h1>
-          <p className="text-muted-foreground mt-1">{course?.name}</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold font-heading">Estudiantes del Curso</h1>
+            <p className="text-muted-foreground mt-1">{course?.name}</p>
+          </div>
+          {students.length > 0 && (
+            <Button variant="outline" size="sm" onClick={handleDownloadReport}>
+              <Download className="h-4 w-4 mr-2" />
+              Descargar Reporte
+            </Button>
+          )}
         </div>
 
         {loading ? (
