@@ -1419,3 +1419,83 @@ class TestRecoveryPanelInProcessFilter:
         in_process = [r for r in records if self._is_in_process_v2(r)]
         assert len(in_process) == 2
         assert {r["id"] for r in in_process} == {"r1", "r2"}
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for already_tracked subject-level deduplication (Bug 1 fix)
+# ---------------------------------------------------------------------------
+
+class TestRecoveryPanelAlreadyTracked:
+    """Tests for the already_tracked set using (student_id, course_id, subject_id) tuples."""
+
+    def _build_already_tracked(self, failed_records):
+        """Mirror the fixed already_tracked construction from get_recovery_panel."""
+        already_tracked = set()
+        for record in failed_records:
+            already_tracked.add((record["student_id"], record["course_id"], record.get("subject_id")))
+        return already_tracked
+
+    def test_single_persisted_subject_does_not_block_other_subjects(self):
+        """Approving subject A should NOT block auto-detection of subject B."""
+        failed_records = [
+            {"student_id": "s1", "course_id": "c1", "subject_id": "subj-A"},
+        ]
+        already_tracked = self._build_already_tracked(failed_records)
+        # subject-A is tracked
+        assert ("s1", "c1", "subj-A") in already_tracked
+        # subject-B is NOT tracked — it must appear in the panel
+        assert ("s1", "c1", "subj-B") not in already_tracked
+
+    def test_both_subjects_persisted_blocks_both(self):
+        """When both subjects have persisted records they are both tracked."""
+        failed_records = [
+            {"student_id": "s1", "course_id": "c1", "subject_id": "subj-A"},
+            {"student_id": "s1", "course_id": "c1", "subject_id": "subj-B"},
+        ]
+        already_tracked = self._build_already_tracked(failed_records)
+        assert ("s1", "c1", "subj-A") in already_tracked
+        assert ("s1", "c1", "subj-B") in already_tracked
+
+    def test_different_students_tracked_independently(self):
+        """Persisted record for student A should not block student B."""
+        failed_records = [
+            {"student_id": "s1", "course_id": "c1", "subject_id": "subj-A"},
+        ]
+        already_tracked = self._build_already_tracked(failed_records)
+        assert ("s2", "c1", "subj-A") not in already_tracked
+
+    def test_different_courses_tracked_independently(self):
+        """Persisted record in course 1 should not block auto-detection in course 2."""
+        failed_records = [
+            {"student_id": "s1", "course_id": "c1", "subject_id": "subj-A"},
+        ]
+        already_tracked = self._build_already_tracked(failed_records)
+        assert ("s1", "c2", "subj-A") not in already_tracked
+
+    def test_fallback_record_without_subject_id_uses_none_key(self):
+        """Records without subject_id (fallback/old records) use None as key."""
+        failed_records = [
+            {"student_id": "s1", "course_id": "c1"},  # no subject_id
+        ]
+        already_tracked = self._build_already_tracked(failed_records)
+        assert ("s1", "c1", None) in already_tracked
+        # A specific subject is still NOT blocked
+        assert ("s1", "c1", "subj-A") not in already_tracked
+
+    def test_per_subject_check_skips_only_tracked_subject(self):
+        """Simulate auto-detection loop: only already-tracked subjects are skipped."""
+        already_tracked = {("s1", "c1", "subj-A")}
+        failing_subjects = [
+            ("subj-A", "Matemáticas", 2.5),
+            ("subj-B", "Historia", 2.0),
+        ]
+        added = []
+        for subj_id, subj_name, subj_avg in failing_subjects:
+            if (("s1", "c1", subj_id)) in already_tracked:
+                continue
+            added.append(subj_id)
+            already_tracked.add(("s1", "c1", subj_id))
+
+        # Only subj-B should be auto-detected
+        assert added == ["subj-B"]
+        assert ("s1", "c1", "subj-B") in already_tracked
