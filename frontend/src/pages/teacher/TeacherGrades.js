@@ -173,45 +173,23 @@ export default function TeacherGrades() {
   const regularActivities = activities.filter(a => !a.is_recovery);
   const recoveryActivities = activities.filter(a => a.is_recovery);
 
-  const downloadCSV = () => {
-    // Build header row: Nombre, Cédula, [actividades regulares...], Promedio, Estado
-    const actHeaders = regularActivities.map(a => `"Act ${a.activity_number || '?'}: ${(a.title || '').replace(/"/g, '""')}"`);
-    const headers = ['Nombre', 'Cédula', ...actHeaders, 'Promedio', 'Estado'].join(',');
-
-    const rows = students.map(student => {
-      const avg = getStudentAverage(student.id);
-      const actGrades = regularActivities.map(act => {
-        const g = grades.find(gr => gr.student_id === student.id && gr.activity_id === act.id);
-        return g != null ? g.value.toFixed(1) : '';
+  const downloadXLSX = async () => {
+    try {
+      const response = await api.get(`/reports/course-results?course_id=${courseId}&format=xlsx`, {
+        responseType: 'blob'
       });
-      let estado = 'Sin notas';
-      if (avg !== null) {
-        if (avg >= 3) estado = 'Aprobado';
-        else {
-          const hasRecovery = recoveryActivities.some(act =>
-            grades.find(g => g.student_id === student.id && g.activity_id === act.id)
-          );
-          estado = hasRecovery ? 'En recuperación' : 'Reprobado';
-        }
-      }
-      return [
-        `"${(student.name || '').replace(/"/g, '""')}"`,
-        `"${student.cedula || ''}"`,
-        ...actGrades,
-        avg !== null ? avg.toFixed(2) : '',
-        estado
-      ].join(',');
-    });
-
-    const csvContent = [headers, ...rows].join('\n');
-    const safeName = (course?.name || courseId).replace(/[^a-zA-Z0-9_\-]/g, '_');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `reporte_${safeName}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const safeName = (course?.name || courseId).replace(/[^\w\-]/g, '_');
+      link.setAttribute('download', `reporte_${safeName}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('Error descargando reporte');
+    }
   };
 
   return (
@@ -228,7 +206,7 @@ export default function TeacherGrades() {
             </Button>
           )}
           {!loading && students.length > 0 && (
-            <Button variant="outline" onClick={downloadCSV}>
+            <Button variant="outline" onClick={downloadXLSX}>
               <Download className="h-4 w-4" /> Descargar Reporte
             </Button>
           )}
