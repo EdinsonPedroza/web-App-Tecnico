@@ -26,7 +26,7 @@ export default function TeacherCourseSelector() {
       const [cRes, pRes, sRes] = await Promise.all([
         api.get(`/courses?teacher_id=${user.id}`),
         api.get('/programs'),
-        api.get('/subjects')
+        api.get('/subjects?teacher_id=' + user.id)
       ]);
       setCourses(cRes.data);
       setPrograms(pRes.data);
@@ -42,20 +42,8 @@ export default function TeacherCourseSelector() {
 
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
 
-  // Get unique subject IDs from all teacher's courses
-  const teacherSubjectIds = [...new Set(
-    courses.flatMap(course => {
-      const ids = course.subject_ids && course.subject_ids.length > 0
-        ? course.subject_ids
-        : (course.subject_id ? [course.subject_id] : []);
-      return ids;
-    })
-  )];
-
-  // Build subject list with their info
-  const teacherSubjects = teacherSubjectIds
-    .map(subjectId => subjects.find(s => s.id === subjectId))
-    .filter(Boolean);
+  const teacherSubjects = subjects;
+  const teacherSubjectIds = subjects.map(s => s.id);
 
   // Filter subjects by search query
   const filteredSubjects = searchQuery.trim()
