@@ -499,9 +499,41 @@ export default function StudentsPage() {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{s.phone || '-'}</TableCell>
                       <TableCell>
-                        <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : 'secondary'}>
-                          {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}
-                        </Badge>
+                        {(() => {
+                          const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
+                          if (s.program_statuses && studentProgramIds.length > 0) {
+                            const statusLabel = (st) => {
+                              if (st === 'activo') return 'Activo';
+                              if (st === 'egresado') return 'Egresado';
+                              if (st === 'retirado') return 'Retirado';
+                              if (st === 'pendiente_recuperacion') return 'Pend. Rec.';
+                              return st || 'Activo';
+                            };
+                            const statusVariant = (st) => {
+                              if (st === 'activo') return 'success';
+                              if (st === 'pendiente_recuperacion') return 'warning';
+                              if (st === 'retirado') return 'destructive';
+                              return 'secondary';
+                            };
+                            return (
+                              <div className="flex flex-col gap-1">
+                                {studentProgramIds.map(progId => {
+                                  const st = s.program_statuses[progId] || s.estado || 'activo';
+                                  return (
+                                    <Badge key={progId} variant={statusVariant(st)} className="text-xs">
+                                      {getProgramShortName(progId)}: {statusLabel(st)}
+                                    </Badge>
+                                  );
+                                })}
+                              </div>
+                            );
+                          }
+                          return (
+                            <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : 'secondary'}>
+                              {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}
+                            </Badge>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">

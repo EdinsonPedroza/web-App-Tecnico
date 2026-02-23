@@ -3004,10 +3004,10 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     # but are not yet in the failed_subjects collection.
     # Only include entries where the recovery period (recovery_close) is still open.
     
-    # Track which (student_id, course_id) combos are already in failed_subjects
+    # Track which (student_id, course_id, subject_id) combos are already in failed_subjects
     already_tracked = set()
     for record in failed_records:
-        already_tracked.add((record["student_id"], record["course_id"]))
+        already_tracked.add((record["student_id"], record["course_id"], record.get("subject_id")))
     
     for course in all_courses:
         module_dates = course.get("module_dates") or {}
@@ -3043,9 +3043,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     course_grades_index.setdefault(key, []).append(g["value"])
 
             for student_id in student_ids:
-                if (student_id, course["id"]) in already_tracked:
-                    continue  # Already tracked
-                
                 student_grades = [g for g in all_grades if g.get("student_id") == student_id]
                 grade_values = [g["value"] for g in student_grades if g.get("value") is not None]
                 
@@ -3069,6 +3066,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 failing_subjects = get_failing_subjects_with_ids(student_id, course["id"], course, course_grades_index)
                 if failing_subjects:
                     for subj_id, subj_name, subj_avg in failing_subjects:
+                        if (student_id, course["id"], subj_id) in already_tracked:
+                            continue  # This subject already has a persisted record
                         temp_record_id = f"auto-{student_id}-{course['id']}-{subj_id}-{module_number}"
                         teacher_status = teacher_graded_index.get((student_id, course["id"], subj_id))
                         if not teacher_status:
@@ -3089,8 +3088,11 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                             "auto_detected": True,
                             "teacher_graded_status": teacher_status
                         })
+                        already_tracked.add((student_id, course["id"], subj_id))
                 else:
                     # Fallback: no subjects defined, use a single course-level record
+                    if (student_id, course["id"], None) in already_tracked:
+                        continue  # Already tracked at course level
                     temp_record_id = f"auto-{student_id}-{course['id']}-{module_number}"
                     students_map[student_id]["failed_subjects"].append({
                         "id": temp_record_id,
@@ -3107,7 +3109,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "auto_detected": True,
                         "teacher_graded_status": teacher_graded_index.get((student_id, course["id"], None))
                     })
-                already_tracked.add((student_id, course["id"]))
+                    already_tracked.add((student_id, course["id"], None))
     
     return {
         "students": list(students_map.values()),
