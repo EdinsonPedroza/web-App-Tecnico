@@ -603,9 +603,13 @@ export default function CoursesPage() {
                 <Label className="text-base">Estudiantes Inscritos ({form.student_ids.length} seleccionados)</Label>
                 {(() => {
                   if (!editing && !form.program_id) return null;
+                  // Students removed from THIS course due to failed recovery cannot re-join it
+                  const removedFromThisCourse = editing ? (editing.removed_student_ids || []) : [];
                   const eligible = students.filter(s => {
                     // Always include students already enrolled in the current group
                     if (editing && form.student_ids.includes(s.id)) return true;
+                    // Exclude students previously removed from this course due to failed recovery
+                    if (removedFromThisCourse.includes(s.id)) return false;
                     // Only active students are eligible to enroll (check per-program status when available)
                     if (getStudentStatusForProgram(s, form.program_id) !== 'activo') return false;
                     if (!form.program_id) return true;
@@ -659,12 +663,16 @@ export default function CoursesPage() {
                   if (!editing && !form.program_id) {
                     return <p className="text-sm text-muted-foreground">Selecciona un técnico primero para ver estudiantes elegibles</p>;
                   }
+                  // Students removed from THIS course due to failed recovery cannot re-join it
+                  const removedFromThisCourse = editing ? (editing.removed_student_ids || []) : [];
                   const eligible = students.filter(s => {
                     const matchesSearch = (s.name || '').toLowerCase().includes(studentSearch.toLowerCase()) ||
                       (s.cedula && s.cedula.includes(studentSearch));
                     if (!matchesSearch) return false;
                     // Always include students already enrolled in the current group
                     if (editing && form.student_ids.includes(s.id)) return true;
+                    // Exclude students previously removed from this course due to failed recovery
+                    if (removedFromThisCourse.includes(s.id)) return false;
                     // Only active students are eligible to enroll (check per-program status when available)
                     if (getStudentStatusForProgram(s, form.program_id) !== 'activo') return false;
                     // Filter by program: show only students enrolled in this course's program

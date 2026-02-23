@@ -513,6 +513,7 @@ export default function StudentsPage() {
                               if (st === 'activo') return 'success';
                               if (st === 'pendiente_recuperacion') return 'warning';
                               if (st === 'retirado') return 'destructive';
+                              if (st === 'egresado') return 'blue';
                               return 'secondary';
                             };
                             return (
@@ -529,7 +530,7 @@ export default function StudentsPage() {
                             );
                           }
                           return (
-                            <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : 'secondary'} className="text-xs rounded-md font-medium">
+                            <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : (s.estado === 'egresado' ? 'blue' : 'secondary')} className="text-xs font-medium">
                               {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}
                             </Badge>
                           );
