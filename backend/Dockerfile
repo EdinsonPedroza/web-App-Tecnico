@@ -15,4 +15,4 @@ EXPOSE 8001
 # Use $WORKERS environment variable for number of workers (default: 4 for production)
 # NOTE: For async FastAPI apps, workers use multiprocessing. Consider setting WORKERS=1
 # and relying on async concurrency, or use Gunicorn with uvicorn workers for better process management.
-CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001} --workers ${WORKERS:-4}
+CMD ["gunicorn", "server:app", "-c", "gunicorn.conf.py"]
