@@ -17,7 +17,6 @@ import TeachersPage from '@/pages/admin/TeachersPage';
 import StudentsPage from '@/pages/admin/StudentsPage';
 import CoursesPage from '@/pages/admin/CoursesPage';
 import RecoveriesPage from '@/pages/admin/RecoveriesPage';
-import AuditLogsPage from '@/pages/admin/AuditLogsPage';
 import TeacherCourseSelector from '@/pages/teacher/TeacherCourseSelector';
 import TeacherCourseDashboard from '@/pages/teacher/TeacherCourseDashboard';
 import TeacherActivities from '@/pages/teacher/TeacherActivities';
@@ -94,7 +93,6 @@ function App() {
               <Route path="/admin/students" element={<ProtectedRoute allowedRoles={['admin']}><StudentsPage /></ProtectedRoute>} />
               <Route path="/admin/courses" element={<ProtectedRoute allowedRoles={['admin']}><CoursesPage /></ProtectedRoute>} />
               <Route path="/admin/recoveries" element={<ProtectedRoute allowedRoles={['admin']}><RecoveriesPage /></ProtectedRoute>} />
-              <Route path="/admin/audit-logs" element={<ProtectedRoute allowedRoles={['admin']}><AuditLogsPage /></ProtectedRoute>} />
 
               {/* Teacher Routes */}
               <Route path="/teacher" element={<ProtectedRoute allowedRoles={['profesor']}><TeacherCourseSelector /></ProtectedRoute>} />
