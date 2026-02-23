@@ -1746,10 +1746,16 @@ async def get_student_programs(user=Depends(get_current_user)):
 
 # --- Subjects Routes ---
 @api_router.get("/subjects")
-async def get_subjects(program_id: Optional[str] = None):
+async def get_subjects(program_id: Optional[str] = None, teacher_id: Optional[str] = None):
     query = {}
     if program_id:
         query["program_id"] = program_id
+    if teacher_id:
+        teacher = await db.users.find_one({"id": teacher_id, "role": "profesor"}, {"_id": 0})
+        if teacher and teacher.get("subject_ids"):
+            query["id"] = {"$in": teacher["subject_ids"]}
+        else:
+            return []
     subjects = await db.subjects.find(query, {"_id": 0}).to_list(500)
     return subjects
 
