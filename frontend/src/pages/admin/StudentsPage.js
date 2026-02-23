@@ -520,7 +520,7 @@ export default function StudentsPage() {
                                 {studentProgramIds.map(progId => {
                                   const st = s.program_statuses[progId] || s.estado || 'activo';
                                   return (
-                                    <Badge key={progId} variant={statusVariant(st)} className="text-xs">
+                                    <Badge key={progId} variant={statusVariant(st)} className="text-xs rounded-md font-medium">
                                       {getProgramShortName(progId)}: {statusLabel(st)}
                                     </Badge>
                                   );
