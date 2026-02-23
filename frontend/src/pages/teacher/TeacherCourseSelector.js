@@ -26,7 +26,7 @@ export default function TeacherCourseSelector() {
       const [cRes, pRes, sRes] = await Promise.all([
         api.get(`/courses?teacher_id=${user.id}`),
         api.get('/programs'),
-        api.get('/subjects?teacher_id=' + user.id)
+        api.get('/me/subjects')
       ]);
       setCourses(cRes.data);
       setPrograms(pRes.data);
@@ -185,7 +185,7 @@ export default function TeacherCourseSelector() {
               <Card className="max-w-md mx-auto shadow-card">
                 <CardContent className="p-10 text-center">
                   <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">No hay grupos para esta materia</p>
+                  <p className="text-muted-foreground">No hay grupos/cursos asignados para esta materia</p>
                 </CardContent>
               </Card>
             ) : (

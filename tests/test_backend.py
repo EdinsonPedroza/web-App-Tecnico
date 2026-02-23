@@ -1820,3 +1820,84 @@ class TestGradeIsolationPerCourse:
         s2_grades = self._get_course_grades(all_grades, "s2", "c1")
         assert self._compute_average(s1_grades) == 4.0
         assert self._compute_average(s2_grades) == 2.0
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for GET /me/subjects endpoint logic (Modelo B)
+# ---------------------------------------------------------------------------
+
+class TestMeSubjectsEndpoint:
+    """Unit tests for the /me/subjects endpoint logic.
+
+    The endpoint:
+    - Requires role 'profesor' or 'admin'.
+    - Returns full Subject objects for each subject_id on the user's record.
+    - Silently ignores subject_ids that no longer exist in the DB.
+    - Returns [] when the user has no subject_ids.
+    """
+
+    def _get_my_subjects(self, user, all_subjects):
+        """Simulate the /me/subjects endpoint logic."""
+        if user.get("role") not in ["profesor", "admin"]:
+            raise ValueError("Solo profesores pueden acceder a sus materias")
+        subject_ids = user.get("subject_ids") or []
+        if not subject_ids:
+            return []
+        return [s for s in all_subjects if s["id"] in subject_ids]
+
+    def test_returns_empty_list_when_no_subject_ids(self):
+        user = {"id": "t1", "role": "profesor", "subject_ids": []}
+        subjects = [{"id": "s1", "name": "Matemáticas"}]
+        result = self._get_my_subjects(user, subjects)
+        assert result == []
+
+    def test_returns_empty_list_when_subject_ids_is_none(self):
+        user = {"id": "t1", "role": "profesor", "subject_ids": None}
+        subjects = [{"id": "s1", "name": "Matemáticas"}]
+        result = self._get_my_subjects(user, subjects)
+        assert result == []
+
+    def test_returns_matching_subjects(self):
+        user = {"id": "t1", "role": "profesor", "subject_ids": ["s1", "s2"]}
+        all_subjects = [
+            {"id": "s1", "name": "Matemáticas"},
+            {"id": "s2", "name": "Física"},
+            {"id": "s3", "name": "Química"},
+        ]
+        result = self._get_my_subjects(user, all_subjects)
+        result_ids = {s["id"] for s in result}
+        assert result_ids == {"s1", "s2"}
+
+    def test_ignores_nonexistent_subject_ids(self):
+        """Subject IDs that no longer exist in the DB are silently ignored."""
+        user = {"id": "t1", "role": "profesor", "subject_ids": ["s1", "deleted-subj"]}
+        all_subjects = [{"id": "s1", "name": "Matemáticas"}]
+        result = self._get_my_subjects(user, all_subjects)
+        assert len(result) == 1
+        assert result[0]["id"] == "s1"
+
+    def test_admin_role_allowed(self):
+        user = {"id": "a1", "role": "admin", "subject_ids": ["s1"]}
+        all_subjects = [{"id": "s1", "name": "Matemáticas"}]
+        result = self._get_my_subjects(user, all_subjects)
+        assert len(result) == 1
+
+    def test_student_role_forbidden(self):
+        user = {"id": "st1", "role": "estudiante", "subject_ids": ["s1"]}
+        all_subjects = [{"id": "s1", "name": "Matemáticas"}]
+        with pytest.raises(ValueError, match="Solo profesores"):
+            self._get_my_subjects(user, all_subjects)
+
+    def test_editor_role_forbidden(self):
+        user = {"id": "e1", "role": "editor", "subject_ids": []}
+        with pytest.raises(ValueError, match="Solo profesores"):
+            self._get_my_subjects(user, [])
+
+    def test_returns_full_subject_objects(self):
+        """Returned subjects must include all fields, not just IDs."""
+        user = {"id": "t1", "role": "profesor", "subject_ids": ["s1"]}
+        all_subjects = [{"id": "s1", "name": "Matemáticas", "program_id": "prog-1", "module_number": 1}]
+        result = self._get_my_subjects(user, all_subjects)
+        assert result[0]["name"] == "Matemáticas"
+        assert result[0]["program_id"] == "prog-1"
+        assert result[0]["module_number"] == 1

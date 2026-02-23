@@ -1312,6 +1312,19 @@ async def get_me(user=Depends(get_current_user)):
     user_data = {k: v for k, v in user.items() if k != "password_hash"}
     return user_data
 
+@api_router.get("/me/subjects")
+async def get_my_subjects(user=Depends(get_current_user)):
+    """Return the full Subject objects assigned to the authenticated teacher.
+    Only accessible by roles 'profesor' and 'admin'.
+    Subject IDs that no longer exist in the DB are silently ignored."""
+    if user["role"] not in ["profesor", "admin"]:
+        raise HTTPException(status_code=403, detail="Solo profesores pueden acceder a sus materias")
+    subject_ids = user.get("subject_ids") or []
+    if not subject_ids:
+        return []
+    subjects = await db.subjects.find({"id": {"$in": subject_ids}}, {"_id": 0}).to_list(500)
+    return subjects
+
 # --- Users Routes ---
 @api_router.get("/users")
 async def get_users(role: Optional[str] = None, estado: Optional[str] = None, user=Depends(get_current_user)):
