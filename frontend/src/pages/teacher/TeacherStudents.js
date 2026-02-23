@@ -49,14 +49,14 @@ export default function TeacherStudents() {
 
   const handleDownloadReport = async () => {
     try {
-      const response = await api.get(`/reports/course-results?course_id=${courseId}&format=csv`, {
+      const response = await api.get(`/reports/course-results?course_id=${courseId}&format=xlsx`, {
         responseType: 'blob'
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
       const safeName = (course?.name || courseId).replace(/[^\w\-]/g, '_');
-      link.setAttribute('download', `resultados_${safeName}.csv`);
+      link.setAttribute('download', `resultados_${safeName}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();

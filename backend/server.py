@@ -8,6 +8,9 @@ import os
 import logging
 import csv
 import io
+import openpyxl
+from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, validator
 from typing import List, Optional
@@ -230,6 +233,17 @@ async def check_and_close_modules():
                 prog_id = course.get("program_id", "")
                 
                 for student_id, records in students_records.items():
+                    # Only process students where admin has taken action (approved at least one recovery).
+                    # This prevents processing students whose failed_subjects were just created in the
+                    # same scheduler run (e.g., when module close and recovery close dates both passed).
+                    has_admin_action = any(
+                        r.get("recovery_approved") is True or r.get("recovery_completed") is True
+                        for r in records
+                    )
+                    if not has_admin_action:
+                        logger.info(f"Recovery close: skipping student {student_id} – no admin action taken yet on any failed subject in course {course['id']}")
+                        continue
+
                     # A student passes only if ALL their records are approved by admin AND completed AND approved by teacher
                     all_passed = all(
                         r.get("recovery_approved") is True and
@@ -1949,6 +1963,9 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     
     await log_audit("course_created", user["id"], user["role"], {"course_id": course["id"], "course_name": course.get("name", "")})
     return course
+
+@api_router.put("/courses/{course_id}")
+async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_current_user)):
     if user["role"] not in ["admin", "profesor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     
@@ -1977,7 +1994,8 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
             # Check enrollment deadline per module
             current_student_ids = set(current_course.get("student_ids") or [])
             newly_added_ids = list(set(req.student_ids) - current_student_ids)
-            course_module_dates = current_course.get("module_dates") or {}
+            # Use updated module_dates if provided (admin may be adjusting dates to allow enrollment)
+            course_module_dates = (req.module_dates if req.module_dates is not None else current_course.get("module_dates")) or {}
             course_current_module = get_current_module_from_dates(course_module_dates) or 1
             if newly_added_ids and not can_enroll_in_module(course_module_dates, course_current_module):
                 # Enrollment window closed – only allow reingreso for retirado students in current module
@@ -2787,8 +2805,9 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
     
     # Load subjects for per-subject grade calculations
-    all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+    all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(1000)
     subject_name_map = {s["id"]: s["name"] for s in all_subjects}
+    subject_module_map = {s["id"]: s.get("module_number", 1) for s in all_subjects}
     
     # Cargar TODAS las grades de todos los cursos en UNA sola query (optimización crítica)
     all_course_ids = [c["id"] for c in courses]
@@ -2838,8 +2857,13 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
             
             course_has_failing = False
             if subject_ids:
-                # Create one record per failing subject
+                # Create one record per failing subject (only subjects belonging to the module being closed)
                 for subject_id in subject_ids:
+                    # Only process subjects that belong to the module being closed.
+                    # Default to module 1 for subjects without module_number, so they're
+                    # included in module 1 closures but excluded from module 2+ closures.
+                    if subject_module_map.get(subject_id, 1) != module_number:
+                        continue
                     subject_grades = [g["value"] for g in course_grades if g.get("subject_id") == subject_id and g.get("value") is not None]
                     subject_avg = sum(subject_grades) / len(subject_grades) if subject_grades else 0.0
                     
@@ -3579,29 +3603,95 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
             row[f"subject_name_{subj_id}"] = subject_map.get(subj_id, subj_id)
         rows.append(row)
     
-    if format and format.lower() == "csv":
-        output = io.StringIO()
-        # Build CSV columns: Nombre, Cédula, Módulo, [Subject1], [Subject2], ..., Promedio General, Estado
+    if format and format.lower() in ("csv", "xlsx"):
+        safe_name = re.sub(r'[^\w\-]', '_', course.get('name', course_id))
         subject_headers = [subject_map.get(sid, sid) for sid in subject_ids]
         base_headers = ["Nombre", "Cédula", "Módulo"]
         end_headers = ["Promedio General", "Estado"]
         all_headers = base_headers + subject_headers + end_headers
-        writer = csv.writer(output)
-        writer.writerow(all_headers)
-        for row in rows:
-            csv_row = [row["student_name"], row["student_cedula"], row.get("module", "")]
-            for subj_id in subject_ids:
-                csv_row.append(row.get(f"subject_{subj_id}", 0.0))
-            csv_row.extend([row["general_average"], row["status"]])
-            writer.writerow(csv_row)
-        output.seek(0)
-        safe_name = re.sub(r'[^\w\-]', '_', course.get('name', course_id))
-        filename = f"resultados_{safe_name}.csv"
-        return StreamingResponse(
-            iter([output.getvalue()]),
-            media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
+
+        if format.lower() == "csv":
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(all_headers)
+            for row in rows:
+                csv_row = [row["student_name"], row["student_cedula"], row.get("module", "")]
+                for subj_id in subject_ids:
+                    csv_row.append(row.get(f"subject_{subj_id}", 0.0))
+                csv_row.extend([row["general_average"], row["status"]])
+                writer.writerow(csv_row)
+            output.seek(0)
+            filename = f"resultados_{safe_name}.csv"
+            return StreamingResponse(
+                iter([output.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+        else:
+            # XLSX with professional formatting
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Resultados"
+
+            # Title row
+            course_name = course.get("name", "Grupo")
+            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(all_headers))
+            title_cell = ws.cell(row=1, column=1, value=f"Reporte de Resultados – {course_name}")
+            title_cell.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+            title_cell.font = Font(bold=True, size=13, color="FFFFFF")
+            title_cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[1].height = 22
+
+            # Header row (row 2)
+            header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF")
+            thin = Side(border_style="thin", color="000000")
+            header_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            for col_idx, header in enumerate(all_headers, start=1):
+                cell = ws.cell(row=2, column=col_idx, value=header)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.border = header_border
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            ws.row_dimensions[2].height = 18
+
+            # Data rows (starting row 3)
+            green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            data_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            for row_idx, row in enumerate(rows, start=3):
+                avg = row["general_average"]
+                row_fill = green_fill if avg >= 3.0 else red_fill
+                data = [row["student_name"], row["student_cedula"], row.get("module", "")]
+                for subj_id in subject_ids:
+                    data.append(row.get(f"subject_{subj_id}", 0.0))
+                data.extend([avg, row["status"]])
+                for col_idx, value in enumerate(data, start=1):
+                    cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                    cell.fill = row_fill
+                    cell.border = data_border
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    if col_idx == 1:
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+
+            # Auto-adjust column widths
+            for col_idx, header in enumerate(all_headers, start=1):
+                col_letter = get_column_letter(col_idx)
+                max_len = max(len(str(header)), 10)
+                ws.column_dimensions[col_letter].width = min(max_len + 4, 35)
+            # Fixed widths for known columns
+            ws.column_dimensions["A"].width = 30  # Nombre
+            ws.column_dimensions["B"].width = 14  # Cédula
+
+            output_bytes = io.BytesIO()
+            wb.save(output_bytes)
+            output_bytes.seek(0)
+            filename = f"resultados_{safe_name}.xlsx"
+            return StreamingResponse(
+                iter([output_bytes.getvalue()]),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
     
     return {
         "course_id": course_id,
