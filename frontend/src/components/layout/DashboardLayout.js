@@ -15,7 +15,7 @@ import {
 import {
   LayoutDashboard, Users, BookOpen, GraduationCap,
   FileText, Video, ClipboardList, Settings, LogOut,
-  Menu, X, ChevronRight, Building2, RefreshCw
+  Menu, X, ChevronRight, Building2, RefreshCw, Shield
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -27,6 +27,7 @@ const adminLinks = [
   { label: 'Estudiantes', icon: GraduationCap, path: '/admin/students' },
   { label: 'Cursos', icon: ClipboardList, path: '/admin/courses' },
   { label: 'Recuperaciones', icon: FileText, path: '/admin/recoveries' },
+  { label: 'Auditoría', icon: Shield, path: '/admin/audit-logs' },
 ];
 
 const teacherLinks = [

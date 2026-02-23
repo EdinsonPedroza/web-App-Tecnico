@@ -255,6 +255,7 @@ async def check_and_close_modules():
                                     {"$set": {"program_statuses": program_statuses, "estado": new_global_estado}}
                                 )
                                 logger.info(f"Student {student_id} graduated (recovery passed all subjects in course {course['id']})")
+                                await log_audit("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close"})
                             else:
                                 next_module = current_module + 1
                                 program_statuses[prog_id] = "activo"
@@ -268,6 +269,7 @@ async def check_and_close_modules():
                                     update_fields[f"program_modules.{prog_id}"] = next_module
                                 await db.users.update_one({"id": student_id}, {"$set": update_fields})
                                 logger.info(f"Student {student_id} promoted to module {next_module} (recovery passed in course {course['id']})")
+                                await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close"})
                             promoted_recovery_count += 1
                     else:
                         # At least one subject not passed: remove from group, mark activo for re-enrollment
@@ -289,6 +291,7 @@ async def check_and_close_modules():
                             update_fields["program_statuses"] = student_program_statuses
                         await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": update_fields})
                         logger.info(f"Student {student_id} marked as activo for program {prog_id} (recovery closed, can re-enroll)")
+                        await log_audit("student_removed_from_group", "system", "system", {"student_id": student_id, "course_id": course["id"], "program_id": prog_id, "trigger": "recovery_close_failed"})
                         removed_count += 1
                     
                     # Mark all records for this student in this course/module as processed
@@ -930,6 +933,21 @@ def log_security_event(event_type: str, details: dict):
             sanitized_details[key] = str(value)[:200]
     logger.warning(f"SECURITY: {event_type} - {json.dumps(sanitized_details)}")
 
+async def log_audit(action: str, user_id: str, user_role: str, details: dict):
+    """Insert an audit log record into the audit_logs collection."""
+    try:
+        record = {
+            "id": str(uuid.uuid4()),
+            "action": action,
+            "user_id": user_id,
+            "user_role": user_role,
+            "details": details,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        await db.audit_logs.insert_one(record)
+    except Exception as exc:
+        logger.error(f"Failed to write audit log (action={action}): {exc}")
+
 async def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No autorizado")
@@ -1269,6 +1287,7 @@ async def login(req: LoginRequest, request: Request):
             login_attempts_by_identifier[identifier] = []
     
     logger.info(f"Successful login: user_id={user['id']}, role={user['role']}, ip={client_ip}")
+    await log_audit("login_success", user["id"], user["role"], {"ip": client_ip})
     
     token = create_token(user["id"], user["role"])
     user_data = {k: v for k, v in user.items() if k != "password_hash"}
@@ -1400,6 +1419,7 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
     await db.users.insert_one(new_user)
     
     logger.info(f"User created: id={new_user['id']}, role={req.role}, by={user['id']}")
+    await log_audit("student_created" if req.role == "estudiante" else "user_created", user["id"], user["role"], {"new_user_id": new_user["id"], "new_user_role": req.role, "new_user_name": req.name})
     
     del new_user["_id"]
     del new_user["password_hash"]
@@ -1506,12 +1526,14 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
     logger.info(f"User updated: id={user_id}, by={user['id']}, fields={list(update_data.keys())}")
     
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    await log_audit("user_updated", user["id"], user["role"], {"target_user_id": user_id})
     return updated
 
 @api_router.delete("/users/{user_id}")
 async def delete_user(user_id: str, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede eliminar usuarios")
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "name": 1, "role": 1})
     result = await db.users.delete_one({"id": user_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -1520,6 +1542,7 @@ async def delete_user(user_id: str, user=Depends(get_current_user)):
         {"student_ids": user_id},
         {"$pull": {"student_ids": user_id}}
     )
+    await log_audit("user_deleted", user["id"], user["role"], {"deleted_user_id": user_id, "deleted_user_name": (target or {}).get("name", ""), "deleted_user_role": (target or {}).get("role", "")})
     return {"message": "Usuario eliminado"}
 
 # --- Editor Routes ---
@@ -1663,6 +1686,7 @@ async def create_program(req: ProgramCreate, user=Depends(get_current_user)):
     }
     await db.programs.insert_one(program)
     del program["_id"]
+    await log_audit("program_created", user["id"], user["role"], {"program_id": program["id"], "program_name": req.name})
     return program
 
 @api_router.put("/programs/{program_id}")
@@ -1681,6 +1705,7 @@ async def delete_program(program_id: str, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
     await db.programs.delete_one({"id": program_id})
+    await log_audit("program_deleted", user["id"], user["role"], {"program_id": program_id})
     return {"message": "Programa eliminado"}
 
 @api_router.get("/student/programs")
@@ -1922,10 +1947,8 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                 }}
             )
     
+    await log_audit("course_created", user["id"], user["role"], {"course_id": course["id"], "course_name": course.get("name", "")})
     return course
-
-@api_router.put("/courses/{course_id}")
-async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_current_user)):
     if user["role"] not in ["admin", "profesor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     
@@ -2147,6 +2170,7 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
         f"{submissions_deleted.deleted_count} submissions, {failed_subjects_deleted.deleted_count} failed_subjects, "
         f"{recovery_enabled_deleted.deleted_count} recovery_enabled, {videos_deleted.deleted_count} videos"
     )
+    await log_audit("course_deleted", user["id"], user["role"], {"course_id": course_id, "course_name": course.get("name", "")})
 
     return {
         "message": "Grupo eliminado con todos sus datos asociados",
@@ -2217,6 +2241,7 @@ async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
     }
     await db.activities.insert_one(activity)
     del activity["_id"]
+    await log_audit("activity_created", user["id"], user["role"], {"activity_id": activity["id"], "course_id": req.course_id, "title": req.title})
     return activity
 
 @api_router.put("/activities/{activity_id}")
@@ -2239,7 +2264,7 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
     await db.grades.delete_many({"activity_id": activity_id})
     await db.submissions.delete_many({"activity_id": activity_id})
     await db.activities.delete_one({"id": activity_id})
-    
+    await log_audit("activity_deleted", user["id"], user["role"], {"activity_id": activity_id})
     return {"message": "Actividad eliminada con sus notas y entregas"}
 
 # --- Grades Routes ---
@@ -2348,8 +2373,10 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                     {"$set": {"recovery_status": req.recovery_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
                 )
                 updated = await db.grades.find_one({"id": existing["id"]}, {"_id": 0})
+                await log_audit("recovery_graded", user["id"], user["role"], {"student_id": req.student_id, "course_id": req.course_id, "subject_id": req.subject_id, "result": "rejected"})
                 return updated
             # If no existing grade, don't create one for rejection
+            await log_audit("recovery_graded", user["id"], user["role"], {"student_id": req.student_id, "course_id": req.course_id, "subject_id": req.subject_id, "result": "rejected"})
             return {"message": "Recuperación rechazada por el profesor"}
     
     if existing:
@@ -2385,6 +2412,10 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     }
     await db.grades.insert_one(grade)
     del grade["_id"]
+    if req.recovery_status == "approved":
+        await log_audit("recovery_graded", user["id"], user["role"], {"student_id": req.student_id, "course_id": req.course_id, "subject_id": req.subject_id, "result": "approved"})
+    else:
+        await log_audit("grade_assigned", user["id"], user["role"], {"student_id": req.student_id, "course_id": req.course_id, "subject_id": req.subject_id, "activity_id": req.activity_id})
     return grade
 
 @api_router.put("/grades/{grade_id}")
@@ -2935,6 +2966,7 @@ async def close_module(module_number: int, program_id: Optional[str] = None, use
     
     try:
         result = await close_module_internal(module_number, program_id)
+        await log_audit("module_closed", user["id"], user["role"], {"module_number": module_number, "program_id": program_id or "all", "promoted": result.get("promoted_count", 0), "graduated": result.get("graduated_count", 0), "recovery": result.get("recovery_count", 0)})
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -3412,10 +3444,8 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
     if prog_id:
         update_fields["program_statuses"] = student_program_statuses
     await db.users.update_one({"id": failed_record["student_id"]}, {"$set": update_fields})
-    
+    await log_audit("recovery_approved", user["id"], user["role"], {"student_id": failed_record["student_id"], "failed_subject_id": failed_subject_id, "subject_name": failed_record.get("subject_name", ""), "course_id": failed_record.get("course_id", "")})
     return {"message": "Recuperación aprobada exitosamente"}
-
-@api_router.get("/student/my-recoveries")
 async def get_student_recoveries(user=Depends(get_current_user)):
     """
     Get recovery subjects for the current student.
@@ -4196,6 +4226,68 @@ async def health_check():
 @api_router.get("/")
 async def root():
     return {"message": "Corporación Social Educando API"}
+
+@api_router.get("/admin/audit-logs")
+async def get_audit_logs(
+    action: Optional[str] = None,
+    user_id: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+    user=Depends(get_current_user)
+):
+    """
+    Returns paginated audit logs. Admin only.
+    Supports filters: action, user_id, from_date (ISO), to_date (ISO).
+    """
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede acceder a los registros de auditoría")
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 100:
+        page_size = 20
+
+    query: dict = {}
+    if action:
+        query["action"] = action
+    if user_id:
+        query["user_id"] = user_id
+    if from_date or to_date:
+        ts_filter: dict = {}
+        if from_date:
+            # Normalize: treat date-only strings as start of day UTC
+            ts_filter["$gte"] = from_date if "T" in from_date else from_date + "T00:00:00+00:00"
+        if to_date:
+            # Normalize: treat date-only strings as end of day UTC
+            ts_filter["$lte"] = to_date if "T" in to_date else to_date + "T23:59:59+00:00"
+        query["timestamp"] = ts_filter
+
+    total = await db.audit_logs.count_documents(query)
+    skip = (page - 1) * page_size
+    logs = await db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(page_size).to_list(page_size)
+
+    # Enrich each log with the actor's name where possible
+    actor_ids = list({log["user_id"] for log in logs if log.get("user_id") and log["user_id"] != "system"})
+    actor_map: dict = {}
+    if actor_ids:
+        actors = await db.users.find({"id": {"$in": actor_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(None)
+        actor_map = {a["id"]: a["name"] for a in actors}
+
+    for log in logs:
+        uid = log.get("user_id", "")
+        if uid == "system":
+            log["user_name"] = "Sistema"
+        else:
+            log["user_name"] = actor_map.get(uid, uid or "-")
+
+    return {
+        "logs": logs,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size
+    }
 
 app.include_router(api_router)
 
