@@ -2765,10 +2765,16 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             use_filename=True,
             unique_filename=True
         )
+        secure_url = result["secure_url"]
+        # For PDFs: insert fl_inline so the browser renders the PDF instead of downloading it
+        # Cloudinary raw URL: https://res.cloudinary.com/cloud/raw/upload/v.../file.pdf
+        # With fl_inline:     https://res.cloudinary.com/cloud/raw/upload/fl_inline/v.../file.pdf
+        if _ext == "pdf":
+            secure_url = secure_url.replace("/raw/upload/", "/raw/upload/fl_inline/")
         return {
             "filename": original_name,
             "stored_name": result["public_id"],
-            "url": result["secure_url"],
+            "url": secure_url,
             "size": file_size,
             "storage": "cloudinary",
             "resource_type": _resource_type

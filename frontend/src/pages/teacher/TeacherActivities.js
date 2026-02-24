@@ -162,6 +162,12 @@ export default function TeacherActivities() {
 
   const isDownloadOnly = (filename) => /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(filename || '');
 
+  const resolveFileUrl = (url) => {
+    if (!url) return '#';
+    if (url.startsWith('http')) return url;
+    return `${BACKEND_URL}${url}`;
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -301,7 +307,7 @@ export default function TeacherActivities() {
                             {act.files.map((f, i) => (
                               <a
                                 key={i}
-                                href={f.url}
+                                href={resolveFileUrl(f.url)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 {...(isDownloadOnly(f.name) ? { download: f.name } : {})}
@@ -466,7 +472,7 @@ export default function TeacherActivities() {
                                   {sub.files.map((f, i) => (
                                     <a
                                       key={i}
-                                      href={f.url}
+                                      href={resolveFileUrl(f.url)}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       {...(isDownloadOnly(f.name) ? { download: f.name } : {})}
