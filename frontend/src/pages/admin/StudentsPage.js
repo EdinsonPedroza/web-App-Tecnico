@@ -501,21 +501,21 @@ export default function StudentsPage() {
                       <TableCell>
                         {(() => {
                           const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
+                          const statusLabel = (st) => {
+                            if (st === 'activo') return 'Activo';
+                            if (st === 'egresado') return 'Egresado';
+                            if (st === 'retirado') return 'Retirado';
+                            if (st === 'pendiente_recuperacion') return 'Pend. Rec.';
+                            return st || 'Activo';
+                          };
+                          const statusVariant = (st) => {
+                            if (st === 'activo') return 'success';
+                            if (st === 'pendiente_recuperacion') return 'warning';
+                            if (st === 'retirado') return 'destructive';
+                            if (st === 'egresado') return 'blue';
+                            return 'secondary';
+                          };
                           if (s.program_statuses && studentProgramIds.length > 0) {
-                            const statusLabel = (st) => {
-                              if (st === 'activo') return 'Activo';
-                              if (st === 'egresado') return 'Egresado';
-                              if (st === 'retirado') return 'Retirado';
-                              if (st === 'pendiente_recuperacion') return 'Pend. Rec.';
-                              return st || 'Activo';
-                            };
-                            const statusVariant = (st) => {
-                              if (st === 'activo') return 'success';
-                              if (st === 'pendiente_recuperacion') return 'warning';
-                              if (st === 'retirado') return 'destructive';
-                              if (st === 'egresado') return 'blue';
-                              return 'secondary';
-                            };
                             return (
                               <div className="flex flex-col gap-1">
                                 {studentProgramIds.map(progId => {
@@ -529,9 +529,10 @@ export default function StudentsPage() {
                               </div>
                             );
                           }
+                          const st = s.estado || 'activo';
                           return (
-                            <Badge variant={(s.estado || 'activo') === 'activo' ? 'success' : (s.estado === 'egresado' ? 'blue' : 'secondary')} className="text-xs font-semibold px-3 py-1 rounded-md">
-                              {(s.estado || 'activo') === 'activo' ? 'Activo' : 'Egresado'}
+                            <Badge variant={statusVariant(st)} className="text-xs font-semibold px-3 py-1 rounded-md">
+                              {statusLabel(st)}
                             </Badge>
                           );
                         })()}

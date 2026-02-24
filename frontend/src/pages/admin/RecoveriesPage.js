@@ -239,8 +239,18 @@ export default function RecoveriesPage() {
           </Card>
         ) : (
           <div className="space-y-6">
-            {recoveryData.students
+            {(() => {
+              const today = new Date().toISOString().slice(0, 10);
+              return recoveryData.students
               .filter(student => {
+                // Remove students whose ALL subjects belong to modules where
+                // the next module has already started (they should no longer appear).
+                const hasActiveSubjects = student.failed_subjects.some(s => {
+                  if (s.next_module_start && s.next_module_start <= today) return false;
+                  return true;
+                });
+                if (!hasActiveSubjects) return false;
+
                 // Search filter
                 const matchesSearch = searchTerm === '' || 
                   student.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -258,25 +268,30 @@ export default function RecoveriesPage() {
                 
                 return matchesSearch && matchesStatus;
               })
-              .map((student) => (
+              .map((student) => {
+                // Visible subjects: exclude those whose next module has already started
+                const visibleSubjects = student.failed_subjects.filter(s =>
+                  !s.next_module_start || s.next_module_start > today
+                );
+                return (
               <Card key={student.student_id} className="shadow-card">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle className="text-xl">{student.student_name}</CardTitle>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {student.student_cedula ? `Cédula: ${student.student_cedula}` : `ID: ${student.student_id.slice(0, 8)}…`} • {student.failed_subjects.length} materia(s) reprobada(s)
+                        {student.student_cedula ? `Cédula: ${student.student_cedula}` : `ID: ${student.student_id.slice(0, 8)}…`} • {visibleSubjects.length} materia(s) reprobada(s)
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="destructive" className="text-sm">
                         En Recuperación
                       </Badge>
-                      {student.failed_subjects.length > 0 && student.failed_subjects[0].course_id && (
+                      {visibleSubjects.length > 0 && visibleSubjects[0].course_id && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDownloadCourseReport(student.failed_subjects[0].course_id, student.failed_subjects[0].course_name)}
+                          onClick={() => handleDownloadCourseReport(visibleSubjects[0].course_id, visibleSubjects[0].course_name)}
                         >
                           <Download className="h-3 w-3 mr-1" />
                           CSV
@@ -299,7 +314,15 @@ export default function RecoveriesPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {student.failed_subjects.map((subject) => (
+                      {visibleSubjects.map((subject) => {
+                        const recoveryClosed = subject.recovery_close && subject.recovery_close <= today;
+                        // When recovery period is closed: show final result (Aprobado/Reprobado)
+                        const isFinalApproved = recoveryClosed && (
+                          subject.status === 'processed_passed' ||
+                          subject.status === 'teacher_approved'
+                        );
+                        const isFinalRejected = recoveryClosed && !isFinalApproved;
+                        return (
                         <TableRow key={subject.id}>
                           <TableCell className="font-medium">
                             {subject.subject_name || subject.course_name}
@@ -321,7 +344,15 @@ export default function RecoveriesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {subject.teacher_graded_status === 'approved' ? (
+                            {isFinalApproved ? (
+                              <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700">
+                                ✅ Aprobado
+                              </Badge>
+                            ) : isFinalRejected ? (
+                              <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
+                                ❌ Reprobado
+                              </Badge>
+                            ) : subject.teacher_graded_status === 'approved' ? (
                               <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700">
                                 ✅ Aprobado por profesor
                               </Badge>
@@ -346,7 +377,7 @@ export default function RecoveriesPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {!subject.recovery_approved && (
+                              {!subject.recovery_approved && !recoveryClosed && (
                                 <>
                                   <Button
                                     variant="ghost"
@@ -369,12 +400,15 @@ export default function RecoveriesPage() {
                             </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </CardContent>
               </Card>
-            ))}
+                );
+              })}
+            )()}
           </div>
         )}
       </div>
