@@ -281,11 +281,15 @@ export default function StudentsPage() {
         await api.put(`/users/${editing.id}`, updateData);
         studentId = editing.id;
       } else {
-        const createData = { 
-          ...form, 
+        const createData = {
+          name: form.name,
+          cedula: form.cedula || null,
+          password: form.password,
+          phone: form.phone || null,
           role: 'estudiante',
           program_ids: form.program_ids && form.program_ids.length > 0 ? form.program_ids : null,
           program_modules: form.program_modules && Object.keys(form.program_modules).length > 0 ? form.program_modules : null,
+          program_statuses: form.program_statuses && Object.keys(form.program_statuses).length > 0 ? form.program_statuses : null,
           estado: form.estado || 'activo'
         };
         const res = await api.post('/users', createData);
