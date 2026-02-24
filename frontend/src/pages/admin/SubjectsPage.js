@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, BookOpen, Filter, Search } from 'lucide-react';
 import api from '@/lib/api';
@@ -151,38 +150,29 @@ export default function SubjectsPage() {
             <p className="text-muted-foreground">No hay materias registradas</p>
           </CardContent></Card>
         ) : (
-          <Card className="shadow-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-base">Materia</TableHead>
-                  <TableHead className="text-base">Programa</TableHead>
-                  <TableHead className="text-base">Módulo</TableHead>
-                  <TableHead className="text-base">Profesor</TableHead>
-                  <TableHead className="text-right text-base">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((subj) => (
-                  <TableRow key={subj.id}>
-                    <TableCell>
-                      <div>
-                        <span className="font-medium text-base">{subj.name}</span>
-                        {subj.description && <p className="text-xs text-muted-foreground mt-0.5">{subj.description}</p>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-base text-muted-foreground">{getProgramName(subj.program_id)}</TableCell>
-                    <TableCell><Badge variant="secondary" className="text-sm">Módulo {subj.module_number}</Badge></TableCell>
-                    <TableCell className="text-base text-muted-foreground">{getTeacherName(subj.id)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(subj)}><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(subj.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filtered.map((subj) => (
+              <Card key={subj.id} className="shadow-card hover:shadow-lg transition-all duration-300 hover-lift flex flex-col">
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="text-sm font-heading">{subj.name}</CardTitle>
+                    <div className="flex gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(subj)}><Pencil className="h-3 w-3" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(subj.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col">
+                  <p className="text-xs text-muted-foreground mb-3 flex-1">{subj.description || 'Sin descripción'}</p>
+                  <div className="flex flex-wrap gap-2 mt-auto">
+                    <Badge variant="secondary" className="text-xs">Módulo {subj.module_number}</Badge>
+                    <Badge variant="outline" className="text-xs break-words">{getProgramName(subj.program_id)}</Badge>
+                    <Badge variant="outline" className="text-xs break-words">👤 {getTeacherName(subj.id)}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
       </div>
 
