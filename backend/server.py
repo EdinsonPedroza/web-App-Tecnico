@@ -221,16 +221,19 @@ async def check_and_close_modules():
                     "recovery_processed": {"$ne": True}
                 }, {"_id": 0}).to_list(None)
                 
-                if not all_records:
-                    continue
-                
-                # Group records by student
+                prog_id = course.get("program_id", "")
+
+                # Group recovery records by student
                 students_records = {}
                 for record in all_records:
                     sid = record["student_id"]
                     students_records.setdefault(sid, []).append(record)
-                
-                prog_id = course.get("program_id", "")
+
+                # Skip only when there are no recovery records AND no enrolled students.
+                # We still need to process courses with no recovery records if they have
+                # direct-pass students whose promotion was deferred to recovery_close.
+                if not all_records and not course.get("student_ids"):
+                    continue
                 
                 for student_id, records in students_records.items():
                     # Only process students where admin has taken action (approved at least one recovery).
@@ -258,10 +261,11 @@ async def check_and_close_modules():
                         if student:
                             program_modules = student.get("program_modules") or {}
                             program_statuses = student.get("program_statuses") or {}
-                            current_module = program_modules.get(prog_id) or student.get("module", 1)
                             program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
-                            max_modules = len(program.get("modules", [])) if program else 2
-                            if current_module >= max_modules:
+                            max_modules = max(len(program.get("modules", [])) if program and program.get("modules") else 2, 2)
+                            # Use the module being closed (not the student's potentially stale field)
+                            # to decide between promotion and graduation
+                            if int(module_key) >= max_modules:
                                 program_statuses[prog_id] = "egresado"
                                 new_global_estado = derive_estado_from_program_statuses(program_statuses)
                                 await db.users.update_one(
@@ -271,7 +275,7 @@ async def check_and_close_modules():
                                 logger.info(f"Student {student_id} graduated (recovery passed all subjects in course {course['id']})")
                                 await log_audit("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close"})
                             else:
-                                next_module = current_module + 1
+                                next_module = int(module_key) + 1
                                 program_statuses[prog_id] = "activo"
                                 new_global_estado = derive_estado_from_program_statuses(program_statuses)
                                 update_fields = {
@@ -314,6 +318,46 @@ async def check_and_close_modules():
                             {"id": record["id"]},
                             {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
                         )
+                
+                # Also promote students who passed the module directly (no failed subjects),
+                # whose promotion was deferred to recovery_close by close_module_internal.
+                for student_id in course.get("student_ids", []):
+                    if student_id in students_records:
+                        continue  # Already handled above as a recovery student
+                    direct_student = await db.users.find_one({"id": student_id}, {"_id": 0})
+                    if not direct_student:
+                        continue
+                    direct_prog_modules = direct_student.get("program_modules") or {}
+                    # Only process if still in the module being closed (idempotency guard)
+                    if direct_prog_modules.get(prog_id) != int(module_key):
+                        continue
+                    direct_prog_statuses = direct_student.get("program_statuses") or {}
+                    program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
+                    max_modules = max(len(program.get("modules", [])) if program and program.get("modules") else 2, 2)
+                    if int(module_key) >= max_modules:
+                        direct_prog_statuses[prog_id] = "egresado"
+                        new_global_estado = derive_estado_from_program_statuses(direct_prog_statuses)
+                        await db.users.update_one(
+                            {"id": student_id},
+                            {"$set": {"program_statuses": direct_prog_statuses, "estado": new_global_estado}}
+                        )
+                        logger.info(f"Student {student_id} graduated (direct pass, deferred to recovery_close for course {course['id']})")
+                        await log_audit("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close_direct_pass"})
+                    else:
+                        next_module = int(module_key) + 1
+                        direct_prog_statuses[prog_id] = "activo"
+                        new_global_estado = derive_estado_from_program_statuses(direct_prog_statuses)
+                        update_fields = {
+                            "module": next_module,
+                            "estado": new_global_estado,
+                            "program_statuses": direct_prog_statuses
+                        }
+                        if prog_id:
+                            update_fields[f"program_modules.{prog_id}"] = next_module
+                        await db.users.update_one({"id": student_id}, {"$set": update_fields})
+                        logger.info(f"Student {student_id} promoted to module {next_module} (direct pass, deferred to recovery_close for course {course['id']})")
+                        await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close_direct_pass"})
+                    promoted_recovery_count += 1
         
         if removed_count > 0:
             logger.info(f"Recovery check: removed {removed_count} students from groups due to failed recovery")
@@ -2994,31 +3038,44 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                 }}
             )
         else:
-            # Student passed all courses
-            student_program_statuses = student.get("program_statuses") or {}
-            for prog_id in programs_in_module:
-                current_module = student_program_modules.get(prog_id, 1)
-                
-                if current_module < 2:
-                    # Promote to next module
-                    student_program_modules[prog_id] = current_module + 1
-                    student_program_statuses[prog_id] = "activo"
-                    promoted_count += 1
-                else:
-                    # Module 2 completed - graduate
-                    graduated_count += 1
-                    student_program_statuses[prog_id] = "egresado"
-            
-            new_global_estado = derive_estado_from_program_statuses(student_program_statuses)
-            # Update program_modules and program_statuses
-            await db.users.update_one(
-                {"id": student_id},
-                {"$set": {
-                    "program_modules": student_program_modules,
-                    "program_statuses": student_program_statuses,
-                    "estado": new_global_estado
-                }}
+            # Student passed all courses.
+            # If any of the student's courses in this module has a recovery_close date
+            # configured, defer the promotion/graduation to recovery_close processing.
+            # This ensures students advance exactly when the recovery period closes,
+            # not at the module close date.
+            any_recovery_close = any(
+                (c.get("module_dates") or {}).get(str(module_number), {}).get("recovery_close")
+                for c in student_courses
             )
+            if any_recovery_close:
+                # Promotion deferred; the scheduler's recovery_close section will handle it.
+                promoted_count += 1
+            else:
+                # No recovery period configured: promote immediately (backward compatibility).
+                student_program_statuses = student.get("program_statuses") or {}
+                for prog_id in programs_in_module:
+                    current_module = student_program_modules.get(prog_id, 1)
+                    
+                    if current_module < 2:
+                        # Promote to next module
+                        student_program_modules[prog_id] = current_module + 1
+                        student_program_statuses[prog_id] = "activo"
+                        promoted_count += 1
+                    else:
+                        # Module 2 completed - graduate
+                        graduated_count += 1
+                        student_program_statuses[prog_id] = "egresado"
+                
+                new_global_estado = derive_estado_from_program_statuses(student_program_statuses)
+                # Update program_modules and program_statuses
+                await db.users.update_one(
+                    {"id": student_id},
+                    {"$set": {
+                        "program_modules": student_program_modules,
+                        "program_statuses": student_program_statuses,
+                        "estado": new_global_estado
+                    }}
+                )
     
     # Bulk insert failed subjects records
     if failed_subjects_records:
@@ -3127,6 +3184,12 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         dates = module_dates.get(str(module_number)) or {}
         return dates.get("recovery_close")
 
+    def get_next_module_start(course_doc, module_number):
+        """Return the start date of the next module in a course, or None."""
+        module_dates = course_doc.get("module_dates") or {}
+        next_dates = module_dates.get(str(module_number + 1)) or {}
+        return next_dates.get("start")
+
     # Fetch all records that haven't been processed yet, plus recently processed ones (last 30 days)
     # This ensures admins can see the full status of each recovery even after recovery_close passes.
     thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
@@ -3177,7 +3240,9 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     students_map = {}
     for record in failed_records:
         course_doc = course_map.get(record["course_id"]) or {}
-        recovery_close = get_recovery_close(course_doc, record.get("module_number", 1))
+        module_num = record.get("module_number", 1)
+        recovery_close = get_recovery_close(course_doc, module_num)
+        next_module_start = get_next_module_start(course_doc, module_num)
 
         student_id = record["student_id"]
         if student_id not in students_map:
@@ -3220,6 +3285,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "recovery_approved": record["recovery_approved"],
             "recovery_completed": record["recovery_completed"],
             "recovery_close": recovery_close,
+            "next_module_start": next_module_start,
             "teacher_graded_status": teacher_status,
             "status": rec_status
         })
@@ -3309,6 +3375,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                             "recovery_approved": False,
                             "recovery_completed": False,
                             "recovery_close": recovery_close,
+                            "next_module_start": get_next_module_start(course, module_number),
                             "auto_detected": True,
                             "teacher_graded_status": teacher_status,
                             "status": "pending"
@@ -3331,6 +3398,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "recovery_approved": False,
                         "recovery_completed": False,
                         "recovery_close": recovery_close,
+                        "next_module_start": get_next_module_start(course, module_number),
                         "auto_detected": True,
                         "teacher_graded_status": teacher_graded_index.get((student_id, course["id"], None)),
                         "status": "pending"

@@ -2275,3 +2275,235 @@ class TestActivityNumberingPerSubject:
         ]
         assert self._next_activity_number(activities, "course-1", None) == 8
 
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for module promotion/graduation timing logic
+# ---------------------------------------------------------------------------
+
+class TestCloseModulePromotion:
+    """Tests for the close_module_internal deferral logic.
+
+    When a course has recovery_close configured, passing students must NOT be
+    promoted at module-close time – promotion is deferred to recovery_close.
+    When no recovery_close is configured, students are promoted immediately
+    (backward-compatible behaviour).
+    """
+
+    def _has_recovery_close(self, student_courses, module_number):
+        """Mirror of the any_recovery_close check in close_module_internal."""
+        return any(
+            (c.get("module_dates") or {}).get(str(module_number), {}).get("recovery_close")
+            for c in student_courses
+        )
+
+    def test_course_with_recovery_close_defers_promotion(self):
+        courses = [{
+            "module_dates": {
+                "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"}
+            }
+        }]
+        assert self._has_recovery_close(courses, 1) is True
+
+    def test_course_without_recovery_close_promotes_immediately(self):
+        courses = [{
+            "module_dates": {
+                "1": {"start": "2026-01-01", "end": "2026-06-30"}
+            }
+        }]
+        assert self._has_recovery_close(courses, 1) is False
+
+    def test_empty_module_dates_promotes_immediately(self):
+        courses = [{"module_dates": {}}]
+        assert self._has_recovery_close(courses, 1) is False
+
+    def test_no_module_dates_promotes_immediately(self):
+        courses = [{}]
+        assert self._has_recovery_close(courses, 1) is False
+
+    def test_multiple_courses_any_with_recovery_close_defers(self):
+        """If even one course has recovery_close, promotion must be deferred."""
+        courses = [
+            {"module_dates": {"1": {"start": "2026-01-01", "end": "2026-06-30"}}},
+            {"module_dates": {"1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"}}},
+        ]
+        assert self._has_recovery_close(courses, 1) is True
+
+    def test_recovery_close_only_checked_for_requested_module(self):
+        """recovery_close in module 2 should not affect module 1 closure."""
+        courses = [{
+            "module_dates": {
+                "1": {"start": "2026-01-01", "end": "2026-06-30"},
+                "2": {"start": "2026-08-01", "end": "2026-12-31", "recovery_close": "2027-01-15"}
+            }
+        }]
+        # Closing module 1: no recovery_close in module 1 → immediate promotion
+        assert self._has_recovery_close(courses, 1) is False
+        # Closing module 2: recovery_close exists → deferred
+        assert self._has_recovery_close(courses, 2) is True
+
+
+class TestRecoveryCloseGraduationLogic:
+    """Tests for the graduation/promotion decision at recovery_close time.
+
+    The logic must use `module_key` (the module being closed) to determine
+    whether the student graduates or is promoted, NOT the student's potentially
+    stale `current_module` field.  It must also enforce a minimum of 2 modules
+    so that a program with an incomplete `modules` list cannot erroneously
+    graduate a module-1 student.
+    """
+
+    def _decide_outcome(self, module_key, program_modules_list_len):
+        """Mirror of the graduation check in check_and_close_modules recovery section."""
+        max_modules = max(program_modules_list_len if program_modules_list_len else 2, 2)
+        if int(module_key) >= max_modules:
+            return "egresado"
+        return "promoted"
+
+    def test_module1_with_2_module_program_promotes(self):
+        assert self._decide_outcome("1", 2) == "promoted"
+
+    def test_module2_with_2_module_program_graduates(self):
+        assert self._decide_outcome("2", 2) == "egresado"
+
+    def test_module1_with_single_module_program_still_promotes(self):
+        """Safety: programs with only 1 module must still not graduate module-1 students."""
+        assert self._decide_outcome("1", 1) == "promoted"
+
+    def test_module1_with_empty_modules_list_promotes(self):
+        """Safety: empty modules list (0 items) defaults to 2, so module-1 is promoted."""
+        assert self._decide_outcome("1", 0) == "promoted"
+
+    def test_module2_with_empty_modules_list_graduates(self):
+        assert self._decide_outcome("2", 0) == "egresado"
+
+
+class TestRecoveryPanelNextModuleStartFilter:
+    """Tests for the frontend filtering logic that removes recovery entries once
+    the next module has started.
+
+    The filter mirrors the logic in RecoveriesPage.js:
+      - A student is hidden when ALL their subjects have next_module_start <= today.
+      - Subjects with no next_module_start are always visible.
+    """
+
+    def _student_has_active_subjects(self, failed_subjects, today):
+        """Mirror of the `hasActiveSubjects` filter in RecoveriesPage.js."""
+        return any(
+            not (s.get("next_module_start") and s["next_module_start"] <= today)
+            for s in failed_subjects
+        )
+
+    def test_no_next_module_start_always_visible(self):
+        subjects = [{"next_module_start": None}]
+        assert self._student_has_active_subjects(subjects, "2026-08-01") is True
+
+    def test_next_module_not_started_yet_is_visible(self):
+        subjects = [{"next_module_start": "2026-09-01"}]
+        assert self._student_has_active_subjects(subjects, "2026-08-01") is True
+
+    def test_next_module_started_today_is_hidden(self):
+        subjects = [{"next_module_start": "2026-08-01"}]
+        assert self._student_has_active_subjects(subjects, "2026-08-01") is False
+
+    def test_next_module_already_started_is_hidden(self):
+        subjects = [{"next_module_start": "2026-07-15"}]
+        assert self._student_has_active_subjects(subjects, "2026-08-01") is False
+
+    def test_mixed_subjects_visible_if_any_active(self):
+        """If at least one subject is still active, the student card stays visible."""
+        subjects = [
+            {"next_module_start": "2026-07-01"},   # already started → hidden
+            {"next_module_start": "2026-09-01"},   # not yet started → visible
+        ]
+        assert self._student_has_active_subjects(subjects, "2026-08-01") is True
+
+    def test_all_subjects_started_hidden(self):
+        subjects = [
+            {"next_module_start": "2026-07-01"},
+            {"next_module_start": "2026-07-15"},
+        ]
+        assert self._student_has_active_subjects(subjects, "2026-08-01") is False
+
+
+class TestRecoveryPanelFinalStatus:
+    """Tests for the 'Aprobado / Reprobado' display logic in RecoveriesPage.js.
+
+    After recovery_close passes, every entry must show a final result:
+      - 'processed_passed' or 'teacher_approved'  → Aprobado
+      - anything else                              → Reprobado
+    """
+
+    def _is_final_approved(self, subject, today):
+        recovery_closed = subject.get("recovery_close") and subject["recovery_close"] <= today
+        if not recovery_closed:
+            return None  # Not yet final
+        status = subject.get("status", "pending")
+        return status in ("processed_passed", "teacher_approved")
+
+    def test_processed_passed_after_close_is_aprobado(self):
+        subject = {"recovery_close": "2026-07-15", "status": "processed_passed"}
+        assert self._is_final_approved(subject, "2026-07-16") is True
+
+    def test_teacher_approved_after_close_is_aprobado(self):
+        subject = {"recovery_close": "2026-07-15", "status": "teacher_approved"}
+        assert self._is_final_approved(subject, "2026-07-15") is True
+
+    def test_processed_failed_after_close_is_reprobado(self):
+        subject = {"recovery_close": "2026-07-15", "status": "processed_failed"}
+        assert self._is_final_approved(subject, "2026-07-16") is False
+
+    def test_pending_after_close_is_reprobado(self):
+        subject = {"recovery_close": "2026-07-15", "status": "pending"}
+        assert self._is_final_approved(subject, "2026-07-20") is False
+
+    def test_before_recovery_close_is_not_final(self):
+        subject = {"recovery_close": "2026-07-15", "status": "pending"}
+        assert self._is_final_approved(subject, "2026-07-14") is None
+
+    def test_no_recovery_close_is_not_final(self):
+        subject = {"recovery_close": None, "status": "processed_passed"}
+        assert self._is_final_approved(subject, "2026-08-01") is None
+
+
+class TestStudentsPageStatusLabel:
+    """Tests for the fallback status badge in StudentsPage.js.
+
+    Before the fix, any non-'activo' estado was labelled 'Egresado'.
+    After the fix, each estado maps to its correct label.
+    """
+
+    def _status_label(self, estado):
+        """Mirror of the statusLabel function moved outside the if-block."""
+        st = estado or 'activo'
+        if st == 'activo':
+            return 'Activo'
+        if st == 'egresado':
+            return 'Egresado'
+        if st == 'retirado':
+            return 'Retirado'
+        if st == 'pendiente_recuperacion':
+            return 'Pend. Rec.'
+        return st
+
+    def test_activo_shows_activo(self):
+        assert self._status_label('activo') == 'Activo'
+
+    def test_egresado_shows_egresado(self):
+        assert self._status_label('egresado') == 'Egresado'
+
+    def test_retirado_shows_retirado(self):
+        assert self._status_label('retirado') == 'Retirado'
+
+    def test_pendiente_recuperacion_shows_pend_rec(self):
+        assert self._status_label('pendiente_recuperacion') == 'Pend. Rec.'
+
+    def test_none_estado_defaults_to_activo(self):
+        assert self._status_label(None) == 'Activo'
+
+    def test_pendiente_recuperacion_not_shown_as_egresado(self):
+        """Critical: the old bug mapped any non-activo estado to 'Egresado'."""
+        assert self._status_label('pendiente_recuperacion') != 'Egresado'
+
+    def test_retirado_not_shown_as_egresado(self):
+        assert self._status_label('retirado') != 'Egresado'
