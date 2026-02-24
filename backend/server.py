@@ -1838,20 +1838,20 @@ async def delete_subject(subject_id: str, user=Depends(get_current_user)):
 
 @api_router.get("/subjects/teachers")
 async def get_subjects_teachers(user=Depends(get_current_user)):
-    """Return a map of subject_id -> teacher_name for all teachers.
+    """Return a map of subject_id -> comma-separated teacher names for all teachers.
     Accessible by all authenticated users (including students) so the
     StudentCourseSelector can display the teacher's name per subject
     without requiring admin/profesor permissions.
-    If multiple teachers share the same subject, the last one found is used."""
+    If multiple teachers share the same subject, all their names are included."""
     teachers = await db.users.find(
         {"role": "profesor"},
         {"_id": 0, "id": 1, "name": 1, "subject_ids": 1}
     ).to_list(500)
-    result = {}
+    names_by_subject: dict = {}
     for t in teachers:
         for sid in (t.get("subject_ids") or []):
-            result[sid] = t["name"]
-    return result
+            names_by_subject.setdefault(sid, []).append(t["name"])
+    return {sid: ", ".join(names) for sid, names in names_by_subject.items()}
 
 # --- Courses Routes ---
 @api_router.get("/courses")
