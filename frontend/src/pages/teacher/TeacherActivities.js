@@ -172,7 +172,7 @@ export default function TeacherActivities() {
       });
       setForm(prev => ({
         ...prev,
-        files: [...prev.files, { name: res.data.filename, url: `${BACKEND_URL}${res.data.url}` }]
+        files: [...prev.files, { name: res.data.filename, url: res.data.url.startsWith('http') ? res.data.url : `${BACKEND_URL}${res.data.url}` }]
       }));
       toast.success(`Archivo "${file.name}" subido`);
     } catch (err) {
