@@ -2860,7 +2860,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     # Load subjects for per-subject grade calculations
     all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(1000)
     subject_name_map = {s["id"]: s["name"] for s in all_subjects}
-    subject_module_map = {s["id"]: s.get("module_number", 1) for s in all_subjects}
+    subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subjects}
     
     # Cargar TODAS las grades de todos los cursos en UNA sola query (optimización crítica)
     all_course_ids = [c["id"] for c in courses]
@@ -3067,8 +3067,9 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     # Pre-load all courses and subjects for efficient lookups
     all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
     course_map = {c["id"]: c for c in all_courses}
-    all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+    all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(1000)
     subject_map = {s["id"]: s["name"] for s in all_subjects}
+    subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subjects}
 
     def get_subject_names(course_doc):
         """Return list of ALL subject names for a course (fallback)."""
@@ -3095,8 +3096,9 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 failing.append(subject_map[sid])
         return failing if failing else get_subject_names(course_doc)
 
-    def get_failing_subjects_with_ids(student_id, course_id, course_doc, grades_index):
-        """Return list of (subject_id, subject_name, avg) for each failing subject."""
+    def get_failing_subjects_with_ids(student_id, course_id, course_doc, grades_index, filter_module=None):
+        """Return list of (subject_id, subject_name, avg) for each failing subject.
+        If filter_module is provided, only subjects belonging to that module are returned."""
         sids = course_doc.get("subject_ids") or []
         if not sids and course_doc.get("subject_id"):
             sids = [course_doc["subject_id"]]
@@ -3104,6 +3106,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             return []
         failing = []
         for sid in sids:
+            if filter_module is not None and subject_module_map.get(sid, 1) != filter_module:
+                continue
             values = grades_index.get((student_id, course_id, sid), [])
             avg = sum(values) / len(values) if values else 0.0
             if avg < 3.0 and sid in subject_map:
@@ -3276,7 +3280,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "failed_subjects": []
                     }
                 
-                failing_subjects = get_failing_subjects_with_ids(student_id, course["id"], course, course_grades_index)
+                failing_subjects = get_failing_subjects_with_ids(student_id, course["id"], course, course_grades_index, module_number)
                 if failing_subjects:
                     for subj_id, subj_name, subj_avg in failing_subjects:
                         if (student_id, course["id"], subj_id) in already_tracked:
@@ -3537,7 +3541,7 @@ async def get_student_recoveries(user=Depends(get_current_user)):
     
     student_id = user["id"]
     program_modules = user.get("program_modules") or {}
-    student_global_module = user.get("module", 1)
+    student_global_module = user.get("module") or 1
     
     # Get all failed subjects not yet fully processed for this student
     # Includes records where teacher has graded (recovery_completed) so student can see the outcome
@@ -3547,15 +3551,26 @@ async def get_student_recoveries(user=Depends(get_current_user)):
         "recovery_rejected": {"$ne": True}
     }, {"_id": 0}).to_list(100)
     
-    # Filter by student's current module for each program
+    # Load actual subject module info from DB to validate against stale/incorrect records
+    all_subject_docs = await db.subjects.find({}, {"_id": 0, "id": 1, "module_number": 1}).to_list(1000)
+    db_subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subject_docs}
+
+    # Filter by student's current module for each program.
+    # Use the subject's actual module from the DB when available (defense against
+    # stale records where module_number in failed_subjects does not match the subject).
     filtered = []
     for subject in failed_subjects:
         prog_id = subject.get("program_id", "")
-        subject_module = subject.get("module_number")
+        # Prefer actual subject module from DB over the value stored in the record
+        sid = subject.get("subject_id")
+        if sid and sid in db_subject_module_map:
+            subject_module = db_subject_module_map[sid]
+        else:
+            subject_module = subject.get("module_number")
         if subject_module is None:
             filtered.append(subject)
             continue
-        current_module = program_modules.get(prog_id, student_global_module)
+        current_module = program_modules.get(prog_id) or student_global_module
         if subject_module == current_module:
             filtered.append(subject)
     failed_subjects = filtered

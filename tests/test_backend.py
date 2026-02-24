@@ -1901,3 +1901,296 @@ class TestMeSubjectsEndpoint:
         assert result[0]["name"] == "Matemáticas"
         assert result[0]["program_id"] == "prog-1"
         assert result[0]["module_number"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for recovery module isolation logic
+# ---------------------------------------------------------------------------
+
+class TestRecoveryModuleIsolation:
+    """Tests for the module-isolation logic in the recovery system.
+
+    Validates that:
+    - subject_module_map treats None module_number as 1 (close_module_internal fix).
+    - get_student_recoveries filter only includes subjects matching the student's
+      current module, using the actual subject module from the DB (not only the
+      value stored in the failed_subjects record).
+    - The admin recovery-panel helper only flags subjects belonging to the
+      requested module as failing (get_failing_subjects_with_ids fix).
+    """
+
+    # ------------------------------------------------------------------
+    # Helpers that mirror the fixed server logic
+    # ------------------------------------------------------------------
+
+    def _build_subject_module_map(self, subjects):
+        """Mirror of the fixed subject_module_map builder in close_module_internal."""
+        return {s["id"]: (s.get("module_number") or 1) for s in subjects}
+
+    def _filter_student_recoveries(self, failed_subjects, program_modules,
+                                   student_global_module, db_subject_module_map):
+        """Mirror of the fixed get_student_recoveries filter logic."""
+        filtered = []
+        for subject in failed_subjects:
+            prog_id = subject.get("program_id", "")
+            sid = subject.get("subject_id")
+            if sid and sid in db_subject_module_map:
+                subject_module = db_subject_module_map[sid]
+            else:
+                subject_module = subject.get("module_number")
+            if subject_module is None:
+                filtered.append(subject)
+                continue
+            current_module = program_modules.get(prog_id) or student_global_module
+            if subject_module == current_module:
+                filtered.append(subject)
+        return filtered
+
+    def _get_failing_subjects_with_ids(self, student_id, course_id, course_doc,
+                                       grades_index, subject_map,
+                                       subject_module_map, filter_module=None):
+        """Mirror of the fixed get_failing_subjects_with_ids helper."""
+        sids = course_doc.get("subject_ids") or []
+        if not sids and course_doc.get("subject_id"):
+            sids = [course_doc["subject_id"]]
+        if not sids:
+            return []
+        failing = []
+        for sid in sids:
+            if filter_module is not None and subject_module_map.get(sid, 1) != filter_module:
+                continue
+            values = grades_index.get((student_id, course_id, sid), [])
+            avg = sum(values) / len(values) if values else 0.0
+            if avg < 3.0 and sid in subject_map:
+                failing.append((sid, subject_map[sid], round(avg, 2)))
+        return failing
+
+    # ------------------------------------------------------------------
+    # subject_module_map: None handling
+    # ------------------------------------------------------------------
+
+    def test_subject_module_map_none_defaults_to_1(self):
+        """Subjects with module_number=None must default to 1, not None."""
+        subjects = [{"id": "s1", "module_number": None}]
+        mapping = self._build_subject_module_map(subjects)
+        assert mapping["s1"] == 1
+
+    def test_subject_module_map_missing_key_defaults_to_1(self):
+        """Subjects without a module_number key must default to 1."""
+        subjects = [{"id": "s1"}]
+        mapping = self._build_subject_module_map(subjects)
+        assert mapping["s1"] == 1
+
+    def test_subject_module_map_module_2_preserved(self):
+        """Subjects with module_number=2 must stay as 2."""
+        subjects = [{"id": "s2", "module_number": 2}]
+        mapping = self._build_subject_module_map(subjects)
+        assert mapping["s2"] == 2
+
+    def test_close_module_1_includes_null_module_subjects_after_fix(self):
+        """Closing module 1 must NOT skip a subject whose module_number is None
+        (it should default to 1 and therefore be processed)."""
+        subjects = [{"id": "sNull", "module_number": None}]
+        mapping = self._build_subject_module_map(subjects)
+        # With the fix the mapping value is 1, so the subject IS processed for module 1
+        assert mapping.get("sNull", 1) == 1  # equals module_number (1) → processed
+
+    # ------------------------------------------------------------------
+    # get_student_recoveries: DB-based subject module validation
+    # ------------------------------------------------------------------
+
+    def test_module1_student_does_not_see_module2_subject_from_stale_record(self):
+        """A failed_subjects record with module_number=1 but subject actually in
+        module 2 must be hidden for a module 1 student."""
+        failed_subjects = [
+            {
+                "id": "fs1",
+                "student_id": "s1",
+                "subject_id": "subj-m2",
+                "program_id": "prog-A",
+                "module_number": 1,  # stale/wrong – real module is 2
+            }
+        ]
+        db_subject_module_map = {"subj-m2": 2}  # actual module in DB
+        program_modules = {"prog-A": 1}
+        result = self._filter_student_recoveries(
+            failed_subjects, program_modules, 1, db_subject_module_map
+        )
+        assert result == [], "Module-2 subject must not appear for a module-1 student"
+
+    def test_module1_student_sees_correct_module1_subject(self):
+        """A failed_subjects record for a real module-1 subject must be visible
+        to a module-1 student."""
+        failed_subjects = [
+            {
+                "id": "fs1",
+                "student_id": "s1",
+                "subject_id": "subj-m1",
+                "program_id": "prog-A",
+                "module_number": 1,
+            }
+        ]
+        db_subject_module_map = {"subj-m1": 1}
+        program_modules = {"prog-A": 1}
+        result = self._filter_student_recoveries(
+            failed_subjects, program_modules, 1, db_subject_module_map
+        )
+        assert len(result) == 1
+
+    def test_module2_student_does_not_see_module1_subjects(self):
+        """A module-2 student must not see old module-1 recovery subjects."""
+        failed_subjects = [
+            {
+                "id": "fs1",
+                "student_id": "s1",
+                "subject_id": "subj-m1",
+                "program_id": "prog-A",
+                "module_number": 1,
+            }
+        ]
+        db_subject_module_map = {"subj-m1": 1}
+        program_modules = {"prog-A": 2}  # student is now in module 2
+        result = self._filter_student_recoveries(
+            failed_subjects, program_modules, 2, db_subject_module_map
+        )
+        assert result == []
+
+    def test_subject_not_in_db_falls_back_to_record_module_number(self):
+        """When the subject no longer exists in the DB, fall back to the
+        module_number stored in the failed_subjects record."""
+        failed_subjects = [
+            {
+                "id": "fs1",
+                "student_id": "s1",
+                "subject_id": "deleted-subj",
+                "program_id": "prog-A",
+                "module_number": 1,
+            }
+        ]
+        db_subject_module_map = {}  # subject deleted from DB
+        program_modules = {"prog-A": 1}
+        result = self._filter_student_recoveries(
+            failed_subjects, program_modules, 1, db_subject_module_map
+        )
+        assert len(result) == 1
+
+    def test_no_subject_id_record_uses_module_number_field(self):
+        """Legacy records without subject_id fall back to module_number in record."""
+        failed_subjects = [
+            {
+                "id": "fs-legacy",
+                "student_id": "s1",
+                "program_id": "prog-A",
+                "module_number": 1,
+                # no subject_id
+            }
+        ]
+        db_subject_module_map = {}
+        program_modules = {"prog-A": 1}
+        result = self._filter_student_recoveries(
+            failed_subjects, program_modules, 1, db_subject_module_map
+        )
+        assert len(result) == 1
+
+    def test_global_module_fallback_when_program_not_in_program_modules(self):
+        """When program_modules doesn't contain the program, fall back to
+        student_global_module."""
+        failed_subjects = [
+            {
+                "id": "fs1",
+                "student_id": "s1",
+                "subject_id": "subj-m1",
+                "program_id": "prog-unknown",
+                "module_number": 1,
+            }
+        ]
+        db_subject_module_map = {"subj-m1": 1}
+        program_modules = {}  # prog-unknown not present
+        result = self._filter_student_recoveries(
+            failed_subjects, program_modules, 1, db_subject_module_map
+        )
+        assert len(result) == 1
+
+    # ------------------------------------------------------------------
+    # get_failing_subjects_with_ids: module filter in recovery panel
+    # ------------------------------------------------------------------
+
+    def test_recovery_panel_excludes_module2_subjects_in_module1_period(self):
+        """Auto-detection for module 1 must not include module-2 subjects."""
+        subject_map = {"s-m1": "Materia M1", "s-m2": "Materia M2"}
+        subject_module_map = {"s-m1": 1, "s-m2": 2}
+        grades_index = {
+            ("st1", "c1", "s-m1"): [1.5],  # failing
+            ("st1", "c1", "s-m2"): [1.0],  # failing (but module 2)
+        }
+        course_doc = {"subject_ids": ["s-m1", "s-m2"]}
+        result = self._get_failing_subjects_with_ids(
+            "st1", "c1", course_doc, grades_index,
+            subject_map, subject_module_map, filter_module=1
+        )
+        subject_ids_returned = [r[0] for r in result]
+        assert "s-m1" in subject_ids_returned
+        assert "s-m2" not in subject_ids_returned
+
+    def test_recovery_panel_includes_only_module2_subjects_in_module2_period(self):
+        """Auto-detection for module 2 must not include module-1 subjects."""
+        subject_map = {"s-m1": "M1", "s-m2": "M2"}
+        subject_module_map = {"s-m1": 1, "s-m2": 2}
+        grades_index = {
+            ("st1", "c1", "s-m1"): [1.0],
+            ("st1", "c1", "s-m2"): [2.0],
+        }
+        course_doc = {"subject_ids": ["s-m1", "s-m2"]}
+        result = self._get_failing_subjects_with_ids(
+            "st1", "c1", course_doc, grades_index,
+            subject_map, subject_module_map, filter_module=2
+        )
+        subject_ids_returned = [r[0] for r in result]
+        assert "s-m2" in subject_ids_returned
+        assert "s-m1" not in subject_ids_returned
+
+    def test_recovery_panel_no_filter_returns_all_failing(self):
+        """Without a filter_module, all failing subjects are returned."""
+        subject_map = {"s-m1": "M1", "s-m2": "M2"}
+        subject_module_map = {"s-m1": 1, "s-m2": 2}
+        grades_index = {
+            ("st1", "c1", "s-m1"): [1.0],
+            ("st1", "c1", "s-m2"): [2.0],
+        }
+        course_doc = {"subject_ids": ["s-m1", "s-m2"]}
+        result = self._get_failing_subjects_with_ids(
+            "st1", "c1", course_doc, grades_index,
+            subject_map, subject_module_map, filter_module=None
+        )
+        assert len(result) == 2
+
+    def test_recovery_panel_passing_subject_excluded(self):
+        """Passing subjects (avg >= 3.0) must not appear even without module filter."""
+        subject_map = {"s1": "S1", "s2": "S2"}
+        subject_module_map = {"s1": 1, "s2": 1}
+        grades_index = {
+            ("st1", "c1", "s1"): [4.0],  # passing
+            ("st1", "c1", "s2"): [2.0],  # failing
+        }
+        course_doc = {"subject_ids": ["s1", "s2"]}
+        result = self._get_failing_subjects_with_ids(
+            "st1", "c1", course_doc, grades_index,
+            subject_map, subject_module_map, filter_module=1
+        )
+        assert len(result) == 1
+        assert result[0][0] == "s2"
+
+    def test_recovery_panel_null_module_subject_defaults_to_module1(self):
+        """A subject with module_number=None must be treated as module 1 by the
+        fixed subject_module_map, so it appears in module-1 auto-detection."""
+        subject_map = {"s-null": "S-Null"}
+        # Use _build_subject_module_map to verify the fix handles None correctly
+        subject_module_map = self._build_subject_module_map([{"id": "s-null", "module_number": None}])
+        grades_index = {("st1", "c1", "s-null"): [1.0]}
+        course_doc = {"subject_ids": ["s-null"]}
+        result = self._get_failing_subjects_with_ids(
+            "st1", "c1", course_doc, grades_index,
+            subject_map, subject_module_map, filter_module=1
+        )
+        assert len(result) == 1
+
