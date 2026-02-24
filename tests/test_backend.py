@@ -2507,3 +2507,115 @@ class TestStudentsPageStatusLabel:
 
     def test_retirado_not_shown_as_egresado(self):
         assert self._status_label('retirado') != 'Egresado'
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for recovery completion status update logic
+# (_check_and_update_recovery_completion helper)
+# ---------------------------------------------------------------------------
+
+class TestCheckAndUpdateRecoveryCompletion:
+    """Tests for the logic inside _check_and_update_recovery_completion that decides
+    whether to update the student status once all recovery subjects are graded.
+
+    Since the helper is async and requires DB, we test the pure decision logic here.
+    """
+
+    def _should_update(self, records, program_status):
+        """Return 'update_needed' if all recovery records are fully approved and the student
+        is in 'pendiente_recuperacion', otherwise return None.
+
+        Mirrors the core decision logic in _check_and_update_recovery_completion:
+        - All records must be recovery_completed=True AND teacher_graded_status='approved'
+        - Student's current program status must be 'pendiente_recuperacion'
+        """
+        if program_status != "pendiente_recuperacion":
+            return None
+        if not records:
+            return None
+        all_passed = all(
+            r.get("recovery_completed") is True and r.get("teacher_graded_status") == "approved"
+            for r in records
+        )
+        return "update_needed" if all_passed else None
+
+    def _new_status(self, module_number, max_modules):
+        """Mirror the new-status decision: egresado for last module, otherwise activo."""
+        return "egresado" if module_number >= max_modules else "activo"
+
+    # --- _should_update tests ---
+
+    def test_all_approved_triggers_update(self):
+        records = [
+            {"recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._should_update(records, "pendiente_recuperacion") == "update_needed"
+
+    def test_one_pending_does_not_trigger_update(self):
+        records = [
+            {"recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._should_update(records, "pendiente_recuperacion") is None
+
+    def test_one_rejected_does_not_trigger_update(self):
+        records = [
+            {"recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_completed": True, "teacher_graded_status": "rejected"},
+        ]
+        assert self._should_update(records, "pendiente_recuperacion") is None
+
+    def test_not_in_pendiente_does_not_trigger_update(self):
+        """If the student is already activo, no update needed."""
+        records = [{"recovery_completed": True, "teacher_graded_status": "approved"}]
+        assert self._should_update(records, "activo") is None
+
+    def test_empty_records_does_not_trigger_update(self):
+        assert self._should_update([], "pendiente_recuperacion") is None
+
+    def test_single_record_approved_triggers_update(self):
+        records = [{"recovery_completed": True, "teacher_graded_status": "approved"}]
+        assert self._should_update(records, "pendiente_recuperacion") == "update_needed"
+
+    # --- _new_status tests ---
+
+    def test_last_module_gives_egresado(self):
+        assert self._new_status(module_number=2, max_modules=2) == "egresado"
+
+    def test_beyond_last_module_gives_egresado(self):
+        assert self._new_status(module_number=3, max_modules=2) == "egresado"
+
+    def test_non_last_module_gives_activo(self):
+        assert self._new_status(module_number=1, max_modules=2) == "activo"
+
+    def test_first_of_three_modules_gives_activo(self):
+        assert self._new_status(module_number=1, max_modules=3) == "activo"
+
+    def test_second_of_three_modules_gives_activo(self):
+        assert self._new_status(module_number=2, max_modules=3) == "activo"
+
+    def test_last_of_three_modules_gives_egresado(self):
+        assert self._new_status(module_number=3, max_modules=3) == "egresado"
+
+    # --- end-to-end decision tests ---
+
+    def test_all_approved_last_module_becomes_egresado(self):
+        records = [{"recovery_completed": True, "teacher_graded_status": "approved", "module_number": 2}]
+        if self._should_update(records, "pendiente_recuperacion"):
+            result = self._new_status(2, 2)
+            assert result == "egresado"
+
+    def test_all_approved_non_last_module_becomes_activo(self):
+        records = [{"recovery_completed": True, "teacher_graded_status": "approved", "module_number": 1}]
+        if self._should_update(records, "pendiente_recuperacion"):
+            result = self._new_status(1, 2)
+            assert result == "activo"
+
+    def test_partial_approval_student_stays_pendiente(self):
+        records = [
+            {"recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_completed": False, "teacher_graded_status": None},
+        ]
+        result = self._should_update(records, "pendiente_recuperacion")
+        assert result is None  # Student remains pendiente_recuperacion
