@@ -4557,6 +4557,10 @@ async def get_audit_logs(
 
 app.include_router(api_router)
 
+@app.get("/")
+async def app_root():
+    return {"message": "Corporación Social Educando API"}
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     # Shutdown scheduler gracefully
