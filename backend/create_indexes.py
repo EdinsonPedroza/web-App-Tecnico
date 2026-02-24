@@ -18,8 +18,10 @@ logger = logging.getLogger(__name__)
 async def create_indexes(db):
     """Crea todos los índices necesarios para rendimiento óptimo."""
     indexes = [
-        # users
-        ("users", [("email", 1)], {"unique": True, "sparse": True, "name": "users_email_unique"}),
+        # users — email uniqueness only applies to non-null values (partialFilterExpression
+        # excludes documents where email is missing or null from the unique constraint,
+        # allowing multiple users such as students who have no email address).
+        ("users", [("email", 1)], {"unique": True, "partialFilterExpression": {"email": {"$type": "string"}}, "name": "users_email_unique"}),
         ("users", [("cedula", 1)], {"sparse": True, "name": "users_cedula"}),
         ("users", [("role", 1)], {"name": "users_role"}),
         ("users", [("estado", 1)], {"name": "users_estado"}),
@@ -67,7 +69,21 @@ async def create_indexes(db):
             logger.info(f"Índice creado/verificado: {collection_name}.{options.get('name', str(keys))}")
             created += 1
         except Exception as e:
-            if "already exists" in str(e).lower() or "IndexOptionsConflict" in type(e).__name__:
+            if "IndexOptionsConflict" in type(e).__name__ or "IndexOptionsConflict" in str(e):
+                # Index exists with different options — drop and recreate so the new
+                # options (e.g. partialFilterExpression) take effect.
+                index_name = options.get("name")
+                try:
+                    if index_name:
+                        await db[collection_name].drop_index(index_name)
+                    background_options = {**options, "background": True}
+                    await db[collection_name].create_index(keys, **background_options)
+                    logger.info(f"Índice recreado con nuevas opciones: {collection_name}.{index_name}")
+                    created += 1
+                except Exception as recreate_e:
+                    logger.error(f"Error recreando índice en {collection_name}.{index_name}: {recreate_e}")
+                    errors += 1
+            elif "already exists" in str(e).lower():
                 skipped += 1
             else:
                 logger.error(f"Error creando índice en {collection_name}: {e}")
