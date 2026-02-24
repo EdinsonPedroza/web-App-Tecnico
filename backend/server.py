@@ -916,6 +916,92 @@ def derive_estado_from_program_statuses(program_statuses: dict) -> str:
     return "retirado"
 
 
+async def _check_and_update_recovery_completion(student_id: str, course_id: str):
+    """Check if all approved recovery subjects for a student in a course are now completed
+    and approved by the teacher. If so, immediately update the student's program status to
+    'activo' (or 'egresado' for the last module) without waiting for the recovery_close date.
+
+    This is called after a teacher grades a recovery activity as approved so that the student
+    exits 'pendiente_recuperacion' as soon as all their recoveries are resolved.
+    """
+    # Fetch the course to get program_id and module info
+    course = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    if not course:
+        return
+    prog_id = course.get("program_id", "")
+
+    # Find all unprocessed, admin-approved recovery records for this student+course
+    all_records = await db.failed_subjects.find(
+        {
+            "student_id": student_id,
+            "course_id": course_id,
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_expired": {"$ne": True},
+        },
+        {"_id": 0},
+    ).to_list(None)
+
+    if not all_records:
+        return
+
+    # Only proceed if every record is completed and approved by teacher
+    all_passed = all(
+        r.get("recovery_completed") is True and r.get("teacher_graded_status") == "approved"
+        for r in all_records
+    )
+    if not all_passed:
+        return
+
+    # Fetch current student document
+    student = await db.users.find_one({"id": student_id}, {"_id": 0})
+    if not student:
+        return
+
+    program_statuses = student.get("program_statuses") or {}
+
+    # Only act when the student is still in pendiente_recuperacion for this program
+    if program_statuses.get(prog_id) != "pendiente_recuperacion":
+        return
+
+    # Determine new status: egresado if this was the last module, otherwise activo.
+    # Use the student's tracked module for this program as the authoritative source;
+    # fall back to the module_number stored in the recovery records.
+    module_number = (
+        (student.get("program_modules") or {}).get(prog_id)
+        or student.get("module")
+        or all_records[0].get("module_number", 1)
+    )
+    program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
+    max_modules = max(len(program.get("modules", [])) if program else 2, 2)
+
+    if module_number >= max_modules:
+        program_statuses[prog_id] = "egresado"
+    else:
+        program_statuses[prog_id] = "activo"
+
+    new_estado = derive_estado_from_program_statuses(program_statuses)
+    await db.users.update_one(
+        {"id": student_id},
+        {"$set": {"estado": new_estado, "program_statuses": program_statuses}},
+    )
+    logger.info(
+        f"Student {student_id} status updated to {program_statuses.get(prog_id)} "
+        f"after all recovery subjects approved in course {course_id}"
+    )
+    await log_audit(
+        "recovery_all_approved",
+        "system",
+        "system",
+        {
+            "student_id": student_id,
+            "course_id": course_id,
+            "new_status": program_statuses.get(prog_id),
+            "trigger": "all_recoveries_graded_approved",
+        },
+    )
+
+
 def sanitize_string(input_str: str, max_length: int = 500) -> str:
     """Sanitize string input to prevent injection attacks"""
     if not input_str or not isinstance(input_str, str):
@@ -2466,7 +2552,9 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                 grade_value = 3.0
             
             # Mark ONLY this specific failed_subjects record as completed+approved.
-            # Promotion/graduation is deferred to check_and_close_modules after recovery_close date.
+            # Promotion/graduation (module advancement) is deferred to check_and_close_modules
+            # after recovery_close date, but the student's estado is updated immediately if all
+            # their recoveries are now approved (see _check_and_update_recovery_completion).
             await db.failed_subjects.update_one(
                 fs_filter,
                 {"$set": {
@@ -2475,6 +2563,8 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                     "completed_at": datetime.now(timezone.utc).isoformat()
                 }}
             )
+            # Immediately exit pendiente_recuperacion if all recovery subjects are now approved
+            await _check_and_update_recovery_completion(req.student_id, req.course_id)
         else:
             # Recovery rejected by teacher: ONLY mark the record as completed+rejected.
             # Do NOT remove the student from the group; that happens at recovery_close time.
