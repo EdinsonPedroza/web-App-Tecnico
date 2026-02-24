@@ -28,3 +28,4 @@ typer>=0.9.0
 apscheduler>=3.10.4
 gunicorn>=21.2.0
 openpyxl>=3.1.0
+cloudinary>=1.36.0
