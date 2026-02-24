@@ -267,6 +267,21 @@ export default function CoursesPage() {
     }
   };
 
+  const handlePurgeAll = async () => {
+    if (!window.confirm(
+      '⚠️ ADVERTENCIA: Esto eliminará TODOS los grupos y sus datos asociados ' +
+      '(actividades, calificaciones, entregas, videos, recuperaciones).\n\n' +
+      '¿Estás seguro de que deseas continuar? Esta acción no se puede deshacer.'
+    )) return;
+    try {
+      const res = await api.delete('/admin/purge-group-data');
+      toast.success(`Todos los grupos eliminados: ${res.data.courses_deleted} grupos, ${res.data.activities_deleted} actividades`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error al purgar datos de grupos');
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -276,6 +291,7 @@ export default function CoursesPage() {
             <p className="text-muted-foreground mt-1 text-xl">Gestiona grupos por programa, materia y cohorte</p>
           </div>
           <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nuevo Grupo</Button>
+          <Button onClick={handlePurgeAll} variant="destructive" size="lg" className="ml-2" aria-label="Eliminar todos los grupos y datos asociados permanentemente"><Trash2 className="h-5 w-5" /> Purgar Todos</Button>
         </div>
 
         {/* List filters */}

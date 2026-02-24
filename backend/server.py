@@ -712,6 +712,35 @@ async def create_initial_data():
     if migrated_count > 0:
         logger.info(f"Migrated {migrated_count} students: initialized program_statuses field")
     
+    # Purge orphaned group-related data: delete records whose course_id no longer exists
+    logger.info("Checking for orphaned group/course data...")
+    existing_course_ids = [c["id"] for c in await db.courses.find({}, {"_id": 0, "id": 1}).to_list(5000)]
+    if existing_course_ids:
+        orphan_filter = {"course_id": {"$nin": existing_course_ids}}
+    else:
+        orphan_filter = {"course_id": {"$exists": True}}
+    orphan_activities = await db.activities.delete_many(orphan_filter)
+    orphan_grades = await db.grades.delete_many(orphan_filter)
+    orphan_submissions = await db.submissions.delete_many(orphan_filter)
+    orphan_videos = await db.class_videos.delete_many(orphan_filter)
+    orphan_recovery = await db.recovery_enabled.delete_many(orphan_filter)
+    orphan_failed = await db.failed_subjects.delete_many(orphan_filter)
+    total_purged = (orphan_activities.deleted_count + orphan_grades.deleted_count +
+                    orphan_submissions.deleted_count + orphan_videos.deleted_count +
+                    orphan_recovery.deleted_count + orphan_failed.deleted_count)
+    if total_purged > 0:
+        logger.info(
+            f"Purged {total_purged} orphaned records: "
+            f"{orphan_activities.deleted_count} activities, "
+            f"{orphan_grades.deleted_count} grades, "
+            f"{orphan_submissions.deleted_count} submissions, "
+            f"{orphan_videos.deleted_count} videos, "
+            f"{orphan_recovery.deleted_count} recovery_enabled, "
+            f"{orphan_failed.deleted_count} failed_subjects"
+        )
+    else:
+        logger.info("No orphaned group/course data found")
+
     logger.info("Datos iniciales verificados/creados exitosamente")
     logger.info("5 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
     logger.info(f"Modo de almacenamiento de contraseñas: {PASSWORD_STORAGE_MODE}")
@@ -4176,136 +4205,6 @@ async def seed_data():
     ]
     await db.users.insert_many(users)
     
-    # Create sample subjects references for courses
-    admin_subj = await db.subjects.find_one({"program_id": "prog-admin", "name": "Fundamentos de Administración"}, {"_id": 0})
-    infancia_subj = await db.subjects.find_one({"program_id": "prog-infancia", "name": "Educación y pedagogía"}, {"_id": 0})
-    sst_subj = await db.subjects.find_one({"program_id": "prog-sst", "name": "Fundamentos en Seguridad y Salud en el Trabajo"}, {"_id": 0})
-    
-    # Create Courses
-    course1_id = "course-1"
-    course2_id = "course-2"
-    course3_id = "course-3"
-    
-    courses = [
-        {
-            "id": course1_id,
-            "name": "Fundamentos de Administración - Grupo A 2025",
-            "program_id": "prog-admin",
-            "subject_id": admin_subj["id"] if admin_subj else "",
-            "teacher_id": teacher1_id,
-            "year": 2025,
-            "student_ids": [student1_id],
-            "active": True,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        },
-        {
-            "id": course2_id,
-            "name": "Educación y Pedagogía - Grupo A 2025",
-            "program_id": "prog-infancia",
-            "subject_id": infancia_subj["id"] if infancia_subj else "",
-            "teacher_id": teacher1_id,
-            "year": 2025,
-            "student_ids": [student2_id],
-            "active": True,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        },
-        {
-            "id": course3_id,
-            "name": "Fundamentos SST - Grupo A 2025",
-            "program_id": "prog-sst",
-            "subject_id": sst_subj["id"] if sst_subj else "",
-            "teacher_id": teacher2_id,
-            "year": 2025,
-            "student_ids": [student3_id],
-            "active": True,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-    ]
-    await db.courses.insert_many(courses)
-    
-    # Create sample Activities
-    activities = [
-        {
-            "id": "act-1",
-            "course_id": course1_id,
-            "activity_number": 1,
-            "title": "Ensayo sobre principios administrativos",
-            "description": "Elaborar un ensayo de 2 páginas sobre los principios fundamentales de la administración según Henri Fayol.",
-            "start_date": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
-            "due_date": (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
-            "files": [],
-            "active": True,
-            "created_by": teacher1_id,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        },
-        {
-            "id": "act-2",
-            "course_id": course1_id,
-            "activity_number": 2,
-            "title": "Taller de organización empresarial",
-            "description": "Realizar el taller práctico sobre estructura organizacional. Descargar el archivo adjunto.",
-            "start_date": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
-            "due_date": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
-            "files": [{"name": "taller_organizacion.pdf", "url": "#"}],
-            "active": True,
-            "created_by": teacher1_id,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        },
-        {
-            "id": "act-3",
-            "course_id": course2_id,
-            "activity_number": 1,
-            "title": "Observación pedagógica",
-            "description": "Realizar una observación de clase virtual y presentar un informe de 3 páginas.",
-            "start_date": (datetime.now(timezone.utc) + timedelta(days=5)).isoformat(),
-            "due_date": (datetime.now(timezone.utc) + timedelta(days=21)).isoformat(),
-            "files": [],
-            "active": True,
-            "created_by": teacher1_id,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-    ]
-    await db.activities.insert_many(activities)
-    
-    # Create sample grades
-    grades = [
-        {
-            "id": "grade-1",
-            "student_id": student1_id,
-            "course_id": course1_id,
-            "activity_id": "act-1",
-            "value": 4.2,
-            "comments": "Buen trabajo, falta profundizar en algunos conceptos.",
-            "graded_by": teacher1_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }
-    ]
-    await db.grades.insert_many(grades)
-    
-    # Create sample class videos
-    videos = [
-        {
-            "id": "video-1",
-            "course_id": course1_id,
-            "title": "Clase 1: Introducción a la Administración",
-            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            "description": "Primera clase del módulo. Conceptos básicos de administración.",
-            "created_by": teacher1_id,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        },
-        {
-            "id": "video-2",
-            "course_id": course1_id,
-            "title": "Clase 2: Principios de Fayol",
-            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            "description": "Los 14 principios de la administración de Henri Fayol.",
-            "created_by": teacher1_id,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-    ]
-    await db.class_videos.insert_many(videos)
-    
     return {
         "message": "Datos iniciales creados exitosamente",
         "users_created": 7,
@@ -4313,6 +4212,56 @@ async def seed_data():
     }
 
 # --- Stats Route ---
+@api_router.delete("/admin/purge-group-data")
+async def purge_all_group_data(user=Depends(get_current_user)):
+    """Delete ALL courses/groups and every dependent record (activities, grades,
+    submissions, videos, recovery_enabled, failed_subjects). Admin only."""
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin")
+
+    courses_deleted = await db.courses.delete_many({})
+    activities_deleted = await db.activities.delete_many({})
+    grades_deleted = await db.grades.delete_many({})
+    submissions_deleted = await db.submissions.delete_many({})
+    videos_deleted = await db.class_videos.delete_many({})
+    recovery_deleted = await db.recovery_enabled.delete_many({})
+    failed_deleted = await db.failed_subjects.delete_many({})
+
+    await log_audit(
+        "purge_group_data",
+        user["id"],
+        user["role"],
+        {
+            "courses_deleted": courses_deleted.deleted_count,
+            "activities_deleted": activities_deleted.deleted_count,
+            "grades_deleted": grades_deleted.deleted_count,
+            "submissions_deleted": submissions_deleted.deleted_count,
+            "videos_deleted": videos_deleted.deleted_count,
+            "recovery_deleted": recovery_deleted.deleted_count,
+            "failed_subjects_deleted": failed_deleted.deleted_count,
+        }
+    )
+
+    logger.info(
+        f"Admin {user['id']} purged all group data: "
+        f"{courses_deleted.deleted_count} courses, "
+        f"{activities_deleted.deleted_count} activities, "
+        f"{grades_deleted.deleted_count} grades, "
+        f"{submissions_deleted.deleted_count} submissions, "
+        f"{videos_deleted.deleted_count} videos"
+    )
+
+    return {
+        "message": "Todos los grupos y sus datos dependientes fueron eliminados",
+        "courses_deleted": courses_deleted.deleted_count,
+        "activities_deleted": activities_deleted.deleted_count,
+        "grades_deleted": grades_deleted.deleted_count,
+        "submissions_deleted": submissions_deleted.deleted_count,
+        "videos_deleted": videos_deleted.deleted_count,
+        "recovery_enabled_deleted": recovery_deleted.deleted_count,
+        "failed_subjects_deleted": failed_deleted.deleted_count,
+    }
+
 @api_router.get("/stats")
 async def get_stats(user=Depends(get_current_user)):
     if user["role"] != "admin":
@@ -4322,7 +4271,12 @@ async def get_stats(user=Depends(get_current_user)):
     teachers = await db.users.count_documents({"role": "profesor", "active": True})
     programs = await db.programs.count_documents({"active": True})
     courses = await db.courses.count_documents({"active": True})
-    activities = await db.activities.count_documents({})
+    # Only count activities that belong to an existing course
+    existing_course_ids = [c["id"] for c in await db.courses.find({}, {"_id": 0, "id": 1}).to_list(5000)]
+    if existing_course_ids:
+        activities = await db.activities.count_documents({"course_id": {"$in": existing_course_ids}})
+    else:
+        activities = 0
     
     return {
         "students": students,
