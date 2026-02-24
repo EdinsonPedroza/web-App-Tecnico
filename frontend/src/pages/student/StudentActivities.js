@@ -63,6 +63,12 @@ export default function StudentActivities() {
 
   const isDownloadOnly = (filename) => /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(filename || '');
 
+  const resolveFileUrl = (url) => {
+    if (!url) return '#';
+    if (url.startsWith('http')) return url;
+    return `${BACKEND_URL}${url}`;
+  };
+
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
@@ -226,7 +232,7 @@ export default function StudentActivities() {
                                 {act.files.map((f, i) => (
                                   <a
                                     key={i}
-                                    href={f.url}
+                                    href={resolveFileUrl(f.url)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     {...(isDownloadOnly(f.name) ? { download: f.name } : {})}
