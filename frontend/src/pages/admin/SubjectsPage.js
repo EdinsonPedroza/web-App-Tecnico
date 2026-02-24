@@ -14,6 +14,7 @@ import api from '@/lib/api';
 export default function SubjectsPage() {
   const [subjects, setSubjects] = useState([]);
   const [programs, setPrograms] = useState([]);
+  const [teachersMap, setTeachersMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [filterProgram, setFilterProgram] = useState('all');
   const [filterModule, setFilterModule] = useState('all');
@@ -25,9 +26,14 @@ export default function SubjectsPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [subRes, progRes] = await Promise.all([api.get('/subjects'), api.get('/programs')]);
+      const [subRes, progRes, teachRes] = await Promise.all([
+        api.get('/subjects'),
+        api.get('/programs'),
+        api.get('/subjects/teachers'),
+      ]);
       setSubjects(subRes.data);
       setPrograms(progRes.data);
+      setTeachersMap(teachRes.data || {});
     } catch (err) {
       toast.error('Error cargando datos');
     } finally {
@@ -44,6 +50,7 @@ export default function SubjectsPage() {
     return true;
   });
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin programa';
+  const getTeacherName = (subjectId) => teachersMap[subjectId] || 'Sin asignar';
   
   // Get unique module numbers from subjects
   const availableModules = [...new Set(subjects.map(s => s.module_number))].sort();
@@ -160,6 +167,7 @@ export default function SubjectsPage() {
                   <div className="flex flex-wrap gap-2 mt-auto">
                     <Badge variant="secondary" className="text-xs">Módulo {subj.module_number}</Badge>
                     <Badge variant="outline" className="text-xs break-words">{getProgramName(subj.program_id)}</Badge>
+                    <Badge variant="outline" className="text-xs break-words">👤 {getTeacherName(subj.id)}</Badge>
                   </div>
                 </CardContent>
               </Card>
