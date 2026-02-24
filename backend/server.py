@@ -1603,7 +1603,11 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
-    await db.users.insert_one(new_user)
+    try:
+        await db.users.insert_one(new_user)
+    except Exception as exc:
+        logger.error(f"Error inserting user into database: {exc}")
+        raise HTTPException(status_code=500, detail="No se pudo crear el usuario. Inténtelo de nuevo.")
     
     logger.info(f"User created: id={new_user['id']}, role={req.role}, by={user['id']}")
     await log_audit("student_created" if req.role == "estudiante" else "user_created", user["id"], user["role"], {"new_user_id": new_user["id"], "new_user_role": req.role, "new_user_name": req.name})
