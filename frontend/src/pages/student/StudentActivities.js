@@ -72,7 +72,7 @@ export default function StudentActivities() {
         const res = await api.post('/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        setSubmitFiles(prev => [...prev, { name: res.data.filename, url: `${BACKEND_URL}${res.data.url}` }]);
+        setSubmitFiles(prev => [...prev, { name: res.data.filename, url: res.data.url.startsWith('http') ? res.data.url : `${BACKEND_URL}${res.data.url}` }]);
       }
       toast.success(`${files.length} archivo(s) subido(s)`);
     } catch (err) {
