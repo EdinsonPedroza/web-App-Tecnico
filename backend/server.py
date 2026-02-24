@@ -2292,9 +2292,16 @@ async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
                 status_code=400,
                 detail="Ya existe una actividad de recuperación para esta materia. Solo se permite una por materia."
             )
-    # Auto-number: count existing activities for this course (course-wide numbering)
-    count = await db.activities.count_documents({"course_id": req.course_id})
-    activity_number = count + 1
+    # Auto-number: find the max activity_number for this subject within the course (per-subject numbering)
+    activity_number_query = {"course_id": req.course_id}
+    if req.subject_id:
+        activity_number_query["subject_id"] = req.subject_id
+    agg_result = await db.activities.aggregate([
+        {"$match": activity_number_query},
+        {"$group": {"_id": None, "max_num": {"$max": "$activity_number"}}}
+    ]).to_list(1)
+    max_num = agg_result[0]["max_num"] if agg_result else 0
+    activity_number = (max_num or 0) + 1
     activity = {
         "id": str(uuid.uuid4()),
         "course_id": req.course_id,

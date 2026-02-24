@@ -2194,3 +2194,84 @@ class TestRecoveryModuleIsolation:
         )
         assert len(result) == 1
 
+
+# ---------------------------------------------------------------------------
+# Unit tests for per-subject activity numbering logic
+# ---------------------------------------------------------------------------
+
+class TestActivityNumberingPerSubject:
+    """Tests for the per-subject activity auto-numbering logic used in create_activity.
+
+    The logic mirrors what backend/server.py does:
+      - Find the max activity_number for the given course+subject combination.
+      - The next activity_number = max + 1 (or 1 if none exist yet).
+    """
+
+    def _next_activity_number(self, activities, course_id, subject_id=None):
+        """Pure-function mirror of the DB aggregation in create_activity."""
+        query = [
+            a["activity_number"]
+            for a in activities
+            if a["course_id"] == course_id
+            and (subject_id is None or a.get("subject_id") == subject_id)
+        ]
+        max_num = max(query) if query else 0
+        return (max_num or 0) + 1
+
+    def test_first_activity_in_subject_is_1(self):
+        """When no activities exist for the subject, the first number is 1."""
+        activities = []
+        assert self._next_activity_number(activities, "course-1", "math") == 1
+
+    def test_second_activity_in_subject_is_2(self):
+        activities = [
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 1},
+        ]
+        assert self._next_activity_number(activities, "course-1", "math") == 2
+
+    def test_numbering_is_independent_per_subject(self):
+        """English (inglés) starts at act1 even when Math (matemáticas) already has 5 activities."""
+        activities = [
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 1},
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 2},
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 3},
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 4},
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 5},
+        ]
+        # English subject should start at 1, not 6
+        assert self._next_activity_number(activities, "course-1", "english") == 1
+
+    def test_numbering_continues_correctly_after_existing_activities(self):
+        """If English already has act1 and act2, next should be act3."""
+        activities = [
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 1},
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 2},
+            {"course_id": "course-1", "subject_id": "english", "activity_number": 1},
+            {"course_id": "course-1", "subject_id": "english", "activity_number": 2},
+        ]
+        assert self._next_activity_number(activities, "course-1", "english") == 3
+
+    def test_numbering_based_on_max_not_count(self):
+        """When activities have gaps (e.g. after deletion), uses max, not count."""
+        activities = [
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 1},
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 3},
+        ]
+        # act2 was deleted; next should be 4, not 3
+        assert self._next_activity_number(activities, "course-1", "math") == 4
+
+    def test_different_courses_are_independent(self):
+        """Activities in another course do not affect numbering."""
+        activities = [
+            {"course_id": "course-2", "subject_id": "math", "activity_number": 10},
+        ]
+        assert self._next_activity_number(activities, "course-1", "math") == 1
+
+    def test_no_subject_id_uses_all_course_activities(self):
+        """When subject_id is None (not provided), falls back to course-wide max."""
+        activities = [
+            {"course_id": "course-1", "subject_id": "math", "activity_number": 3},
+            {"course_id": "course-1", "subject_id": "english", "activity_number": 7},
+        ]
+        assert self._next_activity_number(activities, "course-1", None) == 8
+
