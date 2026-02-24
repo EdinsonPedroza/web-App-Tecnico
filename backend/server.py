@@ -1588,7 +1588,6 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
     new_user = {
         "id": str(uuid.uuid4()),
         "name": req.name,
-        "email": req.email,
         "cedula": req.cedula,
         "password_hash": hash_password(req.password),
         "role": req.role,
@@ -1603,6 +1602,11 @@ async def create_user(req: UserCreate, user=Depends(get_current_user)):
         "active": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
+    # Only include email in the document when a value is provided.
+    # Omitting the field (rather than storing null) ensures the sparse unique
+    # email index skips this document, allowing multiple users without an email.
+    if req.email is not None:
+        new_user["email"] = req.email
     try:
         await db.users.insert_one(new_user)
     except Exception as exc:
