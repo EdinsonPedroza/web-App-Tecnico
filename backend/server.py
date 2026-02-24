@@ -1185,6 +1185,7 @@ class UserCreate(BaseModel):
     role: str = Field(..., pattern="^(estudiante|profesor|admin)$")
     program_id: Optional[str] = None  # For backward compatibility
     program_ids: Optional[List[str]] = None  # Multiple programs support
+    course_ids: Optional[List[str]] = None  # Ignored on creation; handled via course enrollment endpoints
     subject_ids: Optional[List[str]] = None  # For professors - subjects they teach
     phone: Optional[str] = Field(None, max_length=50)
     module: Optional[int] = Field(None, ge=1, le=2)  # Deprecated: use program_modules
