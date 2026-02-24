@@ -2326,13 +2326,17 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
                 f"(students not deleted, only removed from group)"
             )
     
-    # Collect file references before deleting (for disk cleanup)
+    # Collect file references before deleting (for disk/Cloudinary cleanup)
     activities_for_files = await db.activities.find(
-        {"course_id": course_id}, {"_id": 0, "files": 1}
+        {"course_id": course_id}, {"_id": 0, "id": 1, "files": 1}
     ).to_list(None)
-    submissions_for_files = await db.submissions.find(
-        {"course_id": course_id}, {"_id": 0, "files": 1}
-    ).to_list(None)
+    activity_ids = [a["id"] for a in activities_for_files if a.get("id")]
+    if activity_ids:
+        submissions_for_files = await db.submissions.find(
+            {"activity_id": {"$in": activity_ids}}, {"_id": 0, "files": 1}
+        ).to_list(None)
+    else:
+        submissions_for_files = []
 
     # Delete the course (students are never deleted)
     await db.courses.delete_one({"id": course_id})
@@ -2340,12 +2344,16 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
     # Delete all associated data
     activities_deleted = await db.activities.delete_many({"course_id": course_id})
     grades_deleted = await db.grades.delete_many({"course_id": course_id})
-    submissions_deleted = await db.submissions.delete_many({"course_id": course_id})
+    if activity_ids:
+        submissions_deleted = await db.submissions.delete_many({"activity_id": {"$in": activity_ids}})
+    else:
+        submissions_deleted = type("_DeleteResult", (), {"deleted_count": 0})()
     failed_subjects_deleted = await db.failed_subjects.delete_many({"course_id": course_id})
     recovery_enabled_deleted = await db.recovery_enabled.delete_many({"course_id": course_id})
     videos_deleted = await db.class_videos.delete_many({"course_id": course_id})
 
     # Clean up uploaded files from disk or Cloudinary
+    cloudinary_deleted_count = 0
     for doc in activities_for_files + submissions_for_files:
         for f in (doc.get("files") or []):
             stored_name = f.get("stored_name") if isinstance(f, dict) else None
@@ -2363,7 +2371,8 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
             if is_cloudinary_file:
                 try:
                     import cloudinary.uploader
-                    cloudinary.uploader.destroy(stored_name, resource_type="auto")
+                    cloudinary.uploader.destroy(stored_name, resource_type="raw")
+                    cloudinary_deleted_count += 1
                 except Exception as e:
                     logger.warning(f"Failed to delete Cloudinary file {stored_name}: {e}")
             else:
@@ -2378,7 +2387,8 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
         f"Course {course_id} deleted with associated data: "
         f"{activities_deleted.deleted_count} activities, {grades_deleted.deleted_count} grades, "
         f"{submissions_deleted.deleted_count} submissions, {failed_subjects_deleted.deleted_count} failed_subjects, "
-        f"{recovery_enabled_deleted.deleted_count} recovery_enabled, {videos_deleted.deleted_count} videos"
+        f"{recovery_enabled_deleted.deleted_count} recovery_enabled, {videos_deleted.deleted_count} videos, "
+        f"{cloudinary_deleted_count} Cloudinary files removed"
     )
     await log_audit("course_deleted", user["id"], user["role"], {"course_id": course_id, "course_name": course.get("name", "")})
 
