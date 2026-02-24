@@ -160,6 +160,8 @@ export default function TeacherActivities() {
     setDialogOpen(true);
   };
 
+  const isDownloadOnly = (filename) => /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(filename || '');
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -302,6 +304,7 @@ export default function TeacherActivities() {
                                 href={f.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
+                                {...(isDownloadOnly(f.name) ? { download: f.name } : {})}
                                 className="flex items-center gap-1 text-xs text-primary hover:underline bg-primary/5 rounded-md px-2 py-1"
                               >
                                 <File className="h-3 w-3" />
@@ -466,6 +469,7 @@ export default function TeacherActivities() {
                                       href={f.url}
                                       target="_blank"
                                       rel="noopener noreferrer"
+                                      {...(isDownloadOnly(f.name) ? { download: f.name } : {})}
                                       className="flex items-center gap-1 text-xs text-primary hover:underline bg-primary/10 rounded-md px-2 py-1"
                                     >
                                       {/\.(jpg|jpeg|png|gif|webp)$/i.test(f.name) ? <Image className="h-3 w-3" /> : <File className="h-3 w-3" />}

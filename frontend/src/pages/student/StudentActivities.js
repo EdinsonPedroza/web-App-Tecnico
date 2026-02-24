@@ -61,6 +61,8 @@ export default function StudentActivities() {
     return { key: 'active', label: 'Activa', variant: 'success', icon: Unlock };
   };
 
+  const isDownloadOnly = (filename) => /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(filename || '');
+
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
@@ -227,6 +229,7 @@ export default function StudentActivities() {
                                     href={f.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    {...(isDownloadOnly(f.name) ? { download: f.name } : {})}
                                     className="flex items-center justify-between gap-2 text-sm text-primary hover:text-primary/80 bg-background hover:bg-background/80 rounded-md px-3 py-2 border border-primary/30 hover:border-primary transition-all font-medium group"
                                   >
                                     <span className="flex items-center gap-2">

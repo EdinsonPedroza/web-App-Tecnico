@@ -2371,7 +2371,16 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
             if is_cloudinary_file:
                 try:
                     import cloudinary.uploader
-                    cloudinary.uploader.destroy(stored_name, resource_type="raw")
+                    _rt = f.get("resource_type") if isinstance(f, dict) else None
+                    if not _rt:
+                        _fext = Path(stored_name).suffix.lower().lstrip(".")
+                        if _fext in {"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"}:
+                            _rt = "image"
+                        elif _fext in {"mp4", "avi", "mov", "mkv", "webm"}:
+                            _rt = "video"
+                        else:
+                            _rt = "raw"
+                    cloudinary.uploader.destroy(stored_name, resource_type=_rt)
                     cloudinary_deleted_count += 1
                 except Exception as e:
                     logger.warning(f"Failed to delete Cloudinary file {stored_name}: {e}")
@@ -2742,10 +2751,17 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     if USE_CLOUDINARY:
         import cloudinary.uploader
         import io as _io
+        _ext = Path(original_name).suffix.lower().lstrip(".")
+        if _ext in {"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"}:
+            _resource_type = "image"
+        elif _ext in {"mp4", "avi", "mov", "mkv", "webm"}:
+            _resource_type = "video"
+        else:
+            _resource_type = "raw"
         result = cloudinary.uploader.upload(
             _io.BytesIO(file_content),
             folder="educando/uploads",
-            resource_type="auto",
+            resource_type=_resource_type,
             use_filename=True,
             unique_filename=True
         )
@@ -2754,7 +2770,8 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             "stored_name": result["public_id"],
             "url": result["secure_url"],
             "size": file_size,
-            "storage": "cloudinary"
+            "storage": "cloudinary",
+            "resource_type": _resource_type
         }
 
     # Fallback: local disk storage (development / no Cloudinary configured)
