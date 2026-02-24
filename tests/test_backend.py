@@ -717,6 +717,24 @@ def test_app():
         pytest.skip(f"Cannot import server: {type(exc).__name__}: {exc}")
 
 
+@pytest.fixture(scope="module")
+def mongodb_available():
+    """Check if MongoDB is reachable. Used to skip DB-dependent tests when unavailable."""
+    import socket
+    import urllib.parse
+    mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+    try:
+        # Parse host and port from the MongoDB URL
+        parsed = urllib.parse.urlparse(mongo_url)
+        host = parsed.hostname or 'localhost'
+        port = parsed.port or 27017
+        sock = socket.create_connection((host, port), timeout=1)
+        sock.close()
+        return True
+    except OSError:
+        return False
+
+
 @pytest.fixture
 def client(test_app):
     """Create a test client."""
@@ -729,9 +747,22 @@ class TestHealthEndpoint:
     """Test the health check endpoint."""
 
     @pytest.mark.asyncio
-    async def test_health_check(self, client):
+    async def test_health_check_healthy(self, client, mongodb_available):
+        """Health check returns 200 with status field when MongoDB is available."""
+        if not mongodb_available:
+            pytest.skip("MongoDB not available in this environment")
         response = await client.get("/api/health")
         assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+
+    @pytest.mark.asyncio
+    async def test_health_check_unhealthy(self, client, mongodb_available):
+        """Health check returns 503 with status field when MongoDB is unavailable."""
+        if mongodb_available:
+            pytest.skip("MongoDB is available; this test requires it to be unavailable")
+        response = await client.get("/api/health")
+        assert response.status_code == 503
         data = response.json()
         assert "status" in data
 
@@ -775,7 +806,9 @@ class TestLoginEndpoint:
         assert response.status_code in [400, 401]
 
     @pytest.mark.asyncio
-    async def test_login_wrong_credentials(self, client):
+    async def test_login_wrong_credentials(self, client, mongodb_available):
+        if not mongodb_available:
+            pytest.skip("MongoDB not available in this environment")
         response = await client.post("/api/auth/login", json={
             "role": "estudiante",
             "cedula": "99999999999",
@@ -784,7 +817,9 @@ class TestLoginEndpoint:
         assert response.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_login_profesor_wrong_credentials(self, client):
+    async def test_login_profesor_wrong_credentials(self, client, mongodb_available):
+        if not mongodb_available:
+            pytest.skip("MongoDB not available in this environment")
         response = await client.post("/api/auth/login", json={
             "role": "profesor",
             "email": "nonexistent@test.com",
