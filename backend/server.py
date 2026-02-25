@@ -3905,10 +3905,20 @@ async def get_student_recoveries(user=Depends(get_current_user)):
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
     
+    # Pre-load subject names for records that may be missing the field (backward compat)
+    missing_subject_ids = [s["subject_id"] for s in failed_subjects if s.get("subject_id") and not s.get("subject_name")]
+    subject_name_lookup = {}
+    if missing_subject_ids:
+        subj_docs = await db.subjects.find({"id": {"$in": missing_subject_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(None)
+        subject_name_lookup = {s["id"]: s["name"] for s in subj_docs}
+    
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
     for subject in failed_subjects:
         subject["program_name"] = program_map.get(subject["program_id"], "Desconocido")
+        # Ensure subject_name is populated (fallback for older records)
+        if not subject.get("subject_name") and subject.get("subject_id"):
+            subject["subject_name"] = subject_name_lookup.get(subject["subject_id"], "")
         # Check if recovery closing date has passed for this module/course
         course = await db.courses.find_one({"id": subject["course_id"]}, {"_id": 0, "module_dates": 1})
         recovery_close = None
@@ -3929,11 +3939,12 @@ async def get_student_recoveries(user=Depends(get_current_user)):
     }
 
 @api_router.get("/reports/course-results")
-async def get_course_results_report(course_id: str, format: Optional[str] = None, user=Depends(get_current_user)):
+async def get_course_results_report(course_id: str, subject_id: Optional[str] = None, format: Optional[str] = None, user=Depends(get_current_user)):
     """
     Returns a report of approved/reproved students per course/group.
     Accessible by admin and professor.
-    When format=csv, returns a CSV file download; otherwise returns JSON.
+    When subject_id is provided, filters the report to only that subject.
+    When format=csv/xlsx, returns a file download; otherwise returns JSON.
     """
     if user["role"] not in ["admin", "profesor"]:
         raise HTTPException(status_code=403, detail="Solo admin o profesor pueden acceder a reportes")
@@ -3943,9 +3954,11 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
     
     # Load subjects
-    subject_ids = course.get("subject_ids") or []
-    if not subject_ids and course.get("subject_id"):
-        subject_ids = [course["subject_id"]]
+    all_subject_ids = course.get("subject_ids") or []
+    if not all_subject_ids and course.get("subject_id"):
+        all_subject_ids = [course["subject_id"]]
+    # When subject_id filter is provided, restrict to that single subject
+    subject_ids = [subject_id] if subject_id and subject_id in all_subject_ids else all_subject_ids
     all_subjects = await db.subjects.find({"id": {"$in": subject_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(None) if subject_ids else []
     subject_map = {s["id"]: s["name"] for s in all_subjects}
     
@@ -3983,7 +3996,7 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
         for subj_id in subject_ids:
             values = grades_index.get((sid, subj_id), [])
             subject_avgs[subj_id] = round(sum(values) / len(values), 2) if values else 0.0
-        # General average: use only the subjects that belong to this course
+        # General average: use only the filtered subjects
         all_values = [v for subj_id in subject_ids for v in grades_index.get((sid, subj_id), [])]
         if not all_values:
             # Fall back: no subject_ids configured – use all grades for this course
@@ -4016,10 +4029,11 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
         rows.append(row)
     
     if format and format.lower() in ("csv", "xlsx"):
-        safe_name = re.sub(r'[^\w\-]', '_', course.get('name', course_id))
+        course_name = course.get("name", course_id)
+        safe_name = re.sub(r'[^\w\-]', '_', course_name)
         subject_headers = [subject_map.get(sid, sid) for sid in subject_ids]
         base_headers = ["Nombre", "Cédula", "Módulo"]
-        end_headers = ["Promedio General", "Estado"]
+        end_headers = ["Promedio", "Estado"]
         all_headers = base_headers + subject_headers + end_headers
 
         if format.lower() == "csv":
@@ -4046,9 +4060,11 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
             ws.title = "Resultados"
 
             # Title row
-            course_name = course.get("name", "Grupo")
+            title_label = course_name
+            if subject_id and subject_id in subject_map:
+                title_label = f"{course_name} – {subject_map[subject_id]}"
             ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(all_headers))
-            title_cell = ws.cell(row=1, column=1, value=f"Reporte de Resultados – {course_name}")
+            title_cell = ws.cell(row=1, column=1, value=f"Reporte de Resultados – {title_label}")
             title_cell.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
             title_cell.font = Font(bold=True, size=13, color="FFFFFF")
             title_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -4098,7 +4114,11 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
             output_bytes = io.BytesIO()
             wb.save(output_bytes)
             output_bytes.seek(0)
-            filename = f"resultados_{safe_name}.xlsx"
+            if subject_id and subject_id in subject_map:
+                safe_subject = re.sub(r'[^\w\-]', '_', subject_map[subject_id])
+                filename = f"resultados_{safe_name}_{safe_subject}.xlsx"
+            else:
+                filename = f"resultados_{safe_name}.xlsx"
             return StreamingResponse(
                 iter([output_bytes.getvalue()]),
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -4113,6 +4133,146 @@ async def get_course_results_report(course_id: str, format: Optional[str] = None
         "rows": rows,
         "total": len(rows)
     }
+
+
+@api_router.get("/reports/recovery-results")
+async def get_recovery_results_report(format: Optional[str] = None, user=Depends(get_current_user)):
+    """
+    Returns a consolidated report of all students in recovery with their status.
+    Accessible by admin only.
+    When format=xlsx, returns an XLSX file download; otherwise returns JSON.
+    """
+    if user["role"] not in ["admin", "editor"]:
+        raise HTTPException(status_code=403, detail="Solo admin puede acceder a reportes de recuperación")
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Fetch all unprocessed failed subjects
+    all_failed = await db.failed_subjects.find(
+        {"recovery_processed": {"$ne": True}, "recovery_rejected": {"$ne": True}},
+        {"_id": 0}
+    ).to_list(None)
+
+    if not all_failed:
+        all_failed = []
+
+    # Build lookup maps
+    student_ids_set = list({r["student_id"] for r in all_failed})
+    course_ids_set = list({r["course_id"] for r in all_failed})
+    program_ids_set = list({r.get("program_id") for r in all_failed if r.get("program_id")})
+    subject_ids_set = list({r.get("subject_id") for r in all_failed if r.get("subject_id")})
+
+    students_list = await db.users.find({"id": {"$in": student_ids_set}}, {"_id": 0, "id": 1, "name": 1, "cedula": 1}).to_list(None) if student_ids_set else []
+    courses_list = await db.courses.find({"id": {"$in": course_ids_set}}, {"_id": 0, "id": 1, "name": 1, "module_dates": 1}).to_list(None) if course_ids_set else []
+    programs_list = await db.programs.find({"id": {"$in": program_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(None) if program_ids_set else []
+    subjects_list = await db.subjects.find({"id": {"$in": subject_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(None) if subject_ids_set else []
+
+    student_map = {s["id"]: s for s in students_list}
+    course_map = {c["id"]: c for c in courses_list}
+    program_map = {p["id"]: p["name"] for p in programs_list}
+    subject_map = {s["id"]: s["name"] for s in subjects_list}
+
+    rows = []
+    for record in all_failed:
+        student = student_map.get(record["student_id"], {})
+        course = course_map.get(record["course_id"], {})
+        # Determine recovery close date
+        module_key = str(record.get("module_number", ""))
+        module_dates = (course.get("module_dates") or {}).get(module_key) or {}
+        recovery_close = module_dates.get("recovery_close")
+        is_expired = bool(recovery_close and recovery_close <= today_str)
+        # Determine status label
+        if is_expired and not record.get("recovery_approved"):
+            status_label = "Plazo vencido"
+        elif record.get("teacher_graded_status") == "approved":
+            status_label = "Calificada por profesor: Aprobado"
+        elif record.get("teacher_graded_status") == "rejected":
+            status_label = "Calificada por profesor: Reprobado"
+        elif record.get("recovery_approved"):
+            status_label = "Aprobada por admin"
+        else:
+            status_label = "Pendiente"
+        subject_name = record.get("subject_name") or subject_map.get(record.get("subject_id"), "")
+        rows.append({
+            "student_name": student.get("name", record.get("student_name", "")),
+            "student_cedula": student.get("cedula", ""),
+            "subject_name": subject_name,
+            "course_name": record.get("course_name", course.get("name", "")),
+            "program_name": record.get("program_name", program_map.get(record.get("program_id"), "")),
+            "module_number": record.get("module_number", ""),
+            "average_grade": record.get("average_grade", 0.0),
+            "status": status_label,
+        })
+
+    if format and format.lower() == "xlsx":
+        all_headers = ["Nombre", "Cédula", "Materia reprobada", "Grupo/Curso", "Programa", "Módulo", "Promedio anterior", "Estado de recuperación"]
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Recuperaciones"
+
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(all_headers))
+        title_cell = ws.cell(row=1, column=1, value="Reporte de Recuperaciones")
+        title_cell.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+        title_cell.font = Font(bold=True, size=13, color="FFFFFF")
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 22
+
+        header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        thin = Side(border_style="thin", color="000000")
+        header_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        for col_idx, header in enumerate(all_headers, start=1):
+            cell = ws.cell(row=2, column=col_idx, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = header_border
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.row_dimensions[2].height = 18
+
+        green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        yellow_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+        data_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        for row_idx, row in enumerate(rows, start=3):
+            status = row["status"]
+            if "Aprobado" in status:
+                row_fill = green_fill
+            elif "Reprobado" in status or "vencido" in status:
+                row_fill = red_fill
+            else:
+                row_fill = yellow_fill
+            data = [
+                row["student_name"], row["student_cedula"], row["subject_name"],
+                row["course_name"], row["program_name"], row["module_number"],
+                row["average_grade"], row["status"]
+            ]
+            for col_idx, value in enumerate(data, start=1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.fill = row_fill
+                cell.border = data_border
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                if col_idx == 1:
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        ws.column_dimensions["A"].width = 30
+        ws.column_dimensions["B"].width = 14
+        ws.column_dimensions["C"].width = 25
+        ws.column_dimensions["D"].width = 25
+        ws.column_dimensions["E"].width = 20
+        ws.column_dimensions["F"].width = 10
+        ws.column_dimensions["G"].width = 16
+        ws.column_dimensions["H"].width = 32
+
+        output_bytes = io.BytesIO()
+        wb.save(output_bytes)
+        output_bytes.seek(0)
+        return StreamingResponse(
+            iter([output_bytes.getvalue()]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=reporte_recuperaciones.xlsx"}
+        )
+
+    return {"rows": rows, "total": len(rows)}
 
 
 async def delete_graduated_students(user=Depends(get_current_user)):

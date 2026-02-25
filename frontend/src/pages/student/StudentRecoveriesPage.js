@@ -111,10 +111,11 @@ export default function StudentRecoveriesPage() {
                             : <Badge variant="secondary" className="text-xs">Pendiente aprobación</Badge>
                         }
                       </div>
-                      <CardTitle className="text-lg mt-3">{recovery.course_name}</CardTitle>
+                      <CardTitle className="text-lg mt-3">{recovery.subject_name || recovery.course_name}</CardTitle>
                       <CardDescription className="text-sm">
-                        {recovery.program_name}
+                        Grupo: {recovery.course_name}
                       </CardDescription>
+                      <p className="text-xs text-muted-foreground mt-0.5">{recovery.program_name}</p>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="flex items-center justify-between text-sm">
