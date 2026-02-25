@@ -2764,49 +2764,35 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)
     _unique_suffix = str(uuid.uuid4())[:8]
 
-    # PDFs: always use S3 if configured (persistent + opens inline in browser)
-    if _ext == "pdf":
-        if USE_S3:
-            try:
-                import boto3
-                s3_client = boto3.client(
-                    's3',
-                    aws_access_key_id=AWS_ACCESS_KEY_ID,
-                    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-                    region_name=AWS_S3_REGION
-                )
-                _s3_key = f"uploads/pdf/{_safe_basename}_{_unique_suffix}.pdf"
-                s3_client.put_object(
-                    Bucket=AWS_S3_BUCKET_NAME,
-                    Key=_s3_key,
-                    Body=file_content,
-                    ContentType='application/pdf',
-                    ContentDisposition=f'inline; filename="{original_name}"',
-                )
-                _pdf_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/{_s3_key}"
-                return {
-                    "filename": original_name,
-                    "stored_name": _s3_key,
-                    "url": _pdf_url,
-                    "size": file_size,
-                    "storage": "s3",
-                    "resource_type": "raw"
-                }
-            except Exception as e:
-                logger.error(f"S3 upload failed for PDF: {e}. Falling back to local disk.")
-        # Fallback: local disk
-        _pdf_name = f"{_safe_basename}_{_unique_suffix}.pdf"
-        _pdf_path = UPLOAD_DIR / _pdf_name
-        with open(_pdf_path, "wb") as _f:
-            _f.write(file_content)
-        return {
-            "filename": original_name,
-            "stored_name": _pdf_name,
-            "url": f"/api/files/{_pdf_name}",
-            "size": file_size,
-            "storage": "local",
-            "resource_type": "raw"
-        }
+    if _ext == "pdf" and USE_S3:
+        import boto3
+        try:
+            s3_client = boto3.client(
+                's3',
+                aws_access_key_id=AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                region_name=AWS_S3_REGION
+            )
+            _s3_key = f"uploads/pdf/{_safe_basename}_{_unique_suffix}.pdf"
+            s3_client.put_object(
+                Bucket=AWS_S3_BUCKET_NAME,
+                Key=_s3_key,
+                Body=file_content,
+                ContentType='application/pdf',
+                ContentDisposition=f'inline; filename="{original_name}"',
+            )
+            _pdf_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/{_s3_key}"
+            logger.info(f"PDF uploaded to S3: {_pdf_url}")
+            return {
+                "filename": original_name,
+                "stored_name": _s3_key,
+                "url": _pdf_url,
+                "size": file_size,
+                "storage": "s3",
+                "resource_type": "raw"
+            }
+        except Exception as e:
+            logger.error(f"S3 upload failed: {e}")
 
     # Non-PDF: use Cloudinary if configured
     if USE_CLOUDINARY:
