@@ -497,6 +497,21 @@ async def startup_event():
         scheduler.start()
         logger.info("Automatic module closure scheduler started (runs daily at 02:00 AM server local time)")
         
+        # Verify S3 bucket accessibility at startup
+        if USE_S3:
+            try:
+                import boto3
+                s3_test = boto3.client(
+                    's3',
+                    aws_access_key_id=AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                    region_name=AWS_S3_REGION
+                )
+                s3_test.head_bucket(Bucket=AWS_S3_BUCKET_NAME)
+                logger.info(f"✅ AWS S3 bucket '{AWS_S3_BUCKET_NAME}' is accessible.")
+            except Exception as e:
+                logger.error(f"❌ AWS S3 bucket verification failed: {e}. PDF uploads will fail!")
+        
         logger.info("Application startup completed successfully")
     except Exception as e:
         logger.error(f"Startup failed: {e}", exc_info=True)
@@ -2774,6 +2789,7 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
                 region_name=AWS_S3_REGION
             )
             _s3_key = f"uploads/pdf/{_safe_basename}_{_unique_suffix}.pdf"
+            logger.info(f"Attempting S3 upload: bucket={AWS_S3_BUCKET_NAME}, region={AWS_S3_REGION}, key={_s3_key}")
             s3_client.put_object(
                 Bucket=AWS_S3_BUCKET_NAME,
                 Key=_s3_key,
@@ -2792,7 +2808,11 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
                 "resource_type": "raw"
             }
         except Exception as e:
-            logger.error(f"S3 upload failed: {e}")
+            logger.error(f"S3 upload failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error uploading PDF to S3: {str(e)}. Please check S3 configuration."
+            )
 
     # Non-PDF: use Cloudinary if configured
     if USE_CLOUDINARY:
