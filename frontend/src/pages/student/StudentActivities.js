@@ -69,14 +69,7 @@ export default function StudentActivities() {
     return `${BACKEND_URL}${url}`;
   };
 
-  const getFileViewUrl = (url, filename) => {
-    const resolvedUrl = resolveFileUrl(url);
-    const ext = (filename || '').split('.').pop().toLowerCase();
-    if (ext === 'pdf') {
-      return `https://docs.google.com/viewer?url=${encodeURIComponent(resolvedUrl)}&embedded=true`;
-    }
-    return resolvedUrl;
-  };
+
 
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
@@ -241,7 +234,7 @@ export default function StudentActivities() {
                                 {act.files.map((f, i) => (
                                   <a
                                     key={i}
-                                    href={getFileViewUrl(f.url, f.name)}
+                                    href={resolveFileUrl(f.url)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     {...(isDownloadOnly(f.name) ? { download: f.name } : {})}
