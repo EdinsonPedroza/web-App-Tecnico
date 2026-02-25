@@ -541,12 +541,14 @@ class TestDeriveEstadoFromProgramStatuses:
         if not program_statuses:
             return "activo"
         statuses = list(program_statuses.values())
-        if "pendiente_recuperacion" in statuses:
-            return "pendiente_recuperacion"
-        if all(s == "egresado" for s in statuses):
-            return "egresado"
         if "activo" in statuses:
             return "activo"
+        if all(s == "egresado" for s in statuses):
+            return "egresado"
+        if "pendiente_recuperacion" in statuses:
+            return "pendiente_recuperacion"
+        if "egresado" in statuses:
+            return "egresado"
         return "retirado"
 
     def test_empty_returns_activo(self):
@@ -566,12 +568,12 @@ class TestDeriveEstadoFromProgramStatuses:
         assert self._derive({"prog-1": "pendiente_recuperacion"}) == "pendiente_recuperacion"
 
     def test_pendiente_recuperacion_takes_priority(self):
-        """pendiente_recuperacion beats activo and egresado."""
+        """activo beats pendiente_recuperacion (multi-program independence)."""
         result = self._derive({
             "prog-1": "pendiente_recuperacion",
             "prog-2": "activo"
         })
-        assert result == "pendiente_recuperacion"
+        assert result == "activo"
 
     def test_all_egresado(self):
         result = self._derive({"prog-1": "egresado", "prog-2": "egresado"})
@@ -591,12 +593,46 @@ class TestDeriveEstadoFromProgramStatuses:
         assert result == "activo"
 
     def test_pendiente_recuperacion_beats_egresado(self):
-        """pendiente_recuperacion takes priority even over egresado."""
+        """pendiente_recuperacion takes priority over egresado (no activo)."""
         result = self._derive({
             "prog-1": "egresado",
             "prog-2": "pendiente_recuperacion"
         })
         assert result == "pendiente_recuperacion"
+
+    def test_activo_beats_pendiente_recuperacion(self):
+        """activo takes priority over pendiente_recuperacion (multi-program independence)."""
+        result = self._derive({"prog-1": "pendiente_recuperacion", "prog-2": "activo"})
+        assert result == "activo"
+
+    def test_all_pendiente_recuperacion(self):
+        """All pendiente_recuperacion → global pendiente_recuperacion."""
+        result = self._derive({"prog-1": "pendiente_recuperacion", "prog-2": "pendiente_recuperacion"})
+        assert result == "pendiente_recuperacion"
+
+    def test_egresado_and_pendiente_no_activo(self):
+        """egresado + pendiente_recuperacion (no activo) → pendiente_recuperacion."""
+        result = self._derive({"prog-1": "egresado", "prog-2": "pendiente_recuperacion"})
+        assert result == "pendiente_recuperacion"
+
+    def test_three_programs_mixed(self):
+        """3 programs: egresado + pendiente + activo → activo."""
+        result = self._derive({
+            "prog-1": "egresado",
+            "prog-2": "pendiente_recuperacion",
+            "prog-3": "activo"
+        })
+        assert result == "activo"
+
+    def test_retirado_and_pendiente(self):
+        """retirado + pendiente_recuperacion → pendiente_recuperacion."""
+        result = self._derive({"prog-1": "retirado", "prog-2": "pendiente_recuperacion"})
+        assert result == "pendiente_recuperacion"
+
+    def test_egresado_and_retirado(self):
+        """egresado + retirado (no activo/pendiente) → egresado."""
+        result = self._derive({"prog-1": "egresado", "prog-2": "retirado"})
+        assert result == "egresado"
 
 
 # ---------------------------------------------------------------------------
