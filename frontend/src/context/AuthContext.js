@@ -15,10 +15,13 @@ export function AuthProvider({ children }) {
   const inactivityTimer = useRef(null);
   const warningTimer = useRef(null);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((reason) => {
     localStorage.removeItem('educando_token');
     localStorage.removeItem('educando_user');
     setUser(null);
+    if (reason === 'inactivity') {
+      toast.info('Sesión cerrada por inactividad');
+    }
   }, []);
 
   // Reset inactivity timer on user activity
@@ -29,8 +32,7 @@ export function AuthProvider({ children }) {
       toast.warning('Tu sesión se cerrará en 1 minuto por inactividad');
     }, INACTIVITY_WARNING_MS);
     inactivityTimer.current = setTimeout(() => {
-      toast.info('Sesión cerrada por inactividad');
-      logout();
+      logout('inactivity');
     }, INACTIVITY_TIMEOUT_MS);
   }, [logout]);
 
