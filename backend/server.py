@@ -439,6 +439,18 @@ else:
             "Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET to use persistent storage."
         )
 
+# AWS S3 configuration for PDF storage
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_S3_BUCKET_NAME = os.environ.get('AWS_S3_BUCKET_NAME')
+AWS_S3_REGION = os.environ.get('AWS_S3_REGION', 'us-east-1')
+USE_S3 = bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_S3_BUCKET_NAME)
+
+if USE_S3:
+    logger.info("AWS S3 configured – PDFs will use persistent S3 storage.")
+else:
+    logger.warning("AWS S3 not configured – PDFs stored on ephemeral local disk.")
+
 # --- Startup Event - Crear datos iniciales ---
 @app.on_event("startup")
 async def startup_event():
@@ -2747,13 +2759,45 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     original_name = file.filename
     file_content = await file.read()
     file_size = len(file_content)
-
+    import re as _re
     _ext = Path(original_name).suffix.lower().lstrip(".")
+    _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)
+    _unique_suffix = str(uuid.uuid4())[:8]
 
-    # PDFs always stored locally - Cloudinary raw forces download with wrong mime type
+    # PDFs: always use S3 if available (persistent + opens in browser)
+    # Falls back to local disk if S3 not configured
     if _ext == "pdf":
+        if USE_S3:
+            try:
+                import boto3
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                    region_name=AWS_S3_REGION
+                )
+                _s3_key = f"uploads/pdf/{_safe_basename}_{_unique_suffix}.pdf"
+                s3_client.put_object(
+                    Bucket=AWS_S3_BUCKET_NAME,
+                    Key=_s3_key,
+                    Body=file_content,
+                    ContentType='application/pdf',
+                    ContentDisposition=f'inline; filename="{original_name}"',
+                )
+                _pdf_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/{_s3_key}"
+                return {
+                    "filename": original_name,
+                    "stored_name": _s3_key,
+                    "url": _pdf_url,
+                    "size": file_size,
+                    "storage": "s3",
+                    "resource_type": "raw"
+                }
+            except Exception as e:
+                logger.error(f"S3 upload failed for PDF: {e}. Falling back to local disk.")
+        # Fallback: local disk
         _pdf_id = str(uuid.uuid4())
-        _pdf_name = f"{_pdf_id}.pdf"
+        _pdf_name = f"{_safe_basename}_{_pdf_id}.pdf"
         _pdf_path = UPLOAD_DIR / _pdf_name
         with open(_pdf_path, "wb") as _f:
             _f.write(file_content)
@@ -2761,27 +2805,22 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             "filename": original_name,
             "stored_name": _pdf_name,
             "url": f"/api/files/{_pdf_name}",
-            "size": os.path.getsize(_pdf_path),
-            "storage": "local"
+            "size": file_size,
+            "storage": "local",
+            "resource_type": "raw"
         }
 
+    # Non-PDF files: use Cloudinary if available
     if USE_CLOUDINARY:
         import cloudinary.uploader
         import io as _io
-        import re as _re
         if _ext in {"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"}:
             _resource_type = "image"
         elif _ext in {"mp4", "avi", "mov", "mkv", "webm"}:
             _resource_type = "video"
         else:
             _resource_type = "raw"
-
-        # Build a safe public_id that preserves the original filename + extension
-        # Cloudinary strips dots from use_filename, so we encode it manually
-        _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)
-        _unique_suffix = str(uuid.uuid4())[:8]
         _public_id = f"educando/uploads/{_safe_basename}_{_unique_suffix}.{_ext}"
-
         result = cloudinary.uploader.upload(
             _io.BytesIO(file_content),
             public_id=_public_id,
@@ -2797,15 +2836,13 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             "resource_type": _resource_type
         }
 
-    # Fallback: local disk storage (development / no Cloudinary configured)
-    file_id = str(uuid.uuid4())
-    ext = Path(original_name).suffix
-    safe_name = f"{file_id}{ext}"
+    # Fallback: local disk for all files
+    _file_id = str(uuid.uuid4())
+    _ext_with_dot = Path(original_name).suffix
+    safe_name = f"{_file_id}{_ext_with_dot}"
     file_path = UPLOAD_DIR / safe_name
-
     with open(file_path, "wb") as f:
         f.write(file_content)
-
     return {
         "filename": original_name,
         "stored_name": safe_name,
