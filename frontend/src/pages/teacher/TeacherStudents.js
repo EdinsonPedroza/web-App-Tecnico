@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 
 export default function TeacherStudents() {
   const { courseId } = useParams();
+  const [searchParams] = useSearchParams();
+  const subjectId = searchParams.get('subjectId');
   const [course, setCourse] = useState(null);
   const [students, setStudents] = useState([]);
   const [grades, setGrades] = useState([]);
@@ -19,10 +21,12 @@ export default function TeacherStudents() {
 
   const fetchData = useCallback(async () => {
     try {
+      let gradesUrl = `/grades?course_id=${courseId}`;
+      if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
       const [cRes, uRes, gRes] = await Promise.all([
         api.get(`/courses/${courseId}`),
         api.get('/users?role=estudiante'),
-        api.get(`/grades?course_id=${courseId}`)
+        api.get(gradesUrl)
       ]);
       setCourse(cRes.data);
       setGrades(gRes.data);
@@ -32,7 +36,7 @@ export default function TeacherStudents() {
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -49,18 +53,20 @@ export default function TeacherStudents() {
 
   const handleDownloadReport = async () => {
     try {
-      const response = await api.get(`/reports/course-results?course_id=${courseId}&format=xlsx`, {
+      let url = `/reports/course-results?course_id=${courseId}&format=xlsx`;
+      if (subjectId) url += `&subject_id=${subjectId}`;
+      const response = await api.get(url, {
         responseType: 'blob'
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
-      link.href = url;
+      link.href = blobUrl;
       const safeName = (course?.name || courseId).replace(/[^\w\-]/g, '_');
       link.setAttribute('download', `resultados_${safeName}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
       toast.error('Error descargando reporte');
     }

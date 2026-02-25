@@ -79,21 +79,21 @@ export default function RecoveriesPage() {
     }
   };
 
-  const handleDownloadCourseReport = async (courseId, courseName) => {
+  const handleDownloadRecoveryReport = async () => {
     try {
-      const response = await api.get(`/reports/course-results?course_id=${courseId}&format=csv`, {
+      const response = await api.get('/reports/recovery-results?format=xlsx', {
         responseType: 'blob'
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `resultados_${(courseName || courseId).replace(/[^\w\-]/g, '_')}.csv`);
+      link.setAttribute('download', 'reporte_recuperaciones.xlsx');
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      toast.error('Error descargando reporte del grupo');
+      toast.error('Error descargando reporte de recuperaciones');
     }
   };
 
@@ -120,6 +120,9 @@ export default function RecoveriesPage() {
           <div className="flex gap-2">
             <Button onClick={fetchRecoveryPanel} variant="outline">
               <RefreshCw className="h-4 w-4" /> Actualizar
+            </Button>
+            <Button onClick={handleDownloadRecoveryReport} variant="outline">
+              <Download className="h-4 w-4" /> Descargar Reporte
             </Button>
           </div>
         </div>
@@ -287,16 +290,6 @@ export default function RecoveriesPage() {
                       <Badge variant="destructive" className="text-sm">
                         En Recuperación
                       </Badge>
-                      {visibleSubjects.length > 0 && visibleSubjects[0].course_id && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDownloadCourseReport(visibleSubjects[0].course_id, visibleSubjects[0].course_name)}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          CSV
-                        </Button>
-                      )}
                     </div>
                   </div>
                 </CardHeader>

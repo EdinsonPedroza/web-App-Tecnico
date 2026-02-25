@@ -175,18 +175,22 @@ export default function TeacherGrades() {
 
   const downloadXLSX = async () => {
     try {
-      const response = await api.get(`/reports/course-results?course_id=${courseId}&format=xlsx`, {
+      let url = `/reports/course-results?course_id=${courseId}&format=xlsx`;
+      if (subjectId) url += `&subject_id=${subjectId}`;
+      const response = await api.get(url, {
         responseType: 'blob'
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
-      link.href = url;
+      link.href = blobUrl;
       const safeName = (course?.name || courseId).replace(/[^\w\-]/g, '_');
-      link.setAttribute('download', `reporte_${safeName}.xlsx`);
+      const subjectName = subjectId ? activities.find(a => a.subject_id === subjectId)?.subject_name || subjectId : null;
+      const safeSubject = subjectName ? `_${subjectName.replace(/[^\w\-]/g, '_')}` : '';
+      link.setAttribute('download', `reporte_${safeName}${safeSubject}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
       toast.error('Error descargando reporte');
     }
