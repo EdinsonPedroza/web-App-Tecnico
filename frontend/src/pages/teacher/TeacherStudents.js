@@ -17,6 +17,7 @@ export default function TeacherStudents() {
   const [course, setCourse] = useState(null);
   const [students, setStudents] = useState([]);
   const [grades, setGrades] = useState([]);
+  const [subjectName, setSubjectName] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -31,6 +32,13 @@ export default function TeacherStudents() {
       setCourse(cRes.data);
       setGrades(gRes.data);
       setStudents(uRes.data.filter(u => (cRes.data.student_ids || []).includes(u.id)));
+      if (subjectId) {
+        try {
+          const sRes = await api.get('/subjects');
+          const found = sRes.data.find(s => s.id === subjectId);
+          if (found) setSubjectName(found.name);
+        } catch (_) {}
+      }
     } catch (err) {
       toast.error('Error cargando datos');
     } finally {
@@ -62,7 +70,8 @@ export default function TeacherStudents() {
       const link = document.createElement('a');
       link.href = blobUrl;
       const safeName = (course?.name || courseId).replace(/[^\w\-]/g, '_');
-      link.setAttribute('download', `resultados_${safeName}.xlsx`);
+      const safeSubject = subjectName ? `_${subjectName.replace(/[^\w\-]/g, '_')}` : '';
+      link.setAttribute('download', `resultados_${safeName}${safeSubject}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
