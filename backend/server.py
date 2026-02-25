@@ -2766,24 +2766,16 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
         _unique_suffix = str(uuid.uuid4())[:8]
         _public_id = f"educando/uploads/{_safe_basename}_{_unique_suffix}.{_ext}"
 
-        upload_kwargs = dict(
+        result = cloudinary.uploader.upload(
+            _io.BytesIO(file_content),
             public_id=_public_id,
             resource_type=_resource_type,
             overwrite=False,
         )
-        # For PDFs: set attachment flag to inline so browser opens instead of downloading
-        if _ext == "pdf":
-            upload_kwargs["flags"] = "attachment:inline"
-
-        result = cloudinary.uploader.upload(
-            _io.BytesIO(file_content),
-            **upload_kwargs
-        )
-        secure_url = result["secure_url"]
         return {
             "filename": original_name,
             "stored_name": result["public_id"],
-            "url": secure_url,
+            "url": result["secure_url"],
             "size": file_size,
             "storage": "cloudinary",
             "resource_type": _resource_type
