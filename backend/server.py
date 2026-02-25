@@ -2758,19 +2758,28 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             _resource_type = "video"
         else:
             _resource_type = "raw"
+
+        # Build a safe public_id that preserves the original filename + extension
+        # Cloudinary strips dots from use_filename, so we encode it manually
+        import re as _re
+        _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)
+        _unique_suffix = str(uuid.uuid4())[:8]
+        _public_id = f"educando/uploads/{_safe_basename}_{_unique_suffix}.{_ext}"
+
+        upload_kwargs = dict(
+            public_id=_public_id,
+            resource_type=_resource_type,
+            overwrite=False,
+        )
+        # For PDFs: set attachment flag to inline so browser opens instead of downloading
+        if _ext == "pdf":
+            upload_kwargs["flags"] = "attachment:inline"
+
         result = cloudinary.uploader.upload(
             _io.BytesIO(file_content),
-            folder="educando/uploads",
-            resource_type=_resource_type,
-            use_filename=True,
-            unique_filename=True
+            **upload_kwargs
         )
         secure_url = result["secure_url"]
-        # For PDFs: insert fl_inline so the browser renders the PDF instead of downloading it
-        # Cloudinary raw URL: https://res.cloudinary.com/cloud/raw/upload/v.../file.pdf
-        # With fl_inline:     https://res.cloudinary.com/cloud/raw/upload/fl_inline/v.../file.pdf
-        if _ext == "pdf":
-            secure_url = secure_url.replace("/raw/upload/", "/raw/upload/fl_inline/")
         return {
             "filename": original_name,
             "stored_name": result["public_id"],
