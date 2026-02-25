@@ -108,10 +108,20 @@ def validate_module_number(module_num, field_name="module"):
 
 app = FastAPI()
 
+# Detect production environment
+IS_PRODUCTION = any(os.environ.get(env) for env in ['RENDER', 'RAILWAY_ENVIRONMENT', 'DYNO'])
+
 # Configure CORS origins
 cors_origins_str = os.environ.get('CORS_ORIGINS', '*')
 cors_origins = cors_origins_str.split(',') if ',' in cors_origins_str else [cors_origins_str]
 allow_credentials = "*" not in cors_origins
+
+if IS_PRODUCTION and '*' in cors_origins:
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "⚠️  SECURITY WARNING: CORS_ORIGINS is set to '*' in production! "
+        "Restrict CORS_ORIGINS to your frontend domain to improve security."
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -129,7 +139,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        # Don't add HSTS since Render handles SSL termination
+        if IS_PRODUCTION:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -1174,7 +1185,13 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     token = authorization.split(" ")[1]
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+        user_id = payload.get("user_id", "")
+        # Validate user_id is a valid UUID to prevent NoSQL injection via manipulated tokens
+        try:
+            uuid.UUID(str(user_id))
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=401, detail="Token inválido")
+        user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
         return user

@@ -111,7 +111,12 @@ export default function StudentRecoveriesPage() {
                             : <Badge variant="secondary" className="text-xs">Pendiente aprobación</Badge>
                         }
                       </div>
-                      <CardTitle className="text-lg mt-3">{recovery.subject_name || recovery.course_name}</CardTitle>
+                      <CardTitle className="text-lg mt-3">{recovery.course_name}</CardTitle>
+                      <div className="mt-1">
+                        <Badge variant="destructive" className="text-xs">
+                          Materia: {recovery.subject_name || 'General'}
+                        </Badge>
+                      </div>
                       <CardDescription className="text-sm">
                         Grupo: {recovery.course_name}
                       </CardDescription>

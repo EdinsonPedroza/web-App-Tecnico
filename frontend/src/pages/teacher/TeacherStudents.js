@@ -89,7 +89,7 @@ export default function TeacherStudents() {
           {students.length > 0 && (
             <Button variant="outline" size="sm" onClick={handleDownloadReport}>
               <Download className="h-4 w-4 mr-2" />
-              Descargar Reporte
+              {subjectId && subjectName ? `Descargar Reporte de ${subjectName}` : 'Descargar Reporte'}
             </Button>
           )}
         </div>

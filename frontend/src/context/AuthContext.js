@@ -1,16 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import api from '@/lib/api';
+import { toast } from 'sonner';
 
 const AuthContext = createContext(null);
 
-// Auto-logout after 30 minutes of inactivity (configurable via env var)
-const INACTIVITY_TIMEOUT_MS = parseInt(process.env.REACT_APP_INACTIVITY_TIMEOUT_MIN || '30', 10) * 60 * 1000;
+// Auto-logout after 15 minutes of inactivity (configurable via env var)
+const INACTIVITY_TIMEOUT_MS = parseInt(process.env.REACT_APP_INACTIVITY_TIMEOUT_MIN || '15', 10) * 60 * 1000;
+const INACTIVITY_WARNING_MS = INACTIVITY_TIMEOUT_MS - 60 * 1000; // warn 1 minute before logout
 const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const inactivityTimer = useRef(null);
+  const warningTimer = useRef(null);
 
   const logout = useCallback(() => {
     localStorage.removeItem('educando_token');
@@ -20,8 +23,13 @@ export function AuthProvider({ children }) {
 
   // Reset inactivity timer on user activity
   const resetInactivityTimer = useCallback(() => {
+    if (warningTimer.current) clearTimeout(warningTimer.current);
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    warningTimer.current = setTimeout(() => {
+      toast.warning('Tu sesión se cerrará en 1 minuto por inactividad');
+    }, INACTIVITY_WARNING_MS);
     inactivityTimer.current = setTimeout(() => {
+      toast.info('Sesión cerrada por inactividad');
       logout();
     }, INACTIVITY_TIMEOUT_MS);
   }, [logout]);
@@ -43,6 +51,7 @@ export function AuthProvider({ children }) {
   // Attach/detach inactivity tracking when user logs in/out
   useEffect(() => {
     if (!user) {
+      if (warningTimer.current) clearTimeout(warningTimer.current);
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
       ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
       return;
@@ -51,6 +60,7 @@ export function AuthProvider({ children }) {
     resetInactivityTimer();
     ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, resetInactivityTimer, { passive: true }));
     return () => {
+      if (warningTimer.current) clearTimeout(warningTimer.current);
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
       ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
     };
