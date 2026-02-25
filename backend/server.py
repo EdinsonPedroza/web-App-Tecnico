@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -90,6 +91,11 @@ MAX_LOGIN_ATTEMPTS_PER_IP = 50        # límite alto para WiFi compartido
 MAX_LOGIN_ATTEMPTS_PER_USER = 5       # límite estricto por usuario individual
 LOGIN_ATTEMPT_WINDOW = 300  # 5 minutes in seconds
 
+# Rate limiting for file uploads: track per user
+upload_attempts = defaultdict(list)
+MAX_UPLOADS_PER_MINUTE = 20
+UPLOAD_WINDOW = 60  # 1 minute in seconds
+
 # Module validation constants
 MIN_MODULE_NUMBER = 1
 MAX_MODULE_NUMBER = 2
@@ -114,6 +120,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        # Don't add HSTS since Render handles SSL termination
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 api_router = APIRouter(prefix="/api")
 
@@ -1091,7 +1110,7 @@ def create_token(user_id: str, role: str) -> str:
     payload = {
         "user_id": user_id,
         "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(days=7)
+        "exp": datetime.now(timezone.utc) + timedelta(hours=24)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -2774,9 +2793,28 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     original_name = file.filename
     file_content = await file.read()
     file_size = len(file_content)
+
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="El archivo excede el tamaño máximo permitido (10MB)")
+
     import re as _re
     _ext = Path(original_name).suffix.lower().lstrip(".")
-    _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)
+
+    ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "jpg", "jpeg", "png", "gif", "webp"}
+    if _ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Tipo de archivo no permitido: .{_ext}")
+
+    _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)[:100]
+
+    # Rate limit: max 20 uploads per minute per user
+    _user_id = user["id"]
+    _now = datetime.now().timestamp()
+    upload_attempts[_user_id] = [t for t in upload_attempts[_user_id] if _now - t < UPLOAD_WINDOW]
+    if len(upload_attempts[_user_id]) >= MAX_UPLOADS_PER_MINUTE:
+        raise HTTPException(status_code=429, detail="Demasiadas subidas. Intente de nuevo en un minuto.")
+    upload_attempts[_user_id].append(_now)
+
     _unique_suffix = str(uuid.uuid4())[:8]
 
     if _ext == "pdf" and USE_S3:
@@ -4149,6 +4187,10 @@ async def reset_users(confirm_token: str = None):
     This endpoint should be disabled or protected in production.
     Set environment variable ALLOW_USER_RESET=false to disable.
     """
+    # Check if running in production environment
+    if os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT'):
+        raise HTTPException(status_code=403, detail="This endpoint is disabled in production")
+
     # Check if endpoint is allowed (can be disabled via env var)
     allow_reset = os.environ.get('ALLOW_USER_RESET', 'true').lower() == 'true'
     if not allow_reset:
