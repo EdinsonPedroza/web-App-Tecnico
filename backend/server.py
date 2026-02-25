@@ -298,7 +298,6 @@ async def check_and_close_modules():
                                 program_statuses[prog_id] = "activo"
                                 new_global_estado = derive_estado_from_program_statuses(program_statuses)
                                 update_fields = {
-                                    "module": next_module,
                                     "estado": new_global_estado,
                                     "program_statuses": program_statuses
                                 }
@@ -367,7 +366,6 @@ async def check_and_close_modules():
                         direct_prog_statuses[prog_id] = "activo"
                         new_global_estado = derive_estado_from_program_statuses(direct_prog_statuses)
                         update_fields = {
-                            "module": next_module,
                             "estado": new_global_estado,
                             "program_statuses": direct_prog_statuses
                         }
@@ -944,21 +942,24 @@ def validate_module_dates_order(module_dates: dict) -> Optional[str]:
 def derive_estado_from_program_statuses(program_statuses: dict) -> str:
     """Derive the global 'estado' from per-program statuses.
 
-    Rules (in priority order):
-    1. Any program in 'pendiente_recuperacion' → global 'pendiente_recuperacion'
-    2. All programs 'egresado' → global 'egresado'
-    3. Any program 'activo' → global 'activo'
-    4. All programs 'retirado' (or empty) → global 'retirado'
+    Priority rules (multi-program independence):
+    1. If ANY program is 'activo' → global 'activo' (student can still operate)
+    2. If ALL programs are 'egresado' → global 'egresado'
+    3. If ANY program is 'pendiente_recuperacion' (no activo) → global 'pendiente_recuperacion'
+    4. If ANY program is 'egresado' (mix with retirado, no activo/pendiente) → 'egresado'
+    5. All programs 'retirado' → global 'retirado'
     """
     if not program_statuses:
         return "activo"
     statuses = list(program_statuses.values())
-    if "pendiente_recuperacion" in statuses:
-        return "pendiente_recuperacion"
-    if all(s == "egresado" for s in statuses):
-        return "egresado"
     if "activo" in statuses:
         return "activo"
+    if all(s == "egresado" for s in statuses):
+        return "egresado"
+    if "pendiente_recuperacion" in statuses:
+        return "pendiente_recuperacion"
+    if "egresado" in statuses:
+        return "egresado"
     return "retirado"
 
 
@@ -3896,7 +3897,10 @@ async def get_student_recoveries(user=Depends(get_current_user)):
         if subject_module is None:
             filtered.append(subject)
             continue
-        current_module = program_modules.get(prog_id) or student_global_module
+        current_module = program_modules.get(prog_id)
+        if current_module is None:
+            # Fallback: only if not tracked per-program, use the legacy global module
+            current_module = user.get("module") or 1
         if subject_module == current_module:
             filtered.append(subject)
     failed_subjects = filtered
