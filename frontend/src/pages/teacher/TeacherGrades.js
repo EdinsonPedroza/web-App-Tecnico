@@ -211,7 +211,7 @@ export default function TeacherGrades() {
           )}
           {!loading && students.length > 0 && (
             <Button variant="outline" onClick={downloadXLSX}>
-              <Download className="h-4 w-4" /> Descargar Reporte
+              <Download className="h-4 w-4" /> {subjectId ? `Descargar Reporte de ${activities.find(a => a.subject_id === subjectId)?.subject_name || 'Materia'}` : 'Descargar Reporte'}
             </Button>
           )}
         </div>
