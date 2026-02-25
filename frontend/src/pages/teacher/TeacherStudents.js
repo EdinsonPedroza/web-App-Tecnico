@@ -19,18 +19,23 @@ export default function TeacherStudents() {
   const [grades, setGrades] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const [subjectName, setSubjectName] = useState(null);
+
   const fetchData = useCallback(async () => {
     try {
       let gradesUrl = `/grades?course_id=${courseId}`;
       if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
-      const [cRes, uRes, gRes] = await Promise.all([
+      const requests = [
         api.get(`/courses/${courseId}`),
         api.get('/users?role=estudiante'),
         api.get(gradesUrl)
-      ]);
+      ];
+      if (subjectId) requests.push(api.get(`/subjects/${subjectId}`));
+      const [cRes, uRes, gRes, sRes] = await Promise.all(requests);
       setCourse(cRes.data);
       setGrades(gRes.data);
       setStudents(uRes.data.filter(u => (cRes.data.student_ids || []).includes(u.id)));
+      if (sRes) setSubjectName(sRes.data?.name || null);
     } catch (err) {
       toast.error('Error cargando datos');
     } finally {
@@ -62,7 +67,8 @@ export default function TeacherStudents() {
       const link = document.createElement('a');
       link.href = blobUrl;
       const safeName = (course?.name || courseId).replace(/[^\w\-]/g, '_');
-      link.setAttribute('download', `resultados_${safeName}.xlsx`);
+      const safeSubject = subjectName ? `_${subjectName.replace(/[^\w\-]/g, '_')}` : '';
+      link.setAttribute('download', `resultados_${safeName}${safeSubject}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();

@@ -118,6 +118,14 @@ export default function StudentRecoveriesPage() {
                       <p className="text-xs text-muted-foreground mt-0.5">{recovery.program_name}</p>
                     </CardHeader>
                     <CardContent className="space-y-3">
+                      {recovery.subject_name && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Materia:</span>
+                          <span className="text-xs font-medium text-right max-w-[60%] truncate" title={recovery.subject_name}>
+                            {recovery.subject_name}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">Módulo:</span>
                         <Badge variant="outline" className="text-xs">

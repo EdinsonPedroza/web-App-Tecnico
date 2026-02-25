@@ -1111,7 +1111,7 @@ def create_token(user_id: str, role: str) -> str:
     payload = {
         "user_id": user_id,
         "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=24)
+        "exp": datetime.now(timezone.utc) + timedelta(days=2)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -2002,6 +2002,13 @@ async def create_subject(req: SubjectCreate, user=Depends(get_current_user)):
     }
     await db.subjects.insert_one(subject)
     del subject["_id"]
+    return subject
+
+@api_router.get("/subjects/{subject_id}")
+async def get_subject(subject_id: str):
+    subject = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
+    if not subject:
+        raise HTTPException(status_code=404, detail="Materia no encontrada")
     return subject
 
 @api_router.put("/subjects/{subject_id}")
