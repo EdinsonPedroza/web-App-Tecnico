@@ -70,9 +70,16 @@ except Exception as e:
 
 # JWT Secret
 JWT_SECRET = os.environ.get('JWT_SECRET')
+_JWT_DEFAULT = 'educando_secret_key_2025_CHANGE_ME'
 if not JWT_SECRET:
     logger.warning("⚠️ JWT_SECRET not set! Using insecure default. SET THIS IN PRODUCTION!")
-    JWT_SECRET = 'educando_secret_key_2025_CHANGE_ME'
+    JWT_SECRET = _JWT_DEFAULT
+# Block server start in production when using the insecure default JWT_SECRET
+if any(os.environ.get(env) for env in ['RENDER', 'RAILWAY_ENVIRONMENT', 'DYNO']) and JWT_SECRET == _JWT_DEFAULT:
+    raise RuntimeError(
+        "🚫 FATAL: JWT_SECRET is set to the insecure default value. "
+        "Cannot start server in production. Set the JWT_SECRET environment variable to a strong random secret."
+    )
 JWT_ALGORITHM = "HS256"
 
 # Password hashing with bcrypt (using bcrypt directly to avoid passlib compatibility issues)
