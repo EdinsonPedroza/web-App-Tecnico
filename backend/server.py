@@ -2748,10 +2748,27 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     file_content = await file.read()
     file_size = len(file_content)
 
+    _ext = Path(original_name).suffix.lower().lstrip(".")
+
+    # PDFs always stored locally - Cloudinary raw forces download with wrong mime type
+    if _ext == "pdf":
+        _pdf_id = str(uuid.uuid4())
+        _pdf_name = f"{_pdf_id}.pdf"
+        _pdf_path = UPLOAD_DIR / _pdf_name
+        with open(_pdf_path, "wb") as _f:
+            _f.write(file_content)
+        return {
+            "filename": original_name,
+            "stored_name": _pdf_name,
+            "url": f"/api/files/{_pdf_name}",
+            "size": os.path.getsize(_pdf_path),
+            "storage": "local"
+        }
+
     if USE_CLOUDINARY:
         import cloudinary.uploader
         import io as _io
-        _ext = Path(original_name).suffix.lower().lstrip(".")
+        import re as _re
         if _ext in {"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"}:
             _resource_type = "image"
         elif _ext in {"mp4", "avi", "mov", "mkv", "webm"}:
@@ -2761,7 +2778,6 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
 
         # Build a safe public_id that preserves the original filename + extension
         # Cloudinary strips dots from use_filename, so we encode it manually
-        import re as _re
         _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)
         _unique_suffix = str(uuid.uuid4())[:8]
         _public_id = f"educando/uploads/{_safe_basename}_{_unique_suffix}.{_ext}"
@@ -2800,11 +2816,34 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
 
 @api_router.get("/files/{filename}")
 async def get_file(filename: str):
-    file_path = UPLOAD_DIR / filename
+    safe_filename = Path(filename).name
+    file_path = UPLOAD_DIR / safe_filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    ext = safe_filename.rsplit('.', 1)[-1].lower() if '.' in safe_filename else ''
+    mime_map = {
+        'pdf': 'application/pdf',
+        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+        'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp',
+        'txt': 'text/plain',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    }
+    media_type = mime_map.get(ext, 'application/octet-stream')
+    if ext in ('pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt'):
+        disposition = f'inline; filename="{safe_filename}"'
+    else:
+        disposition = f'attachment; filename="{safe_filename}"'
     from starlette.responses import FileResponse
-    return FileResponse(file_path)
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        headers={"Content-Disposition": disposition}
+    )
 
 # --- Submissions Routes ---
 @api_router.get("/submissions")
