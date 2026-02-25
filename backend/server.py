@@ -439,7 +439,7 @@ else:
             "Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET to use persistent storage."
         )
 
-# AWS S3 configuration for PDF storage
+# AWS S3 configuration for PDF storage (persistent across deploys)
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_S3_BUCKET_NAME = os.environ.get('AWS_S3_BUCKET_NAME')
@@ -2764,8 +2764,7 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)
     _unique_suffix = str(uuid.uuid4())[:8]
 
-    # PDFs: always use S3 if available (persistent + opens in browser)
-    # Falls back to local disk if S3 not configured
+    # PDFs: always use S3 if configured (persistent + opens inline in browser)
     if _ext == "pdf":
         if USE_S3:
             try:
@@ -2796,8 +2795,7 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             except Exception as e:
                 logger.error(f"S3 upload failed for PDF: {e}. Falling back to local disk.")
         # Fallback: local disk
-        _pdf_id = str(uuid.uuid4())
-        _pdf_name = f"{_safe_basename}_{_pdf_id}.pdf"
+        _pdf_name = f"{_safe_basename}_{_unique_suffix}.pdf"
         _pdf_path = UPLOAD_DIR / _pdf_name
         with open(_pdf_path, "wb") as _f:
             _f.write(file_content)
@@ -2810,7 +2808,7 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             "resource_type": "raw"
         }
 
-    # Non-PDF files: use Cloudinary if available
+    # Non-PDF: use Cloudinary if configured
     if USE_CLOUDINARY:
         import cloudinary.uploader
         import io as _io
@@ -2836,7 +2834,7 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             "resource_type": _resource_type
         }
 
-    # Fallback: local disk for all files
+    # Fallback: local disk
     _file_id = str(uuid.uuid4())
     _ext_with_dot = Path(original_name).suffix
     safe_name = f"{_file_id}{_ext_with_dot}"
