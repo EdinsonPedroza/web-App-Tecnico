@@ -505,14 +505,16 @@ export default function StudentsPage() {
                       <TableCell>
                         {(() => {
                           const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
-                          const statusLabel = (st) => {
+                          const statusLabel = (st, pendingPromotion) => {
+                            if (pendingPromotion) return 'Aprobado (pend. avance)';
                             if (st === 'activo') return 'Activo';
                             if (st === 'egresado') return 'Egresado';
                             if (st === 'retirado') return 'Retirado';
                             if (st === 'pendiente_recuperacion') return 'Pend. Rec.';
                             return st || 'Activo';
                           };
-                          const statusVariant = (st) => {
+                          const statusVariant = (st, pendingPromotion) => {
+                            if (pendingPromotion) return 'secondary';
                             if (st === 'activo') return 'success';
                             if (st === 'pendiente_recuperacion') return 'warning';
                             if (st === 'retirado') return 'destructive';
@@ -524,9 +526,10 @@ export default function StudentsPage() {
                               <div className="flex flex-col gap-1">
                                 {studentProgramIds.map(progId => {
                                   const st = s.program_statuses[progId] || s.estado || 'activo';
+                                  const pendingPromotion = !!(s.program_promotion_pending || {})[progId];
                                   return (
-                                    <Badge key={progId} variant={statusVariant(st)} className="text-xs font-semibold px-3 py-1 rounded-md">
-                                      {getProgramShortName(progId)}: {statusLabel(st)}
+                                    <Badge key={progId} variant={statusVariant(st, pendingPromotion)} className="text-xs font-semibold px-3 py-1 rounded-md">
+                                      {getProgramShortName(progId)}: {statusLabel(st, pendingPromotion)}
                                     </Badge>
                                   );
                                 })}
@@ -535,8 +538,8 @@ export default function StudentsPage() {
                           }
                           const st = s.estado || 'activo';
                           return (
-                            <Badge variant={statusVariant(st)} className="text-xs font-semibold px-3 py-1 rounded-md">
-                              {statusLabel(st)}
+                            <Badge variant={statusVariant(st, false)} className="text-xs font-semibold px-3 py-1 rounded-md">
+                              {statusLabel(st, false)}
                             </Badge>
                           );
                         })()}

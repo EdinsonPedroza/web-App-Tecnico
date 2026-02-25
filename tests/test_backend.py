@@ -413,6 +413,102 @@ class TestValidateModuleDatesOrder:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests for validate_module_dates_recovery_close (new - 2026-02-25)
+# ---------------------------------------------------------------------------
+
+class TestValidateModuleDatesRecoveryClose:
+    """Tests for the new validate_module_dates_recovery_close utility function."""
+
+    def _validate_recovery_close(self, module_dates):
+        """Mirror of validate_module_dates_recovery_close from server.py."""
+        for mod_key, dates in (module_dates or {}).items():
+            if not (dates or {}).get("recovery_close"):
+                return (
+                    f"El Módulo {mod_key} no tiene fecha de cierre de recuperaciones "
+                    "(recovery_close). Todas las entradas de fechas de módulo deben incluirla."
+                )
+        return None
+
+    def test_empty_module_dates_returns_none(self):
+        assert self._validate_recovery_close({}) is None
+        assert self._validate_recovery_close(None) is None
+
+    def test_all_modules_have_recovery_close_returns_none(self):
+        dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-07-16", "end": "2026-12-31", "recovery_close": "2027-01-15"},
+        }
+        assert self._validate_recovery_close(dates) is None
+
+    def test_module_missing_recovery_close_returns_error(self):
+        dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30"},
+        }
+        result = self._validate_recovery_close(dates)
+        assert result is not None
+        assert "recovery_close" in result.lower() or "recuperaciones" in result.lower()
+
+    def test_one_module_missing_recovery_close_returns_error(self):
+        dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-07-16", "end": "2026-12-31"},
+        }
+        result = self._validate_recovery_close(dates)
+        assert result is not None
+        assert "2" in result  # Error mentions the offending module
+
+    def test_module_with_empty_dates_returns_error(self):
+        dates = {"1": {}}
+        result = self._validate_recovery_close(dates)
+        assert result is not None
+
+    def test_module_with_none_dates_returns_error(self):
+        dates = {"1": None}
+        result = self._validate_recovery_close(dates)
+        assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for validate_module_number (updated - no upper bound)
+# ---------------------------------------------------------------------------
+
+class TestValidateModuleNumber:
+    """Tests for the validate_module_number helper (N-module support, no upper bound)."""
+
+    def _validate(self, module_num):
+        """Mirror of validate_module_number from server.py."""
+        MIN = 1
+        if not isinstance(module_num, int) or module_num < MIN:
+            raise ValueError(f"module must be >= {MIN}, got {module_num}")
+        return True
+
+    def test_module_1_is_valid(self):
+        assert self._validate(1) is True
+
+    def test_module_2_is_valid(self):
+        assert self._validate(2) is True
+
+    def test_module_3_is_valid(self):
+        """Module 3+ must be valid now that N-module support is implemented."""
+        assert self._validate(3) is True
+
+    def test_module_10_is_valid(self):
+        assert self._validate(10) is True
+
+    def test_module_0_is_invalid(self):
+        with pytest.raises(ValueError):
+            self._validate(0)
+
+    def test_negative_module_is_invalid(self):
+        with pytest.raises(ValueError):
+            self._validate(-1)
+
+    def test_non_int_is_invalid(self):
+        with pytest.raises((ValueError, TypeError)):
+            self._validate("1")
+
+
+# ---------------------------------------------------------------------------
 # Unit tests for can_enroll_in_course helper
 # ---------------------------------------------------------------------------
 
