@@ -453,6 +453,21 @@ async def check_and_close_modules():
                             {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
                         )
                 
+                # Precompute course/module grades for direct-pass validation and strict fallback.
+                subject_ids = course.get("subject_ids") or []
+                if not subject_ids and course.get("subject_id"):
+                    subject_ids = [course["subject_id"]]
+                module_subject_ids = [sid for sid in subject_ids if subject_module_map.get(sid, 1) == int(module_key)]
+                course_grades = await db.grades.find(
+                    {"course_id": course["id"]},
+                    {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
+                ).to_list(None)
+                grades_index = {}
+                for g in course_grades:
+                    if g.get("value") is None:
+                        continue
+                    grades_index.setdefault((g.get("student_id"), g.get("subject_id")), []).append(g["value"])
+
                 # Also promote students who passed the module directly (no failed subjects),
                 # whose promotion was deferred to recovery_close by close_module_internal.
                 for student_id in course.get("student_ids", []):
@@ -477,6 +492,47 @@ async def check_and_close_modules():
                     })
                     if other_pending:
                         continue
+
+                    # Defensive rule: never promote at recovery_close when the student still
+                    # has failing averages in this course/module, even if failed_subjects is
+                    # missing or incomplete.
+                    if module_subject_ids:
+                        has_failing = False
+                        for sid in module_subject_ids:
+                            values = grades_index.get((student_id, sid), [])
+                            avg = (sum(values) / len(values)) if values else 0.0
+                            if avg < 3.0:
+                                has_failing = True
+                                break
+                    else:
+                        values = [g.get("value") for g in course_grades if g.get("student_id") == student_id and g.get("value") is not None]
+                        avg = (sum(values) / len(values)) if values else 0.0
+                        has_failing = avg < 3.0
+
+                    if has_failing:
+                        logger.info(
+                            f"Recovery close: student {student_id} has failing averages in "
+                            f"course {course['id']} module {module_key} without full recovery pass "
+                            "– removing from group instead of promoting"
+                        )
+                        await _unenroll_student_from_course(student_id, course["id"])
+                        removed_count += 1
+                        student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
+                        ps = (student_doc or {}).get("program_statuses") or {}
+                        if prog_id:
+                            ps[prog_id] = "reprobado"
+                        new_estado = derive_estado_from_program_statuses(ps)
+                        upd = {"estado": new_estado}
+                        if prog_id:
+                            upd["program_statuses"] = ps
+                        await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": upd})
+                        await log_audit(
+                            "student_removed_from_group", "system", "system",
+                            {"student_id": student_id, "course_id": course["id"],
+                             "program_id": prog_id, "trigger": "recovery_close_direct_pass_failing_guard"}
+                        )
+                        continue
+
                     direct_prog_statuses = direct_student.get("program_statuses") or {}
                     # A student can be reprobado here when they were removed from a different
                     # course in the same program/module (either earlier in this scheduler run
@@ -537,20 +593,6 @@ async def check_and_close_modules():
                 # Strict fallback at recovery_close: if a student still has failing averages
                 # in this course/module and did not fully pass recovery records, remove them.
                 # This covers edge cases where failed_subjects records are missing/stale.
-                subject_ids = course.get("subject_ids") or []
-                if not subject_ids and course.get("subject_id"):
-                    subject_ids = [course["subject_id"]]
-                module_subject_ids = [sid for sid in subject_ids if subject_module_map.get(sid, 1) == int(module_key)]
-                course_grades = await db.grades.find(
-                    {"course_id": course["id"]},
-                    {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
-                ).to_list(None)
-                grades_index = {}
-                for g in course_grades:
-                    if g.get("value") is None:
-                        continue
-                    grades_index.setdefault((g.get("student_id"), g.get("subject_id")), []).append(g["value"])
-
                 for student_id in list(course.get("student_ids", [])):
                     # Skip if already unenrolled in previous steps
                     current_course_doc = await db.courses.find_one({"id": course["id"]}, {"_id": 0, "student_ids": 1})
