@@ -390,6 +390,18 @@ async def check_and_close_modules():
                     # Only process if still in the module being closed (idempotency guard)
                     if direct_prog_modules.get(prog_id) != int(module_key):
                         continue
+                    # Check if student has unresolved failed_subjects in OTHER courses
+                    # for the same program and module. If so, skip promotion — the student
+                    # must resolve all recovery subjects before advancing.
+                    other_pending = await db.failed_subjects.find_one({
+                        "student_id": student_id,
+                        "program_id": prog_id,
+                        "module_number": int(module_key),
+                        "recovery_processed": {"$ne": True},
+                        "recovery_expired": {"$ne": True},
+                    })
+                    if other_pending:
+                        continue
                     direct_prog_statuses = direct_student.get("program_statuses") or {}
                     program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
                     max_modules = max(len(program.get("modules", [])) if program and program.get("modules") else 2, 2)
@@ -1032,12 +1044,16 @@ def derive_estado_from_program_statuses(program_statuses: dict) -> str:
 
 
 async def _check_and_update_recovery_completion(student_id: str, course_id: str):
-    """Check if all approved recovery subjects for a student in a course are now completed
-    and approved by the teacher. If so, immediately update the student's program status to
-    'activo' (or 'egresado' for the last module) without waiting for the recovery_close date.
+    """Check if all recovery subjects for a student in a course are now completed
+    and approved by both admin and teacher. If so, immediately update the student's
+    program status to 'activo' (or 'egresado' for the last module) without waiting
+    for the recovery_close date.
 
     This is called after a teacher grades a recovery activity as approved so that the student
     exits 'pendiente_recuperacion' as soon as all their recoveries are resolved.
+
+    Important: checks ALL unprocessed failed_subjects (not just admin-approved) so that
+    a student is not prematurely promoted when some subjects haven't been admin-approved yet.
     """
     # Fetch the course to get program_id and module info
     course = await db.courses.find_one({"id": course_id}, {"_id": 0})
@@ -1045,12 +1061,13 @@ async def _check_and_update_recovery_completion(student_id: str, course_id: str)
         return
     prog_id = course.get("program_id", "")
 
-    # Find all unprocessed, admin-approved recovery records for this student+course
+    # Find ALL unprocessed recovery records for this student+course (including ones
+    # where admin hasn't approved yet). This prevents premature promotion when some
+    # subjects are still pending admin approval.
     all_records = await db.failed_subjects.find(
         {
             "student_id": student_id,
             "course_id": course_id,
-            "recovery_approved": True,
             "recovery_processed": {"$ne": True},
             "recovery_expired": {"$ne": True},
         },
@@ -1060,8 +1077,9 @@ async def _check_and_update_recovery_completion(student_id: str, course_id: str)
     if not all_records:
         return
 
-    # Only proceed if every record is completed and approved by teacher
+    # Only proceed if every record is admin-approved, completed, and approved by teacher
     all_passed = all(
+        r.get("recovery_approved") is True and
         r.get("recovery_completed") is True and r.get("teacher_graded_status") == "approved"
         for r in all_records
     )
@@ -1114,6 +1132,85 @@ async def _check_and_update_recovery_completion(student_id: str, course_id: str)
             "new_status": program_statuses.get(prog_id),
             "trigger": "all_recoveries_graded_approved",
         },
+    )
+
+
+async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
+    """Check if a teacher rejection means the student definitively cannot pass recovery.
+
+    Called after a teacher rejects a recovery subject. If ALL admin-approved recovery
+    records for this student+course have been teacher-graded (completed) and at least
+    one is rejected, the student cannot pass all subjects. In that case, immediately
+    remove the student from the group and mark them as 'reprobado'.
+    """
+    course = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    if not course:
+        return
+    prog_id = course.get("program_id", "")
+
+    # Find all unprocessed, admin-approved recovery records for this student+course
+    approved_records = await db.failed_subjects.find(
+        {
+            "student_id": student_id,
+            "course_id": course_id,
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_expired": {"$ne": True},
+        },
+        {"_id": 0},
+    ).to_list(None)
+
+    if not approved_records:
+        return
+
+    # Check if ALL admin-approved records have been teacher-graded (completed)
+    all_graded = all(r.get("recovery_completed") is True for r in approved_records)
+    if not all_graded:
+        return  # Some subjects still pending teacher grading
+
+    # Check if at least one is rejected
+    any_rejected = any(r.get("teacher_graded_status") == "rejected" for r in approved_records)
+    if not any_rejected:
+        return  # All approved — handled by _check_and_update_recovery_completion
+
+    # Student definitively cannot pass: remove from group and mark reprobado
+    student_doc = await db.users.find_one({"id": student_id}, {"_id": 0})
+    if not student_doc:
+        return
+    program_statuses = student_doc.get("program_statuses") or {}
+    if program_statuses.get(prog_id) != "pendiente_recuperacion":
+        return
+
+    # Remove from group
+    await db.courses.update_one(
+        {"id": course_id},
+        {
+            "$pull": {"student_ids": student_id},
+            "$addToSet": {"removed_student_ids": student_id}
+        }
+    )
+    # Mark reprobado
+    program_statuses[prog_id] = "reprobado"
+    new_estado = derive_estado_from_program_statuses(program_statuses)
+    await db.users.update_one(
+        {"id": student_id, "role": "estudiante"},
+        {"$set": {"estado": new_estado, "program_statuses": program_statuses}}
+    )
+    # Mark all records for this student+course as processed
+    now = datetime.now(timezone.utc)
+    for record in approved_records:
+        await db.failed_subjects.update_one(
+            {"id": record["id"]},
+            {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
+        )
+    logger.info(
+        f"Student {student_id} marked reprobado and removed from group {course_id} "
+        f"(teacher rejected recovery subject, all subjects resolved)"
+    )
+    await log_audit(
+        "student_removed_from_group", "system", "system",
+        {"student_id": student_id, "course_id": course_id,
+         "program_id": prog_id, "trigger": "teacher_rejected_recovery"}
     )
 
 
@@ -2836,8 +2933,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             # Immediately exit pendiente_recuperacion if all recovery subjects are now approved
             await _check_and_update_recovery_completion(req.student_id, req.course_id)
         else:
-            # Recovery rejected by teacher: ONLY mark the record as completed+rejected.
-            # Do NOT remove the student from the group; that happens at recovery_close time.
+            # Recovery rejected by teacher: mark the record as completed+rejected.
             await db.failed_subjects.update_one(
                 fs_filter,
                 {"$set": {
@@ -2846,6 +2942,11 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                     "completed_at": datetime.now(timezone.utc).isoformat()
                 }}
             )
+            # When a teacher rejects, check if ALL admin-approved subjects for this
+            # student+course have now been teacher-graded. If so and at least one is
+            # rejected, the student definitively cannot pass: remove from group and
+            # mark as reprobado immediately (don't wait for recovery_close).
+            await _check_and_update_recovery_rejection(req.student_id, req.course_id)
             
             # If rejected, don't create/update a numeric grade (keep existing average)
             # Just update the recovery status if grade already exists

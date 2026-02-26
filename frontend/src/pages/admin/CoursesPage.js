@@ -739,6 +739,7 @@ export default function CoursesPage() {
                           : studentStatus === 'egresado' ? 'Egresado'
                           : studentStatus === 'pendiente_recuperacion' ? 'En Recuperación'
                           : studentStatus === 'retirado' ? 'Retirado'
+                          : studentStatus === 'reprobado' ? 'Reprobado'
                           : 'Activo';
                         const showModule = studentStatus === 'activo' || studentStatus === 'pendiente_recuperacion';
                         return (

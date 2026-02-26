@@ -2653,6 +2653,8 @@ class TestStudentsPageStatusLabel:
             return 'Retirado'
         if st == 'pendiente_recuperacion':
             return 'Pend. Rec.'
+        if st == 'reprobado':
+            return 'Reprobado'
         return st
 
     def test_activo_shows_activo(self):
@@ -2677,6 +2679,12 @@ class TestStudentsPageStatusLabel:
     def test_retirado_not_shown_as_egresado(self):
         assert self._status_label('retirado') != 'Egresado'
 
+    def test_reprobado_shows_reprobado(self):
+        assert self._status_label('reprobado') == 'Reprobado'
+
+    def test_reprobado_not_shown_as_egresado(self):
+        assert self._status_label('reprobado') != 'Egresado'
+
 
 # ---------------------------------------------------------------------------
 # Unit tests for recovery completion status update logic
@@ -2695,7 +2703,8 @@ class TestCheckAndUpdateRecoveryCompletion:
         is in 'pendiente_recuperacion', otherwise return None.
 
         Mirrors the core decision logic in _check_and_update_recovery_completion:
-        - All records must be recovery_completed=True AND teacher_graded_status='approved'
+        - All records must be recovery_approved=True AND recovery_completed=True
+          AND teacher_graded_status='approved'
         - Student's current program status must be 'pendiente_recuperacion'
         """
         if program_status != "pendiente_recuperacion":
@@ -2703,10 +2712,24 @@ class TestCheckAndUpdateRecoveryCompletion:
         if not records:
             return None
         all_passed = all(
+            r.get("recovery_approved") is True and
             r.get("recovery_completed") is True and r.get("teacher_graded_status") == "approved"
             for r in records
         )
         return "update_needed" if all_passed else None
+
+    def _should_reject(self, approved_records, program_status):
+        """Return 'reject_needed' if all admin-approved records have been teacher-graded
+        and at least one is rejected. Mirrors _check_and_update_recovery_rejection."""
+        if program_status != "pendiente_recuperacion":
+            return None
+        if not approved_records:
+            return None
+        all_graded = all(r.get("recovery_completed") is True for r in approved_records)
+        if not all_graded:
+            return None
+        any_rejected = any(r.get("teacher_graded_status") == "rejected" for r in approved_records)
+        return "reject_needed" if any_rejected else None
 
     def _new_status(self, module_number, max_modules):
         """Mirror the new-status decision: egresado for last module, otherwise activo."""
@@ -2716,36 +2739,72 @@ class TestCheckAndUpdateRecoveryCompletion:
 
     def test_all_approved_triggers_update(self):
         records = [
-            {"recovery_completed": True, "teacher_graded_status": "approved"},
-            {"recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
         ]
         assert self._should_update(records, "pendiente_recuperacion") == "update_needed"
 
     def test_one_pending_does_not_trigger_update(self):
         records = [
-            {"recovery_completed": True, "teacher_graded_status": "approved"},
-            {"recovery_completed": False, "teacher_graded_status": None},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": False, "teacher_graded_status": None},
         ]
         assert self._should_update(records, "pendiente_recuperacion") is None
 
     def test_one_rejected_does_not_trigger_update(self):
         records = [
-            {"recovery_completed": True, "teacher_graded_status": "approved"},
-            {"recovery_completed": True, "teacher_graded_status": "rejected"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "rejected"},
         ]
         assert self._should_update(records, "pendiente_recuperacion") is None
 
     def test_not_in_pendiente_does_not_trigger_update(self):
         """If the student is already activo, no update needed."""
-        records = [{"recovery_completed": True, "teacher_graded_status": "approved"}]
+        records = [{"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"}]
         assert self._should_update(records, "activo") is None
 
     def test_empty_records_does_not_trigger_update(self):
         assert self._should_update([], "pendiente_recuperacion") is None
 
     def test_single_record_approved_triggers_update(self):
-        records = [{"recovery_completed": True, "teacher_graded_status": "approved"}]
+        records = [{"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"}]
         assert self._should_update(records, "pendiente_recuperacion") == "update_needed"
+
+    def test_unapproved_subject_blocks_promotion(self):
+        """If admin hasn't approved a subject, student should NOT be promoted even if
+        all admin-approved subjects are teacher-approved."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._should_update(records, "pendiente_recuperacion") is None
+
+    # --- _should_reject tests ---
+
+    def test_all_graded_one_rejected_triggers_rejection(self):
+        records = [
+            {"recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_completed": True, "teacher_graded_status": "rejected"},
+        ]
+        assert self._should_reject(records, "pendiente_recuperacion") == "reject_needed"
+
+    def test_all_graded_all_approved_does_not_trigger_rejection(self):
+        records = [
+            {"recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._should_reject(records, "pendiente_recuperacion") is None
+
+    def test_partial_grading_does_not_trigger_rejection(self):
+        records = [
+            {"recovery_completed": True, "teacher_graded_status": "rejected"},
+            {"recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._should_reject(records, "pendiente_recuperacion") is None
+
+    def test_not_in_pendiente_does_not_trigger_rejection(self):
+        records = [{"recovery_completed": True, "teacher_graded_status": "rejected"}]
+        assert self._should_reject(records, "activo") is None
 
     # --- _new_status tests ---
 
@@ -2770,29 +2829,105 @@ class TestCheckAndUpdateRecoveryCompletion:
     # --- end-to-end decision tests ---
 
     def test_all_approved_last_module_becomes_egresado(self):
-        records = [{"recovery_completed": True, "teacher_graded_status": "approved", "module_number": 2}]
+        records = [{"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved", "module_number": 2}]
         if self._should_update(records, "pendiente_recuperacion"):
             result = self._new_status(2, 2)
             assert result == "egresado"
 
     def test_all_approved_non_last_module_becomes_activo(self):
-        records = [{"recovery_completed": True, "teacher_graded_status": "approved", "module_number": 1}]
+        records = [{"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved", "module_number": 1}]
         if self._should_update(records, "pendiente_recuperacion"):
             result = self._new_status(1, 2)
             assert result == "activo"
 
     def test_partial_approval_student_stays_pendiente(self):
         records = [
-            {"recovery_completed": True, "teacher_graded_status": "approved"},
-            {"recovery_completed": False, "teacher_graded_status": None},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": False, "teacher_graded_status": None},
         ]
         result = self._should_update(records, "pendiente_recuperacion")
         assert result is None  # Student remains pendiente_recuperacion
 
 
 # ---------------------------------------------------------------------------
-# Unit tests for promote_student decision logic (N-module, multi-program)
+# Unit tests for recovery closure decision logic (removal from group)
 # ---------------------------------------------------------------------------
+
+class TestRecoveryClosureDecisionLogic:
+    """Tests for the scheduler's recovery_close logic that decides whether to
+    promote or remove students when the recovery period closes.
+
+    Mirrors the decision logic in check_and_close_modules recovery_close section.
+    """
+
+    def _decide(self, records):
+        """Return the decision for a student based on their recovery records.
+
+        Mirrors the scheduler logic:
+        - If no admin action on any record → 'remove_no_action'
+        - If all records are admin-approved, completed, and teacher-approved → 'promote'
+        - Otherwise (at least one not fully passed) → 'remove_failed'
+        """
+        has_admin_action = any(
+            r.get("recovery_approved") is True or r.get("recovery_completed") is True
+            for r in records
+        )
+        if not has_admin_action:
+            return "remove_no_action"
+        all_passed = all(
+            r.get("recovery_approved") is True and
+            r.get("recovery_completed") is True and
+            r.get("teacher_graded_status") == "approved"
+            for r in records
+        )
+        return "promote" if all_passed else "remove_failed"
+
+    def test_no_admin_action_removes_student(self):
+        records = [
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._decide(records) == "remove_no_action"
+
+    def test_all_passed_promotes(self):
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._decide(records) == "promote"
+
+    def test_one_rejected_removes(self):
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "rejected"},
+        ]
+        assert self._decide(records) == "remove_failed"
+
+    def test_admin_approved_but_teacher_not_graded_removes(self):
+        records = [
+            {"recovery_approved": True, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._decide(records) == "remove_failed"
+
+    def test_partial_admin_approval_removes(self):
+        """If admin approved some but not all subjects, student is removed at close."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._decide(records) == "remove_failed"
+
+    def test_single_subject_all_passed_promotes(self):
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._decide(records) == "promote"
+
+    def test_multiple_no_action_removes(self):
+        records = [
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._decide(records) == "remove_no_action"
 
 class TestPromoteStudentLogic:
     """Tests for the promote_student endpoint decision logic.
