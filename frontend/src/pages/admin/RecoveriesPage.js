@@ -219,10 +219,12 @@ export default function RecoveriesPage() {
                   <SelectValue placeholder="Estado" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos en proceso</SelectItem>
-                  <SelectItem value="pending">Solo pendientes</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="pending">Pendientes</SelectItem>
                   <SelectItem value="approved">Aprobadas por admin</SelectItem>
                   <SelectItem value="graded">Calificadas por profesor</SelectItem>
+                  <SelectItem value="rejected">Rechazadas por profesor</SelectItem>
+                  <SelectItem value="expired">Tiempo vencido / Reprobados</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -246,13 +248,17 @@ export default function RecoveriesPage() {
               const today = new Date().toISOString().slice(0, 10);
               return recoveryData.students
               .filter(student => {
-                // Remove students whose ALL subjects belong to modules where
-                // the next module has already started (they should no longer appear).
-                const hasActiveSubjects = student.failed_subjects.some(s => {
-                  if (s.next_module_start && s.next_module_start <= today) return false;
+                // Remove students whose ALL subjects have been processed more than 30 days ago.
+                const hasVisibleSubjects = student.failed_subjects.some(s => {
+                  // Hide only if processed more than 30 days ago
+                  if (s.recovery_processed && s.processed_at) {
+                    const daysSinceProcessed = (new Date() - new Date(s.processed_at)) / (1000 * 60 * 60 * 24);
+                    if (daysSinceProcessed > 30) return false;
+                  }
+                  if (s.recovery_processed && !s.processed_at) return false; // old processed records without timestamp
                   return true;
                 });
-                if (!hasActiveSubjects) return false;
+                if (!hasVisibleSubjects) return false;
 
                 // Search filter
                 const matchesSearch = searchTerm === '' || 
@@ -265,17 +271,30 @@ export default function RecoveriesPage() {
                 
                 // Status filter
                 const matchesStatus = statusFilter === 'all' ||
-                  (statusFilter === 'pending' && student.failed_subjects.some(s => !s.recovery_approved)) ||
+                  (statusFilter === 'pending' && student.failed_subjects.some(s => !s.recovery_approved && !s.recovery_processed)) ||
                   (statusFilter === 'approved' && student.failed_subjects.some(s => s.recovery_approved && !s.recovery_completed)) ||
-                  (statusFilter === 'graded' && student.failed_subjects.some(s => s.teacher_graded_status !== null && s.teacher_graded_status !== undefined));
+                  (statusFilter === 'graded' && student.failed_subjects.some(s => s.teacher_graded_status !== null && s.teacher_graded_status !== undefined)) ||
+                  (statusFilter === 'rejected' && student.failed_subjects.some(s => s.teacher_graded_status === 'rejected')) ||
+                  (statusFilter === 'expired' && student.failed_subjects.some(s => {
+                    const closed = s.recovery_close && s.recovery_close <= today;
+                    return closed && s.status !== 'processed_passed' && s.status !== 'teacher_approved';
+                  }));
                 
                 return matchesSearch && matchesStatus;
               })
               .map((student) => {
-                // Visible subjects: exclude those whose next module has already started
-                const visibleSubjects = student.failed_subjects.filter(s =>
-                  !s.next_module_start || s.next_module_start > today
-                );
+                // Visible subjects: hide only if processed more than 30 days ago
+                const visibleSubjects = student.failed_subjects.filter(s => {
+                  if (s.recovery_processed) {
+                    if (s.processed_at) {
+                      const processedDate = new Date(s.processed_at);
+                      const daysSinceProcessed = (new Date() - processedDate) / (1000 * 60 * 60 * 24);
+                      if (daysSinceProcessed > 30) return false;
+                    }
+                    return true; // Show recently processed records with final status
+                  }
+                  return true; // Show all unprocessed records
+                });
                 return (
               <Card key={student.student_id} className="shadow-card">
                 <CardHeader>
@@ -309,12 +328,7 @@ export default function RecoveriesPage() {
                     <TableBody>
                       {visibleSubjects.map((subject) => {
                         const recoveryClosed = subject.recovery_close && subject.recovery_close <= today;
-                        // When recovery period is closed: show final result (Aprobado/Reprobado)
-                        const isFinalApproved = recoveryClosed && (
-                          subject.status === 'processed_passed' ||
-                          subject.status === 'teacher_approved'
-                        );
-                        const isFinalRejected = recoveryClosed && !isFinalApproved;
+                        const ts = subject.teacher_graded_status;
                         return (
                         <TableRow key={subject.id}>
                           <TableCell className="font-medium">
@@ -337,34 +351,38 @@ export default function RecoveriesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {isFinalApproved ? (
+                            {recoveryClosed && (subject.status === 'processed_passed' || subject.status === 'teacher_approved') ? (
                               <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700">
                                 ✅ Aprobado
                               </Badge>
-                            ) : isFinalRejected ? (
-                              <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
-                                ❌ Reprobado
-                              </Badge>
-                            ) : subject.teacher_graded_status === 'approved' ? (
-                              <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700">
-                                ✅ Aprobado por profesor
-                              </Badge>
-                            ) : subject.teacher_graded_status === 'rejected' ? (
+                            ) : recoveryClosed && ts === 'rejected' ? (
                               <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
                                 ❌ Rechazado por profesor
                               </Badge>
-                            ) : subject.recovery_approved === true && (subject.teacher_graded_status === null || subject.teacher_graded_status === undefined) ? (
+                            ) : recoveryClosed && !subject.recovery_approved ? (
+                              <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
+                                ❌ Reprobado (tiempo vencido)
+                              </Badge>
+                            ) : recoveryClosed && subject.recovery_approved && ts !== 'approved' ? (
+                              <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
+                                ❌ Reprobado (no calificado a tiempo)
+                              </Badge>
+                            ) : !recoveryClosed && ts === 'approved' ? (
+                              <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700">
+                                ✅ Aprobado por profesor
+                              </Badge>
+                            ) : !recoveryClosed && ts === 'rejected' ? (
+                              <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
+                                ❌ Rechazado por profesor
+                              </Badge>
+                            ) : !recoveryClosed && subject.recovery_approved === true && (ts === null || ts === undefined) ? (
                               <Badge variant="warning" className="text-xs bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700">
                                 ⏳ En espera de calificación del profesor
-                              </Badge>
-                            ) : subject.recovery_completed ? (
-                              <Badge variant="secondary" className="text-xs">
-                                Completada
                               </Badge>
                             ) : (
                               <Badge variant="secondary" className="text-xs">
                                 <AlertCircle className="h-3 w-3 mr-1" />
-                                Pendiente
+                                ⏳ Pendiente aprobación admin
                               </Badge>
                             )}
                           </TableCell>
