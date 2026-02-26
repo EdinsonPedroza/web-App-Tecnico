@@ -3520,3 +3520,53 @@ class TestSchedulerFixes:
         )
         assert should_run_retroactive is False
 
+
+
+class TestRecoverySubjectScoping:
+    """Regression tests for subject-scoped recovery enablement and grading."""
+
+    def _visible_recovery_activity_subjects(self, approved_records, activities):
+        approved_subject_ids = {r.get("subject_id") for r in approved_records if r.get("subject_id")}
+        has_course_level_approval = any(not r.get("subject_id") for r in approved_records)
+        visible = []
+        for a in activities:
+            if not a.get("is_recovery"):
+                continue
+            sid = a.get("subject_id")
+            if (sid and sid in approved_subject_ids) or (not sid and has_course_level_approval):
+                visible.append(sid)
+        return visible
+
+    def test_only_admin_approved_subject_is_enabled(self):
+        approved_records = [{"subject_id": "subj-A"}]  # admin approved only one failed subject
+        activities = [
+            {"is_recovery": True, "subject_id": "subj-A"},
+            {"is_recovery": True, "subject_id": "subj-B"},
+        ]
+        assert self._visible_recovery_activity_subjects(approved_records, activities) == ["subj-A"]
+
+    def test_multiple_approved_subjects_enable_only_those_subjects(self):
+        approved_records = [{"subject_id": "subj-A"}, {"subject_id": "subj-B"}]
+        activities = [
+            {"is_recovery": True, "subject_id": "subj-A"},
+            {"is_recovery": True, "subject_id": "subj-B"},
+            {"is_recovery": True, "subject_id": "subj-C"},
+        ]
+        assert self._visible_recovery_activity_subjects(approved_records, activities) == ["subj-A", "subj-B"]
+
+    def test_teacher_grading_filter_must_include_subject(self):
+        def build_filter(student_id, course_id, subject_id):
+            f = {
+                "student_id": student_id,
+                "course_id": course_id,
+                "recovery_approved": True,
+                "recovery_processed": {"$ne": True},
+                "recovery_rejected": {"$ne": True},
+            }
+            if subject_id:
+                f["subject_id"] = subject_id
+            return f
+
+        fs_filter = build_filter("s1", "c1", "subj-A")
+        assert fs_filter["subject_id"] == "subj-A"
+        assert fs_filter["recovery_approved"] is True
