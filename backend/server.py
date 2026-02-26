@@ -965,6 +965,19 @@ async def create_initial_data():
     # Para deshabilitar la creación de usuarios semilla (recomendado en producción),
     # establecer CREATE_SEED_USERS=false en variables de entorno.
     
+    # Migrate legacy non-UUID user IDs to proper UUID5-based IDs.
+    # Old seed users had IDs like "user-editor-1" which are not valid UUIDs.
+    # These caused 401 errors on every protected API call after login, logging the user out.
+    legacy_id_map = {
+        "user-editor-1": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-editor-1")),
+        "user-prof-1":   str(uuid.uuid5(uuid.NAMESPACE_OID, "user-prof-1")),
+        "user-prof-2":   str(uuid.uuid5(uuid.NAMESPACE_OID, "user-prof-2")),
+    }
+    for old_id, new_id in legacy_id_map.items():
+        result = await db.users.update_one({"id": old_id}, {"$set": {"id": new_id}})
+        if result.modified_count > 0:
+            logger.info(f"Migrated legacy user ID: {old_id} -> {new_id}")
+
     reset_users = os.environ.get('RESET_USERS', 'false').lower() == 'true'
     if reset_users:
         logger.warning("⚠️  RESET_USERS=true: Eliminando TODOS los usuarios existentes...")
@@ -990,11 +1003,11 @@ async def create_initial_data():
         # as specified in the requirements to clearly distinguish user types
         seed_users = [
             # 1 Editor
-            {"id": "user-editor-1", "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+            {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-editor-1")), "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
             
             # 2 Profesores
-            {"id": "user-prof-1", "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor1!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
-            {"id": "user-prof-2", "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor2!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+            {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-prof-1")), "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor1!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
+            {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-prof-2")), "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor2!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
         ]
         
         # Insertar usuarios semilla solo si no existen (setOnInsert)
@@ -1612,10 +1625,10 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("user_id", "")
-        # Validate user_id is a valid UUID to prevent NoSQL injection via manipulated tokens
-        try:
-            uuid.UUID(str(user_id))
-        except (ValueError, AttributeError):
+        # Validate user_id to prevent NoSQL injection via manipulated tokens.
+        # Ensures user_id is a non-empty string without MongoDB operator prefixes;
+        # dict/object payloads (e.g. {"$ne": None}) fail the isinstance check.
+        if not isinstance(user_id, str) or not user_id or user_id.startswith('$'):
             raise HTTPException(status_code=401, detail="Token inválido")
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user:
