@@ -265,13 +265,16 @@ async def check_and_close_modules():
                             f"Recovery close: no admin action for student {student_id} in course "
                             f"{course['id']} – applying fail flow (removing from group, marking reprobado)"
                         )
-                        await db.courses.update_one(
-                            {"id": course["id"]},
-                            {
-                                "$pull": {"student_ids": student_id},
-                                "$addToSet": {"removed_student_ids": student_id}
-                            }
-                        )
+                        # Remove student from ALL courses in the same program so they are not
+                        # left enrolled in sibling courses for the same module.
+                        for _pc in await _get_program_courses_for_student(student_id, prog_id, course["id"]):
+                            await db.courses.update_one(
+                                {"id": _pc["id"]},
+                                {
+                                    "$pull": {"student_ids": student_id},
+                                    "$addToSet": {"removed_student_ids": student_id}
+                                }
+                            )
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         _ps = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
@@ -351,13 +354,16 @@ async def check_and_close_modules():
                     else:
                         # At least one subject not passed: remove from group, mark activo for re-enrollment
                         logger.info(f"Recovery close: student {student_id} did not pass all subjects in course {course['id']} – removing from group")
-                        await db.courses.update_one(
-                            {"id": course["id"]},
-                            {
-                                "$pull": {"student_ids": student_id},
-                                "$addToSet": {"removed_student_ids": student_id}
-                            }
-                        )
+                        # Remove student from ALL courses in the same program so they are not
+                        # left enrolled in sibling courses for the same module.
+                        for _pc in await _get_program_courses_for_student(student_id, prog_id, course["id"]):
+                            await db.courses.update_one(
+                                {"id": _pc["id"]},
+                                {
+                                    "$pull": {"student_ids": student_id},
+                                    "$addToSet": {"removed_student_ids": student_id}
+                                }
+                            )
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         student_program_statuses = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
@@ -403,6 +409,30 @@ async def check_and_close_modules():
                     if other_pending:
                         continue
                     direct_prog_statuses = direct_student.get("program_statuses") or {}
+                    # A student can be reprobado here when they were removed from a different
+                    # course in the same program/module (either earlier in this scheduler run
+                    # or by _check_and_update_recovery_rejection) but their student_id was not
+                    # yet pulled from THIS course's student_ids.  Remove them instead of
+                    # promoting them.
+                    if direct_prog_statuses.get(prog_id) == "reprobado":
+                        await db.courses.update_one(
+                            {"id": course["id"]},
+                            {
+                                "$pull": {"student_ids": student_id},
+                                "$addToSet": {"removed_student_ids": student_id}
+                            }
+                        )
+                        removed_count += 1
+                        logger.info(
+                            f"Recovery close: removed reprobado student {student_id} "
+                            f"from course {course['id']} (was still enrolled after failing in another course)"
+                        )
+                        await log_audit(
+                            "student_removed_from_group", "system", "system",
+                            {"student_id": student_id, "course_id": course["id"],
+                             "program_id": prog_id, "trigger": "recovery_close_reprobado_cleanup"}
+                        )
+                        continue
                     program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
                     max_modules = max(len(program.get("modules", [])) if program and program.get("modules") else 2, 2)
                     if int(module_key) >= max_modules:
@@ -1043,6 +1073,26 @@ def derive_estado_from_program_statuses(program_statuses: dict) -> str:
     return "retirado"
 
 
+async def _get_program_courses_for_student(
+    student_id: str, prog_id: str, fallback_course_id: str
+) -> list:
+    """Return all courses for prog_id where student_id is still enrolled.
+
+    Falls back to a single-element list with fallback_course_id when:
+    - prog_id is empty/falsy, or
+    - the DB query returns no courses (e.g. student was already removed).
+
+    This ensures callers always have at least one course to process.
+    """
+    if prog_id:
+        courses = await db.courses.find(
+            {"program_id": prog_id, "student_ids": student_id},
+            {"_id": 0, "id": 1},
+        ).to_list(None)
+        return courses or [{"id": fallback_course_id}]
+    return [{"id": fallback_course_id}]
+
+
 async def _check_and_update_recovery_completion(student_id: str, course_id: str):
     """Check if all recovery subjects for a student in a course are now completed
     and approved by both admin and teacher. If so, immediately update the student's
@@ -1187,14 +1237,16 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
     if program_statuses.get(prog_id) != "pendiente_recuperacion":
         return
 
-    # Remove from group
-    await db.courses.update_one(
-        {"id": course_id},
-        {
-            "$pull": {"student_ids": student_id},
-            "$addToSet": {"removed_student_ids": student_id}
-        }
-    )
+    # Remove from ALL courses for this program so the student is not left enrolled
+    # in sibling courses for the same module.
+    for pc in await _get_program_courses_for_student(student_id, prog_id, course_id):
+        await db.courses.update_one(
+            {"id": pc["id"]},
+            {
+                "$pull": {"student_ids": student_id},
+                "$addToSet": {"removed_student_ids": student_id}
+            }
+        )
     # Mark reprobado
     program_statuses[prog_id] = "reprobado"
     new_estado = derive_estado_from_program_statuses(program_statuses)
