@@ -4136,17 +4136,17 @@ async def get_recovery_panel(user=Depends(get_current_user)):
 @api_router.post("/admin/approve-recovery")
 async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, user=Depends(get_current_user)):
     """
-    Admin approves recovery for a specific failed subject.
-    If approved, student can see and complete recovery activities.
+    Admin approves or rejects recovery for a specific failed subject.
+    If approved (approve=True), student can see and complete recovery activities.
+    If rejected (approve=False), student is immediately removed from all program courses
+    and marked as 'reprobado'.
     Handles both persisted records and auto-detected entries (id starts with 'auto-').
-    Only approve=True is accepted; passing approve=False returns a 400 error.
     """
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede aprobar recuperaciones")
-    
-    if not approve:
-        raise HTTPException(status_code=400, detail="El admin solo puede aprobar recuperaciones. El rechazo ocurre automáticamente al cierre del período.")
-    
+
+    now = datetime.now(timezone.utc)
+
     # Handle auto-detected entries (not persisted yet).
     # Formats:
     #   Old: auto-{student_id}-{course_id}-{module_number}           (sc_part = 73 chars)
@@ -4176,17 +4176,81 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             subject_id = sc_part[74:]
         else:
             raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
-        
+
         # Validate that both IDs exist in the database
         student = await db.users.find_one({"id": student_id, "role": "estudiante"}, {"_id": 0})
         course = await db.courses.find_one({"id": course_id}, {"_id": 0})
         if not student or not course:
             raise HTTPException(status_code=404, detail="Estudiante o grupo no encontrado")
-        
-        # Module alignment: recovery can only be approved for the student's current module
+
         prog_id = course.get("program_id", "")
         student_module = (student.get("program_modules") or {}).get(prog_id) or student.get("module")
         module_number = int(module_str) if module_str.isdigit() else 1
+
+        all_grades = await db.grades.find({"student_id": student_id, "course_id": course_id}, {"_id": 0}).to_list(100)
+
+        # Compute average: per-subject if subject_id available, otherwise course-level
+        if subject_id:
+            subject_grade_values = [g["value"] for g in all_grades if g.get("subject_id") == subject_id and g.get("value") is not None]
+            average = sum(subject_grade_values) / len(subject_grade_values) if subject_grade_values else 0.0
+        else:
+            grade_values = [g["value"] for g in all_grades if g.get("value") is not None]
+            average = sum(grade_values) / len(grade_values) if grade_values else 0.0
+
+        if not approve:
+            # Admin explicitly rejects this auto-detected recovery: create a rejection record,
+            # remove student from all program courses and mark as reprobado.
+            rejection_record = {
+                "id": str(uuid.uuid4()),
+                "student_id": student_id,
+                "student_name": student.get("name", "Desconocido"),
+                "course_id": course_id,
+                "course_name": course.get("name", "Sin nombre"),
+                "program_id": prog_id,
+                "module_number": module_number,
+                "average_grade": round(average, 2),
+                "recovery_approved": False,
+                "recovery_rejected": True,
+                "recovery_completed": False,
+                "recovery_processed": True,
+                "rejected_by": user["id"],
+                "rejected_at": now.isoformat(),
+                "processed_at": now.isoformat(),
+                "created_at": now.isoformat()
+            }
+            if subject_id:
+                subject_doc = await db.subjects.find_one({"id": subject_id}, {"_id": 0, "name": 1})
+                rejection_record["subject_id"] = subject_id
+                rejection_record["subject_name"] = subject_doc.get("name", "Desconocido") if subject_doc else "Desconocido"
+            await db.failed_subjects.insert_one(rejection_record)
+            # Remove student from ALL courses in the program
+            for pc in await _get_program_courses_for_student(student_id, prog_id, course_id):
+                await db.courses.update_one(
+                    {"id": pc["id"]},
+                    {"$pull": {"student_ids": student_id}, "$addToSet": {"removed_student_ids": student_id}}
+                )
+            # Mark student as reprobado
+            student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
+            student_program_statuses = (student_doc or {}).get("program_statuses") or {}
+            if prog_id:
+                student_program_statuses[prog_id] = "reprobado"
+            new_estado = derive_estado_from_program_statuses(student_program_statuses)
+            update_fields: dict = {"estado": new_estado}
+            if prog_id:
+                update_fields["program_statuses"] = student_program_statuses
+            await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": update_fields})
+            logger.info(
+                f"Admin {user['id']} rejected recovery for student {student_id} "
+                f"in course {course_id} (auto-detected entry)"
+            )
+            await log_audit(
+                "recovery_rejected_by_admin", user["id"], user["role"],
+                {"student_id": student_id, "course_id": course_id, "program_id": prog_id,
+                 "module_number": module_number}
+            )
+            return {"message": "Recuperación rechazada. El estudiante ha sido retirado del programa."}
+
+        # Module alignment: recovery can only be approved for the student's current module
         if student_module is not None and student_module != module_number:
             raise HTTPException(
                 status_code=400,
@@ -4195,16 +4259,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                     f"pero el estudiante está en el Módulo {student_module}."
                 )
             )
-        all_grades = await db.grades.find({"student_id": student_id, "course_id": course_id}, {"_id": 0}).to_list(100)
-        
-        # Compute average: per-subject if subject_id available, otherwise course-level
-        if subject_id:
-            subject_grade_values = [g["value"] for g in all_grades if g.get("subject_id") == subject_id and g.get("value") is not None]
-            average = sum(subject_grade_values) / len(subject_grade_values) if subject_grade_values else 0.0
-        else:
-            grade_values = [g["value"] for g in all_grades if g.get("value") is not None]
-            average = sum(grade_values) / len(grade_values) if grade_values else 0.0
-        
+
         new_record = {
             "id": str(uuid.uuid4()),
             "student_id": student_id,
@@ -4218,15 +4273,15 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             "recovery_rejected": False,
             "recovery_completed": False,
             "approved_by": user["id"],
-            "approved_at": datetime.now(timezone.utc).isoformat(),
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "approved_at": now.isoformat(),
+            "created_at": now.isoformat()
         }
         if subject_id:
             subject_doc = await db.subjects.find_one({"id": subject_id}, {"_id": 0, "name": 1})
             new_record["subject_id"] = subject_id
             new_record["subject_name"] = subject_doc.get("name", "Desconocido") if subject_doc else "Desconocido"
         await db.failed_subjects.insert_one(new_record)
-        
+
         # Enable recovery activities for this student/course
         existing = await db.recovery_enabled.find_one({"student_id": student_id, "course_id": course_id})
         if not existing:
@@ -4236,12 +4291,12 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 "course_id": course_id,
                 "enabled": True,
                 "enabled_by": user["id"],
-                "enabled_at": datetime.now(timezone.utc).isoformat()
+                "enabled_at": now.isoformat()
             })
         else:
             await db.recovery_enabled.update_one(
                 {"id": existing["id"]},
-                {"$set": {"enabled": True, "enabled_by": user["id"], "enabled_at": datetime.now(timezone.utc).isoformat()}}
+                {"$set": {"enabled": True, "enabled_by": user["id"], "enabled_at": now.isoformat()}}
             )
         # Update program_statuses per-program and derive global estado
         prog_id = course.get("program_id", "")
@@ -4254,14 +4309,69 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         if prog_id:
             update_fields["program_statuses"] = student_program_statuses
         await db.users.update_one({"id": student_id}, {"$set": update_fields})
-        
+
         return {"message": "Recuperación aprobada exitosamente"}
-    
+
     # Find the failed subject record
     failed_record = await db.failed_subjects.find_one({"id": failed_subject_id}, {"_id": 0})
     if not failed_record:
         raise HTTPException(status_code=404, detail="Registro de materia reprobada no encontrado")
-    
+
+    if not approve:
+        # Admin explicitly rejects this persisted recovery record.
+        # Remove student from all program courses and mark as reprobado.
+        rej_student_id = failed_record["student_id"]
+        rej_course_id = failed_record["course_id"]
+        rej_prog_id = failed_record.get("program_id", "")
+        # Mark this record as rejected/processed
+        await db.failed_subjects.update_one(
+            {"id": failed_subject_id},
+            {"$set": {
+                "recovery_approved": False,
+                "recovery_rejected": True,
+                "recovery_processed": True,
+                "rejected_by": user["id"],
+                "rejected_at": now.isoformat(),
+                "processed_at": now.isoformat()
+            }}
+        )
+        # Also mark all other unprocessed records for this student/course as processed
+        await db.failed_subjects.update_many(
+            {
+                "student_id": rej_student_id,
+                "course_id": rej_course_id,
+                "id": {"$ne": failed_subject_id},
+                "recovery_processed": {"$ne": True}
+            },
+            {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
+        )
+        # Remove student from ALL courses in the program
+        for pc in await _get_program_courses_for_student(rej_student_id, rej_prog_id, rej_course_id):
+            await db.courses.update_one(
+                {"id": pc["id"]},
+                {"$pull": {"student_ids": rej_student_id}, "$addToSet": {"removed_student_ids": rej_student_id}}
+            )
+        # Mark student as reprobado
+        rej_student_doc = await db.users.find_one({"id": rej_student_id}, {"_id": 0, "program_statuses": 1})
+        rej_program_statuses = (rej_student_doc or {}).get("program_statuses") or {}
+        if rej_prog_id:
+            rej_program_statuses[rej_prog_id] = "reprobado"
+        rej_new_estado = derive_estado_from_program_statuses(rej_program_statuses)
+        rej_update: dict = {"estado": rej_new_estado}
+        if rej_prog_id:
+            rej_update["program_statuses"] = rej_program_statuses
+        await db.users.update_one({"id": rej_student_id, "role": "estudiante"}, {"$set": rej_update})
+        logger.info(
+            f"Admin {user['id']} rejected recovery for student {rej_student_id} "
+            f"in course {rej_course_id} (record {failed_subject_id})"
+        )
+        await log_audit(
+            "recovery_rejected_by_admin", user["id"], user["role"],
+            {"student_id": rej_student_id, "failed_subject_id": failed_subject_id,
+             "course_id": rej_course_id, "program_id": rej_prog_id}
+        )
+        return {"message": "Recuperación rechazada. El estudiante ha sido retirado del programa."}
+
     # Module alignment: reject approval if subject module doesn't match student's current module
     record_module = failed_record.get("module_number")
     if record_module is not None:

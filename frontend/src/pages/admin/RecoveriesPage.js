@@ -41,6 +41,11 @@ export default function RecoveriesPage() {
   }, [fetchRecoveryPanel]);
 
   const handleApproveRecovery = async (failedSubjectId, approve) => {
+    if (!approve && !window.confirm(
+      '¿Estás seguro de rechazar esta recuperación?\n\nEl estudiante será RETIRADO DEL PROGRAMA y marcado como reprobado. Esta acción es inmediata e irreversible.'
+    )) {
+      return;
+    }
     setProcessingId(failedSubjectId);
     try {
       await api.post('/admin/approve-recovery', null, {
@@ -49,7 +54,7 @@ export default function RecoveriesPage() {
           approve: approve
         }
       });
-      toast.success(approve ? 'Recuperación aprobada' : 'Recuperación rechazada');
+      toast.success(approve ? 'Recuperación aprobada' : 'Recuperación rechazada. Estudiante retirado del programa.');
       fetchRecoveryPanel();
     } catch (err) {
       toast.error('Error procesando recuperación');
@@ -390,7 +395,7 @@ export default function RecoveriesPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {!subject.recovery_approved && !recoveryClosed && (
+                            {!subject.recovery_approved && !recoveryClosed && (
                                 <>
                                   <Button
                                     variant="ghost"
@@ -405,6 +410,22 @@ export default function RecoveriesPage() {
                                       <>
                                         <CheckCircle className="h-4 w-4" />
                                         Aprobar
+                                      </>
+                                    )}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleApproveRecovery(subject.id, false)}
+                                    disabled={processingId === subject.id}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  >
+                                    {processingId === subject.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <>
+                                        <XCircle className="h-4 w-4" />
+                                        Rechazar
                                       </>
                                     )}
                                   </Button>
