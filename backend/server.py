@@ -2709,6 +2709,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
         raise HTTPException(status_code=403, detail="No autorizado")
     
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    module_dates_updated = "module_dates" in update_data
     
     # Validate module date order if module_dates are being updated
     if "module_dates" in update_data and update_data["module_dates"]:
@@ -2847,6 +2848,13 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                         f"program_modules.{program_id}": module_number
                     }}
                 )
+
+    # If module dates were adjusted, immediately execute the same automatic
+    # closure/recovery-close logic used by the daily scheduler. This prevents
+    # students from remaining in groups until 02:00 AM when admins move dates
+    # to already-past values (e.g., recovery_close already expired).
+    if module_dates_updated:
+        await check_and_close_modules()
     
     return updated
 
