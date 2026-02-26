@@ -3192,8 +3192,13 @@ async def get_recovery_enabled(student_id: Optional[str] = None, course_id: Opti
     return enabled
 
 @api_router.put("/users/{user_id}/promote")
-async def promote_student(user_id: str, user=Depends(get_current_user)):
-    """Admin promotes a student to the next module"""
+async def promote_student(user_id: str, program_id: Optional[str] = None, user=Depends(get_current_user)):
+    """Admin promotes a student to the next module.
+
+    Supports N modules (no hardcoded upper bound).  When program_id is supplied
+    only that program's module is advanced; otherwise every program the student
+    belongs to that is currently at ``current_module`` is advanced.
+    """
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede promover estudiantes")
     
@@ -3201,24 +3206,69 @@ async def promote_student(user_id: str, user=Depends(get_current_user)):
     if not student:
         raise HTTPException(status_code=404, detail="Estudiante no encontrado")
     
+    program_modules = student.get("program_modules") or {}
+    program_statuses = student.get("program_statuses") or {}
     current_module = student.get("module", 1)
-    if current_module >= 2:
-        raise HTTPException(status_code=400, detail="El estudiante ya está en el módulo final")
-    
-    # Promote to next module
-    # If promoting to module 2, student remains "activo" (active)
-    # When completing module 2, they become "egresado" (graduate) - handled separately
-    await db.users.update_one(
-        {"id": user_id},
-        {"$set": {"module": current_module + 1}}
-    )
+
+    # Determine target programs
+    if program_id:
+        all_prog_ids = student.get("program_ids") or ([student.get("program_id")] if student.get("program_id") else [])
+        if program_id not in all_prog_ids:
+            raise HTTPException(status_code=400, detail=f"El estudiante no pertenece al programa {program_id}")
+        target_programs = [program_id]
+    else:
+        target_programs = student.get("program_ids") or ([student.get("program_id")] if student.get("program_id") else [])
+
+    if not target_programs:
+        # Legacy fallback: no per-program data; just bump the global module field
+        await db.users.update_one(
+            {"id": user_id},
+            {"$set": {"module": current_module + 1}}
+        )
+        updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+        return updated
+
+    # Load max_modules per program for N-module support
+    prog_docs = await db.programs.find(
+        {"id": {"$in": target_programs}}, {"_id": 0, "id": 1, "modules": 1}
+    ).to_list(None)
+    prog_max_map = {p["id"]: max(len(p.get("modules") or []), 2) for p in prog_docs}
+
+    set_fields: dict = {}
+    for pid in target_programs:
+        prog_current = program_modules.get(pid, current_module)
+        prog_max = prog_max_map.get(pid, 2)
+        if prog_current >= prog_max:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El estudiante ya está en el módulo final del programa {pid}"
+            )
+        next_mod = prog_current + 1
+        program_modules[pid] = next_mod
+        program_statuses[pid] = "activo"
+        set_fields[f"program_modules.{pid}"] = next_mod
+
+    new_estado = derive_estado_from_program_statuses(program_statuses)
+    set_fields["program_statuses"] = program_statuses
+    set_fields["estado"] = new_estado
+    # Keep global module field in sync with the first target program
+    set_fields["module"] = program_modules.get(target_programs[0], current_module)
+
+    await db.users.update_one({"id": user_id}, {"$set": set_fields})
     
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     return updated
 
 @api_router.put("/users/{user_id}/graduate")
-async def graduate_student(user_id: str, user=Depends(get_current_user)):
-    """Admin marks a student as graduated (egresado)"""
+async def graduate_student(user_id: str, program_id: Optional[str] = None, user=Depends(get_current_user)):
+    """Admin marks a student as graduated (egresado).
+
+    Uses dynamic max_modules from the program definition (N-module support).
+    Updates both ``program_statuses`` and the derived global ``estado`` so that
+    multi-program students are handled correctly.
+    When program_id is supplied only that program is graduated; otherwise every
+    program the student belongs to is graduated.
+    """
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede graduar estudiantes")
     
@@ -3226,15 +3276,47 @@ async def graduate_student(user_id: str, user=Depends(get_current_user)):
     if not student:
         raise HTTPException(status_code=404, detail="Estudiante no encontrado")
     
-    # Check if student is in module 2 (final module)
+    program_modules = student.get("program_modules") or {}
+    program_statuses = student.get("program_statuses") or {}
     current_module = student.get("module", 1)
-    if current_module < 2:
-        raise HTTPException(status_code=400, detail="El estudiante debe estar en el módulo final para graduarse")
-    
-    # Mark as graduated
+
+    # Determine target programs
+    if program_id:
+        all_prog_ids = student.get("program_ids") or ([student.get("program_id")] if student.get("program_id") else [])
+        if program_id not in all_prog_ids:
+            raise HTTPException(status_code=400, detail=f"El estudiante no pertenece al programa {program_id}")
+        target_programs = [program_id]
+    else:
+        target_programs = student.get("program_ids") or ([student.get("program_id")] if student.get("program_id") else [])
+
+    if not target_programs:
+        # Legacy fallback: no per-program data; check global module field
+        if current_module < 2:
+            raise HTTPException(status_code=400, detail="El estudiante debe estar en el módulo final para graduarse")
+        await db.users.update_one({"id": user_id}, {"$set": {"estado": "egresado"}})
+        updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+        return updated
+
+    # Load max_modules per program for dynamic last-module check (N-module support)
+    prog_docs = await db.programs.find(
+        {"id": {"$in": target_programs}}, {"_id": 0, "id": 1, "modules": 1}
+    ).to_list(None)
+    prog_max_map = {p["id"]: max(len(p.get("modules") or []), 2) for p in prog_docs}
+
+    for pid in target_programs:
+        prog_current = program_modules.get(pid, current_module)
+        prog_max = prog_max_map.get(pid, 2)
+        if prog_current < prog_max:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El estudiante debe estar en el módulo final del programa {pid} para graduarse"
+            )
+        program_statuses[pid] = "egresado"
+
+    new_estado = derive_estado_from_program_statuses(program_statuses)
     await db.users.update_one(
         {"id": user_id},
-        {"$set": {"estado": "egresado"}}
+        {"$set": {"estado": new_estado, "program_statuses": program_statuses}}
     )
     
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
