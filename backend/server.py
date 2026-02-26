@@ -1720,6 +1720,7 @@ class SubmissionCreate(BaseModel):
 class RecoveryEnableRequest(BaseModel):
     student_id: str
     course_id: str
+    subject_id: Optional[str] = None
 
 class ModuleCloseDateUpdate(BaseModel):
     module1_close_date: Optional[str] = None
@@ -2889,15 +2890,27 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
         query["subject_id"] = subject_id
     activities = await db.activities.find(query, {"_id": 0}).to_list(500)
     
-    # For students: filter out recovery activities unless recovery is enabled for them in this course
+    # For students: show recovery activities only for subjects explicitly approved by admin.
     if user["role"] == "estudiante" and course_id:
-        recovery_enabled = await db.recovery_enabled.find_one({
+        approved_records = await db.failed_subjects.find({
             "student_id": user["id"],
             "course_id": course_id,
-            "enabled": True
-        })
-        if not recovery_enabled:
-            activities = [a for a in activities if not a.get("is_recovery")]
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        }, {"_id": 0, "subject_id": 1}).to_list(None)
+        approved_subject_ids = {r.get("subject_id") for r in approved_records if r.get("subject_id")}
+        has_course_level_approval = any(not r.get("subject_id") for r in approved_records)
+
+        filtered_activities = []
+        for a in activities:
+            if not a.get("is_recovery"):
+                filtered_activities.append(a)
+                continue
+            act_sid = a.get("subject_id")
+            if (act_sid and act_sid in approved_subject_ids) or (not act_sid and has_course_level_approval):
+                filtered_activities.append(a)
+        activities = filtered_activities
     
     return activities
 
@@ -2991,7 +3004,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     
     # Rule E: For recovery activities, only approve/reject is allowed — no numeric grade
     if req.activity_id:
-        activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1, "course_id": 1})
+        activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1, "course_id": 1, "subject_id": 1})
         if activity_doc and activity_doc.get("is_recovery"):
             if req.value is not None and not req.recovery_status:
                 raise HTTPException(
@@ -3001,11 +3014,17 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             if req.recovery_status not in ("approved", "rejected", None):
                 raise HTTPException(status_code=400, detail="Estado de recuperación inválido")
             # Recovery must be admin-approved before teacher can grade it
-            failed_record = await db.failed_subjects.find_one({
+            rec_subject_id = req.subject_id or activity_doc.get("subject_id")
+            failed_filter = {
                 "student_id": req.student_id,
                 "course_id": req.course_id,
-                "recovery_approved": True
-            })
+                "recovery_approved": True,
+                "recovery_processed": {"$ne": True},
+                "recovery_rejected": {"$ne": True},
+            }
+            if rec_subject_id:
+                failed_filter["subject_id"] = rec_subject_id
+            failed_record = await db.failed_subjects.find_one(failed_filter)
             if not failed_record:
                 raise HTTPException(
                     status_code=400,
@@ -3022,9 +3041,20 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     grade_value = req.value
     if req.recovery_status:
         # Build the filter to find the specific failed_subjects record
-        fs_filter = {"student_id": req.student_id, "course_id": req.course_id, "recovery_approved": True}
-        if req.subject_id:
-            fs_filter["subject_id"] = req.subject_id
+        rec_subject_id = req.subject_id
+        if req.activity_id:
+            _act = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "subject_id": 1})
+            rec_subject_id = rec_subject_id or (_act or {}).get("subject_id")
+
+        fs_filter = {
+            "student_id": req.student_id,
+            "course_id": req.course_id,
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        }
+        if rec_subject_id:
+            fs_filter["subject_id"] = rec_subject_id
 
         if req.recovery_status == "approved":
             # Calculate what grade is needed to get exactly 3.0 average
@@ -3370,13 +3400,18 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
     
     now = datetime.now(timezone.utc)
     
-    # Check admin approval for recovery activities
+    # Check admin approval for recovery activities (subject-scoped)
     if activity.get("is_recovery"):
-        failed_record = await db.failed_subjects.find_one({
+        failed_filter = {
             "student_id": user["id"],
             "course_id": activity["course_id"],
-            "recovery_approved": True
-        })
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        }
+        if activity.get("subject_id"):
+            failed_filter["subject_id"] = activity["subject_id"]
+        failed_record = await db.failed_subjects.find_one(failed_filter)
         if not failed_record:
             raise HTTPException(
                 status_code=400,
@@ -3453,6 +3488,7 @@ async def enable_recovery(req: RecoveryEnableRequest, user=Depends(get_current_u
         "id": str(uuid.uuid4()),
         "student_id": req.student_id,
         "course_id": req.course_id,
+        "subject_id": req.subject_id,
         "enabled": True,
         "enabled_by": user["id"],
         "enabled_at": datetime.now(timezone.utc).isoformat()
@@ -3460,7 +3496,8 @@ async def enable_recovery(req: RecoveryEnableRequest, user=Depends(get_current_u
     
     existing = await db.recovery_enabled.find_one({
         "student_id": req.student_id,
-        "course_id": req.course_id
+        "course_id": req.course_id,
+        "subject_id": req.subject_id
     })
     
     if existing:
@@ -3991,16 +4028,9 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         next_dates = module_dates.get(str(module_number + 1)) or {}
         return next_dates.get("start")
 
-    # Fetch all records that haven't been processed yet, plus recently processed ones (last 30 days)
-    # This ensures admins can see the full status of each recovery even after recovery_close passes.
-    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    # Fetch only records still in-process for admin action.
     failed_records = await db.failed_subjects.find(
-        {
-            "$or": [
-                {"recovery_processed": {"$ne": True}},
-                {"processed_at": {"$gte": thirty_days_ago}}
-            ]
-        },
+        {"recovery_processed": {"$ne": True}},
         {"_id": 0}
     ).to_list(1000)
     
@@ -4061,25 +4091,13 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         if not teacher_status:
             teacher_status = teacher_graded_index.get((student_id, record["course_id"], None))
 
+        # Skip closed recovery windows in admin panel. These are resolved by scheduler.
+        if recovery_close and recovery_close < today_str:
+            continue
+
         # Compute a human-readable status for the record
         ts = record.get("teacher_graded_status") if record.get("teacher_graded_status") is not None else teacher_status
-        if recovery_close and recovery_close <= today_str:
-            if record.get("recovery_approved") and ts == "approved":
-                rec_status = "processed_passed"
-            elif ts == "rejected":
-                rec_status = "expired_teacher_rejected"
-            elif not record.get("recovery_approved"):
-                rec_status = "expired_no_admin_action"
-            elif record.get("recovery_approved") and ts != "approved":
-                rec_status = "expired_not_graded"
-            else:
-                rec_status = "expired_unknown"
-        elif record.get("recovery_processed"):
-            if record.get("recovery_approved") and ts == "approved":
-                rec_status = "processed_passed"
-            else:
-                rec_status = "processed_failed"
-        elif record.get("recovery_completed"):
+        if record.get("recovery_completed"):
             rec_status = "teacher_approved" if ts == "approved" else "teacher_rejected"
         else:
             # Not yet graded by teacher (may or may not be admin-approved)
@@ -4219,10 +4237,12 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     })
                     already_tracked.add((student_id, course["id"], None))
     
+    filtered_students = [s for s in students_map.values() if s.get("failed_subjects")]
+
     return {
-        "students": list(students_map.values()),
-        "total_students": len(students_map),
-        "total_failed_subjects": sum(len(s["failed_subjects"]) for s in students_map.values())
+        "students": filtered_students,
+        "total_students": len(filtered_students),
+        "total_failed_subjects": sum(len(s["failed_subjects"]) for s in filtered_students)
     }
 
 @api_router.post("/admin/approve-recovery")
@@ -4291,7 +4311,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
 
         if not approve:
             # Admin explicitly rejects this auto-detected recovery: create a rejection record,
-            # remove student from all program courses and mark as reprobado.
+            # remove student from the affected course and mark as reprobado.
             rejection_record = {
                 "id": str(uuid.uuid4()),
                 "student_id": student_id,
@@ -4371,12 +4391,13 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         await db.failed_subjects.insert_one(new_record)
 
         # Enable recovery activities for this student/course
-        existing = await db.recovery_enabled.find_one({"student_id": student_id, "course_id": course_id})
+        existing = await db.recovery_enabled.find_one({"student_id": student_id, "course_id": course_id, "subject_id": subject_id})
         if not existing:
             await db.recovery_enabled.insert_one({
                 "id": str(uuid.uuid4()),
                 "student_id": student_id,
                 "course_id": course_id,
+                "subject_id": subject_id,
                 "enabled": True,
                 "enabled_by": user["id"],
                 "enabled_at": now.isoformat()
@@ -4488,6 +4509,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         "id": str(uuid.uuid4()),
         "student_id": failed_record["student_id"],
         "course_id": failed_record["course_id"],
+        "subject_id": failed_record.get("subject_id"),
         "enabled": True,
         "enabled_by": user["id"],
         "enabled_at": datetime.now(timezone.utc).isoformat()
@@ -4495,7 +4517,8 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
     
     existing = await db.recovery_enabled.find_one({
         "student_id": failed_record["student_id"],
-        "course_id": failed_record["course_id"]
+        "course_id": failed_record["course_id"],
+        "subject_id": failed_record.get("subject_id")
     })
     
     if not existing:
