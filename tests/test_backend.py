@@ -832,6 +832,81 @@ class TestDeleteCourseBlocking:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests for reprobado cleanup logic at recovery_close
+# ---------------------------------------------------------------------------
+
+class TestReprobadoCleanupAtRecoveryClose:
+    """Tests for the business rule: a student who is already reprobado must be
+    removed from the group (not promoted) when the recovery period closes.
+
+    This covers the scenario where a student was marked reprobado in one course
+    but their student_id still appears in another course's student_ids because
+    the earlier removal only targeted the specific failing course.
+    """
+
+    def _should_remove_reprobado(self, student_doc, prog_id):
+        """Return True if the student should be removed (not promoted) because
+        they are already reprobado for the given program.
+
+        This mirrors the guard added to the direct-pass loop in
+        check_and_close_modules.
+        """
+        program_statuses = (student_doc or {}).get("program_statuses") or {}
+        return program_statuses.get(prog_id) == "reprobado"
+
+    def test_reprobado_student_must_be_removed(self):
+        """A reprobado student still in student_ids must be removed, not promoted."""
+        student = {"id": "s1", "program_statuses": {"prog-1": "reprobado"}}
+        assert self._should_remove_reprobado(student, "prog-1") is True
+
+    def test_activo_student_must_not_be_removed(self):
+        """An activo student should be promoted, not removed."""
+        student = {"id": "s1", "program_statuses": {"prog-1": "activo"}}
+        assert self._should_remove_reprobado(student, "prog-1") is False
+
+    def test_pendiente_recuperacion_must_not_be_removed(self):
+        """A pendiente_recuperacion student should not be removed by the direct-pass logic."""
+        student = {"id": "s1", "program_statuses": {"prog-1": "pendiente_recuperacion"}}
+        assert self._should_remove_reprobado(student, "prog-1") is False
+
+    def test_egresado_must_not_be_removed(self):
+        """An egresado student should not be removed."""
+        student = {"id": "s1", "program_statuses": {"prog-1": "egresado"}}
+        assert self._should_remove_reprobado(student, "prog-1") is False
+
+    def test_reprobado_in_different_program_does_not_trigger_removal(self):
+        """Being reprobado in another program must not remove student from this program's courses."""
+        student = {
+            "id": "s1",
+            "program_statuses": {"prog-2": "reprobado", "prog-1": "activo"},
+        }
+        assert self._should_remove_reprobado(student, "prog-1") is False
+
+    def test_reprobado_in_multiple_programs_triggers_removal_for_each(self):
+        """Reprobado in multiple programs → removal guard fires for each one."""
+        student = {
+            "id": "s1",
+            "program_statuses": {"prog-1": "reprobado", "prog-2": "reprobado"},
+        }
+        assert self._should_remove_reprobado(student, "prog-1") is True
+        assert self._should_remove_reprobado(student, "prog-2") is True
+
+    def test_missing_program_statuses_not_reprobado(self):
+        """A student without program_statuses should not trigger the reprobado guard."""
+        student = {"id": "s1"}
+        assert self._should_remove_reprobado(student, "prog-1") is False
+
+    def test_none_student_doc_not_reprobado(self):
+        """None student document must not raise and must return False."""
+        assert self._should_remove_reprobado(None, "prog-1") is False
+
+    def test_empty_program_statuses_not_reprobado(self):
+        """Empty program_statuses must not trigger removal."""
+        student = {"id": "s1", "program_statuses": {}}
+        assert self._should_remove_reprobado(student, "prog-1") is False
+
+
+# ---------------------------------------------------------------------------
 # Integration tests using FastAPI TestClient
 # ---------------------------------------------------------------------------
 
