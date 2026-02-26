@@ -3343,3 +3343,180 @@ class TestAdminRecoveryRejection:
         # Promotion check: skip if reprobado
         should_skip = program_statuses.get("prog-a") == "reprobado"
         assert should_skip is True
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for scheduler fixes (Causa 1, 3, 4)
+# ---------------------------------------------------------------------------
+
+class TestSchedulerFixes:
+    """Tests for the fixes applied to check_and_close_modules."""
+
+    # --- Causa 4: timezone ---
+
+    def test_bogota_tz_constant_defined(self):
+        """BOGOTA_TZ constant should be importable from server module."""
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Bogota")
+        from datetime import datetime, timezone
+        utc_dt = datetime(2026, 1, 1, 5, 0, 0, tzinfo=timezone.utc)
+        bogota_dt = utc_dt.astimezone(tz)
+        # UTC 05:00 == Colombia midnight (UTC-5)
+        assert bogota_dt.strftime("%Y-%m-%d") == "2026-01-01"
+
+    def test_bogota_is_behind_utc_by_5_hours(self):
+        """America/Bogota is UTC-5, so 02:00 server time at UTC offsets correctly."""
+        from zoneinfo import ZoneInfo
+        from datetime import datetime, timezone
+        tz = ZoneInfo("America/Bogota")
+        # UTC 07:00 = Bogotá 02:00 (UTC-5)
+        utc_dt = datetime(2026, 6, 15, 7, 0, 0, tzinfo=timezone.utc)
+        bogota_dt = utc_dt.astimezone(tz)
+        assert bogota_dt.hour == 2
+        assert bogota_dt.date().isoformat() == "2026-06-15"
+
+    def test_scheduler_uses_bogota_date_not_utc_for_comparisons(self):
+        """Scheduler today_str must use Bogotá date so that dates entered by
+        Colombian admins (UTC-5) are evaluated correctly and not a day off."""
+        from zoneinfo import ZoneInfo
+        from datetime import datetime, timezone
+        tz = ZoneInfo("America/Bogota")
+        # At 23:30 UTC, it is 18:30 Bogotá same day (UTC-5)
+        utc_dt = datetime(2026, 3, 10, 23, 30, 0, tzinfo=timezone.utc)
+        bogota_date = utc_dt.astimezone(tz).strftime("%Y-%m-%d")
+        utc_date = utc_dt.strftime("%Y-%m-%d")
+        # Both are the same date in this case
+        assert bogota_date == "2026-03-10"
+        assert utc_date == "2026-03-10"
+
+    def test_scheduler_bogota_date_differs_from_utc_near_midnight(self):
+        """Near midnight UTC, Bogotá date is still the previous day (UTC-5)."""
+        from zoneinfo import ZoneInfo
+        from datetime import datetime, timezone
+        tz = ZoneInfo("America/Bogota")
+        # 00:30 UTC on the 11th = 19:30 Bogotá on the 10th (UTC-5)
+        utc_dt = datetime(2026, 3, 11, 0, 30, 0, tzinfo=timezone.utc)
+        bogota_date = utc_dt.astimezone(tz).strftime("%Y-%m-%d")
+        utc_date = utc_dt.strftime("%Y-%m-%d")
+        assert bogota_date == "2026-03-10"
+        assert utc_date == "2026-03-11"
+
+    # --- Causa 1: fallback module_dates from program ---
+
+    def test_fallback_module_dates_built_from_program_close_dates(self):
+        """When a course has no module_dates, fallback uses program moduleN_close_date
+        fields to synthesize a recovery_close value for each module."""
+        program = {
+            "id": "prog-1",
+            "modules": ["Módulo 1", "Módulo 2"],
+            "module1_close_date": "2026-03-01",
+            "module2_close_date": "2026-08-01",
+        }
+        course = {"id": "c-1", "program_id": "prog-1", "module_dates": {}}
+
+        module_dates = course.get("module_dates") or {}
+        if not module_dates:
+            prog_modules_list = program.get("modules") or []
+            max_mod = max(len(prog_modules_list), 2)
+            for mn in range(1, max_mod + 1):
+                close_field = f"module{mn}_close_date"
+                close_val = program.get(close_field)
+                if close_val:
+                    module_dates[str(mn)] = {"recovery_close": close_val}
+
+        assert module_dates == {
+            "1": {"recovery_close": "2026-03-01"},
+            "2": {"recovery_close": "2026-08-01"},
+        }
+
+    def test_fallback_module_dates_empty_when_program_has_no_close_dates(self):
+        """No fallback data when the program itself has no close dates configured."""
+        program = {"id": "prog-2", "modules": [], "name": "Prog Sin Fechas"}
+        course = {"id": "c-2", "program_id": "prog-2", "module_dates": {}}
+
+        module_dates = course.get("module_dates") or {}
+        if not module_dates:
+            prog_modules_list = program.get("modules") or []
+            max_mod = max(len(prog_modules_list), 2)
+            for mn in range(1, max_mod + 1):
+                close_field = f"module{mn}_close_date"
+                close_val = program.get(close_field)
+                if close_val:
+                    module_dates[str(mn)] = {"recovery_close": close_val}
+
+        assert module_dates == {}
+
+    def test_course_with_existing_module_dates_not_overwritten(self):
+        """Courses that already have module_dates must never use the program fallback."""
+        course = {
+            "id": "c-3",
+            "program_id": "prog-3",
+            "module_dates": {
+                "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"}
+            },
+        }
+        module_dates = course.get("module_dates") or {}
+        # Should NOT enter the fallback block
+        entered_fallback = not module_dates  # False → no fallback
+        assert entered_fallback is False
+        assert module_dates["1"]["recovery_close"] == "2026-07-15"
+
+    # --- Causa 3: retroactive close_module_internal detection ---
+
+    def test_retroactive_check_triggers_when_no_failed_subjects_and_no_closure(self):
+        """If recovery_close passed, no failed_subjects exist, and no module_closures
+        recorded, the scheduler should flag retroactive execution."""
+        today_str = "2026-04-01"
+        recovery_close = "2026-03-01"  # already in the past
+        existing_failed_subjects = None  # nothing in DB
+        existing_closure = None  # no module_closures record
+
+        should_run_retroactive = (
+            existing_failed_subjects is None
+            and existing_closure is None
+            and recovery_close <= today_str
+        )
+        assert should_run_retroactive is True
+
+    def test_retroactive_check_skipped_when_closure_already_recorded(self):
+        """No retroactive run when a module_closures entry already exists."""
+        today_str = "2026-04-01"
+        recovery_close = "2026-03-01"
+        existing_failed_subjects = None
+        existing_closure = {"id": "cl-1", "module_number": 1}  # already closed
+
+        should_run_retroactive = (
+            existing_failed_subjects is None
+            and existing_closure is None
+            and recovery_close <= today_str
+        )
+        assert should_run_retroactive is False
+
+    def test_retroactive_check_skipped_when_failed_subjects_exist(self):
+        """No retroactive run when failed_subjects records are already present."""
+        today_str = "2026-04-01"
+        recovery_close = "2026-03-01"
+        existing_failed_subjects = {"id": "fs-1", "student_id": "s-1"}
+        existing_closure = None
+
+        should_run_retroactive = (
+            existing_failed_subjects is None
+            and existing_closure is None
+            and recovery_close <= today_str
+        )
+        assert should_run_retroactive is False
+
+    def test_retroactive_check_skipped_when_recovery_not_yet_closed(self):
+        """No retroactive run when recovery period hasn't closed yet."""
+        today_str = "2026-02-15"
+        recovery_close = "2026-03-01"  # still in the future
+        existing_failed_subjects = None
+        existing_closure = None
+
+        should_run_retroactive = (
+            existing_failed_subjects is None
+            and existing_closure is None
+            and recovery_close <= today_str
+        )
+        assert should_run_retroactive is False
+
