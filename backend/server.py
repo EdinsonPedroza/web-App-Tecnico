@@ -348,16 +348,8 @@ async def check_and_close_modules():
                             f"Recovery close: no admin action for student {student_id} in course "
                             f"{course['id']} – applying fail flow (removing from group, marking reprobado)"
                         )
-                        # Remove student from ALL courses in the same program so they are not
-                        # left enrolled in sibling courses for the same module.
-                        for _pc in await _get_program_courses_for_student(student_id, prog_id, course["id"]):
-                            await db.courses.update_one(
-                                {"id": _pc["id"]},
-                                {
-                                    "$pull": {"student_ids": student_id},
-                                    "$addToSet": {"removed_student_ids": student_id}
-                                }
-                            )
+                        # Remove student only from the course where recovery was not passed.
+                        await _unenroll_student_from_course(student_id, course["id"])
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         _ps = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
@@ -437,16 +429,8 @@ async def check_and_close_modules():
                     else:
                         # At least one subject not passed: remove from group, mark activo for re-enrollment
                         logger.info(f"Recovery close: student {student_id} did not pass all subjects in course {course['id']} – removing from group")
-                        # Remove student from ALL courses in the same program so they are not
-                        # left enrolled in sibling courses for the same module.
-                        for _pc in await _get_program_courses_for_student(student_id, prog_id, course["id"]):
-                            await db.courses.update_one(
-                                {"id": _pc["id"]},
-                                {
-                                    "$pull": {"student_ids": student_id},
-                                    "$addToSet": {"removed_student_ids": student_id}
-                                }
-                            )
+                        # Remove student only from the course where recovery was not passed.
+                        await _unenroll_student_from_course(student_id, course["id"])
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         student_program_statuses = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
@@ -498,23 +482,8 @@ async def check_and_close_modules():
                     # yet pulled from THIS course's student_ids.  Remove them instead of
                     # promoting them.
                     if direct_prog_statuses.get(prog_id) == "reprobado":
-                        await db.courses.update_one(
-                            {"id": course["id"]},
-                            {
-                                "$pull": {"student_ids": student_id},
-                                "$addToSet": {"removed_student_ids": student_id}
-                            }
-                        )
-                        removed_count += 1
-                        logger.info(
-                            f"Recovery close: removed reprobado student {student_id} "
-                            f"from course {course['id']} (was still enrolled after failing in another course)"
-                        )
-                        await log_audit(
-                            "student_removed_from_group", "system", "system",
-                            {"student_id": student_id, "course_id": course["id"],
-                             "program_id": prog_id, "trigger": "recovery_close_reprobado_cleanup"}
-                        )
+                        # Keep enrollment in other courses untouched. A failed recovery in one
+                        # course only removes the student from that specific course.
                         continue
                     program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
                     max_modules = max(len(program.get("modules", [])) if program and program.get("modules") else 2, 2)
@@ -1176,6 +1145,31 @@ async def _get_program_courses_for_student(
     return [{"id": fallback_course_id}]
 
 
+async def _unenroll_student_from_course(
+    student_id: str, course_id: str
+) -> list:
+    """Unenroll student only from the specified course and clear stale group label."""
+    await db.courses.update_one(
+        {"id": course_id},
+        {
+            "$pull": {"student_ids": student_id},
+            "$addToSet": {"removed_student_ids": student_id}
+        }
+    )
+
+    still_enrolled_anywhere = await db.courses.find_one(
+        {"student_ids": student_id},
+        {"_id": 0, "id": 1}
+    )
+    if not still_enrolled_anywhere:
+        await db.users.update_one(
+            {"id": student_id, "role": "estudiante"},
+            {"$unset": {"grupo": ""}}
+        )
+
+    return [course_id]
+
+
 async def _check_and_update_recovery_completion(student_id: str, course_id: str):
     """Check if all recovery subjects for a student in a course are now completed
     and approved by both admin and teacher. If so, immediately update the student's
@@ -1320,16 +1314,8 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
     if program_statuses.get(prog_id) != "pendiente_recuperacion":
         return
 
-    # Remove from ALL courses for this program so the student is not left enrolled
-    # in sibling courses for the same module.
-    for pc in await _get_program_courses_for_student(student_id, prog_id, course_id):
-        await db.courses.update_one(
-            {"id": pc["id"]},
-            {
-                "$pull": {"student_ids": student_id},
-                "$addToSet": {"removed_student_ids": student_id}
-            }
-        )
+    # Remove only from the course where teacher rejection occurred.
+    await _unenroll_student_from_course(student_id, course_id)
     # Mark reprobado
     program_statuses[prog_id] = "reprobado"
     new_estado = derive_estado_from_program_statuses(program_statuses)
@@ -4329,12 +4315,8 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 rejection_record["subject_id"] = subject_id
                 rejection_record["subject_name"] = subject_doc.get("name", "Desconocido") if subject_doc else "Desconocido"
             await db.failed_subjects.insert_one(rejection_record)
-            # Remove student from ALL courses in the program
-            for pc in await _get_program_courses_for_student(student_id, prog_id, course_id):
-                await db.courses.update_one(
-                    {"id": pc["id"]},
-                    {"$pull": {"student_ids": student_id}, "$addToSet": {"removed_student_ids": student_id}}
-                )
+            # Remove student only from this course (auto-detected rejection path)
+            await _unenroll_student_from_course(student_id, course_id)
             # Mark student as reprobado
             student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
             student_program_statuses = (student_doc or {}).get("program_statuses") or {}
@@ -4354,7 +4336,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 {"student_id": student_id, "course_id": course_id, "program_id": prog_id,
                  "module_number": module_number}
             )
-            return {"message": "Recuperación rechazada. El estudiante ha sido retirado del programa."}
+            return {"message": "Recuperación rechazada. El estudiante ha sido retirado del grupo correspondiente."}
 
         # Module alignment: recovery can only be approved for the student's current module
         if student_module is not None and student_module != module_number:
@@ -4425,7 +4407,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
 
     if not approve:
         # Admin explicitly rejects this persisted recovery record.
-        # Remove student from all program courses and mark as reprobado.
+        # Remove student only from this course and mark as reprobado for that program.
         rej_student_id = failed_record["student_id"]
         rej_course_id = failed_record["course_id"]
         rej_prog_id = failed_record.get("program_id", "")
@@ -4451,12 +4433,8 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             },
             {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
         )
-        # Remove student from ALL courses in the program
-        for pc in await _get_program_courses_for_student(rej_student_id, rej_prog_id, rej_course_id):
-            await db.courses.update_one(
-                {"id": pc["id"]},
-                {"$pull": {"student_ids": rej_student_id}, "$addToSet": {"removed_student_ids": rej_student_id}}
-            )
+        # Remove student only from this course (auto-detected rejection path)
+        await _unenroll_student_from_course(rej_student_id, rej_course_id)
         # Mark student as reprobado
         rej_student_doc = await db.users.find_one({"id": rej_student_id}, {"_id": 0, "program_statuses": 1})
         rej_program_statuses = (rej_student_doc or {}).get("program_statuses") or {}
@@ -4476,7 +4454,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             {"student_id": rej_student_id, "failed_subject_id": failed_subject_id,
              "course_id": rej_course_id, "program_id": rej_prog_id}
         )
-        return {"message": "Recuperación rechazada. El estudiante ha sido retirado del programa."}
+        return {"message": "Recuperación rechazada. El estudiante ha sido retirado del grupo correspondiente."}
 
     # Module alignment: reject approval if subject module doesn't match student's current module
     record_module = failed_record.get("module_number")
