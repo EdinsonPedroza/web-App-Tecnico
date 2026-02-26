@@ -484,8 +484,20 @@ async def check_and_close_modules():
                     # yet pulled from THIS course's student_ids.  Remove them instead of
                     # promoting them.
                     if direct_prog_statuses.get(prog_id) == "reprobado":
-                        # Keep enrollment in other courses untouched. A failed recovery in one
-                        # course only removes the student from that specific course.
+                        # Student is already reprobado (failed in another course or by a prior
+                        # scheduler run) but their id was not yet removed from this course's
+                        # student_ids.  Remove them now so they are not left as ghosts.
+                        logger.info(
+                            f"Recovery close: student {student_id} is already reprobado for "
+                            f"program {prog_id} – removing from course {course['id']} (CASO 5)"
+                        )
+                        await _unenroll_student_from_course(student_id, course["id"])
+                        removed_count += 1
+                        await log_audit(
+                            "student_removed_from_group", "system", "system",
+                            {"student_id": student_id, "course_id": course["id"],
+                             "program_id": prog_id, "trigger": "recovery_close_already_reprobado"}
+                        )
                         continue
                     program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
                     max_modules = max(len(program.get("modules", [])) if program and program.get("modules") else 2, 2)
