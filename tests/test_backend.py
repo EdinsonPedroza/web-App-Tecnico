@@ -2786,3 +2786,205 @@ class TestCheckAndUpdateRecoveryCompletion:
         ]
         result = self._should_update(records, "pendiente_recuperacion")
         assert result is None  # Student remains pendiente_recuperacion
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for promote_student decision logic (N-module, multi-program)
+# ---------------------------------------------------------------------------
+
+class TestPromoteStudentLogic:
+    """Tests for the promote_student endpoint decision logic.
+
+    The endpoint must:
+    - Reject promotion when the student is already in the last module of a program.
+    - Allow promotion for any module < max_modules (N-module support, no hardcoded cap of 2).
+    - Update program_modules and program_statuses per-program.
+    - Derive the correct global estado after promotion.
+    """
+
+    def _can_promote(self, program_modules, prog_id, prog_max_map):
+        """Mirror of the per-program check inside promote_student."""
+        current = program_modules.get(prog_id, 1)
+        max_mods = prog_max_map.get(prog_id, 2)
+        return current < max_mods
+
+    def _promote(self, program_modules, program_statuses, prog_id, prog_max_map):
+        """Mirror of the promote_student per-program update logic."""
+        current = program_modules.get(prog_id, 1)
+        max_mods = prog_max_map.get(prog_id, 2)
+        if current >= max_mods:
+            return None, "already_final"
+        program_modules = dict(program_modules)
+        program_statuses = dict(program_statuses)
+        program_modules[prog_id] = current + 1
+        program_statuses[prog_id] = "activo"
+        return program_modules, program_statuses
+
+    def _derive(self, program_statuses):
+        """Mirror of derive_estado_from_program_statuses."""
+        if not program_statuses:
+            return "activo"
+        statuses = list(program_statuses.values())
+        if "activo" in statuses:
+            return "activo"
+        if all(s == "egresado" for s in statuses):
+            return "egresado"
+        if "pendiente_recuperacion" in statuses:
+            return "pendiente_recuperacion"
+        if "egresado" in statuses:
+            return "egresado"
+        return "retirado"
+
+    def test_module1_can_be_promoted_in_2module_program(self):
+        assert self._can_promote({"prog-a": 1}, "prog-a", {"prog-a": 2}) is True
+
+    def test_module2_cannot_be_promoted_in_2module_program(self):
+        """N-module: module 2 of a 2-module program is the last – promotion blocked."""
+        assert self._can_promote({"prog-a": 2}, "prog-a", {"prog-a": 2}) is False
+
+    def test_module2_can_be_promoted_in_3module_program(self):
+        """N-module support: module 2 is not the last in a 3-module program."""
+        assert self._can_promote({"prog-a": 2}, "prog-a", {"prog-a": 3}) is True
+
+    def test_module3_cannot_be_promoted_in_3module_program(self):
+        assert self._can_promote({"prog-a": 3}, "prog-a", {"prog-a": 3}) is False
+
+    def test_module10_can_be_promoted_in_12module_program(self):
+        assert self._can_promote({"prog-a": 10}, "prog-a", {"prog-a": 12}) is True
+
+    def test_promote_increments_module(self):
+        pm, ps = self._promote({"prog-a": 1}, {"prog-a": "activo"}, "prog-a", {"prog-a": 2})
+        assert pm["prog-a"] == 2
+        assert ps["prog-a"] == "activo"
+
+    def test_promote_sets_activo_status(self):
+        pm, ps = self._promote(
+            {"prog-a": 1}, {"prog-a": "pendiente_recuperacion"}, "prog-a", {"prog-a": 3}
+        )
+        assert ps["prog-a"] == "activo"
+
+    def test_promote_blocked_at_last_module_returns_error(self):
+        result, err = self._promote({"prog-a": 2}, {"prog-a": "activo"}, "prog-a", {"prog-a": 2})
+        assert result is None
+        assert err == "already_final"
+
+    def test_promote_updates_global_estado_activo(self):
+        _, ps = self._promote({"prog-a": 1}, {"prog-a": "activo"}, "prog-a", {"prog-a": 2})
+        assert self._derive(ps) == "activo"
+
+    def test_multi_program_promote_one_program_derives_activo(self):
+        """Promoting one program while another is egresado → global still activo."""
+        pm, ps = self._promote(
+            {"prog-a": 1, "prog-b": 2},
+            {"prog-a": "activo", "prog-b": "egresado"},
+            "prog-a",
+            {"prog-a": 2, "prog-b": 2},
+        )
+        assert pm["prog-a"] == 2
+        assert ps["prog-b"] == "egresado"  # other program unchanged
+        assert self._derive(ps) == "activo"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for graduate_student decision logic (N-module, multi-program)
+# ---------------------------------------------------------------------------
+
+class TestGraduateStudentLogic:
+    """Tests for the graduate_student endpoint decision logic.
+
+    The endpoint must:
+    - Reject graduation when the student is NOT in the last module.
+    - Allow graduation for any program where current_module >= max_modules (N-module).
+    - Update program_statuses to 'egresado' for the target program(s).
+    - Derive the correct global estado after graduation.
+    """
+
+    def _can_graduate(self, program_modules, prog_id, prog_max_map, current_module=1):
+        """Mirror of the per-program check inside graduate_student."""
+        prog_current = program_modules.get(prog_id, current_module)
+        prog_max = prog_max_map.get(prog_id, 2)
+        return prog_current >= prog_max
+
+    def _graduate(self, program_modules, program_statuses, prog_id, prog_max_map, current_module=1):
+        """Mirror of the graduate_student per-program update logic."""
+        prog_current = program_modules.get(prog_id, current_module)
+        prog_max = prog_max_map.get(prog_id, 2)
+        if prog_current < prog_max:
+            return None, "not_final"
+        program_statuses = dict(program_statuses)
+        program_statuses[prog_id] = "egresado"
+        return program_statuses, None
+
+    def _derive(self, program_statuses):
+        """Mirror of derive_estado_from_program_statuses."""
+        if not program_statuses:
+            return "activo"
+        statuses = list(program_statuses.values())
+        if "activo" in statuses:
+            return "activo"
+        if all(s == "egresado" for s in statuses):
+            return "egresado"
+        if "pendiente_recuperacion" in statuses:
+            return "pendiente_recuperacion"
+        if "egresado" in statuses:
+            return "egresado"
+        return "retirado"
+
+    def test_module2_in_2module_program_can_graduate(self):
+        assert self._can_graduate({"prog-a": 2}, "prog-a", {"prog-a": 2}) is True
+
+    def test_module1_in_2module_program_cannot_graduate(self):
+        assert self._can_graduate({"prog-a": 1}, "prog-a", {"prog-a": 2}) is False
+
+    def test_module3_in_3module_program_can_graduate(self):
+        """N-module: last module of a 3-module program allows graduation."""
+        assert self._can_graduate({"prog-a": 3}, "prog-a", {"prog-a": 3}) is True
+
+    def test_module2_in_3module_program_cannot_graduate(self):
+        assert self._can_graduate({"prog-a": 2}, "prog-a", {"prog-a": 3}) is False
+
+    def test_module10_in_10module_program_can_graduate(self):
+        assert self._can_graduate({"prog-a": 10}, "prog-a", {"prog-a": 10}) is True
+
+    def test_graduate_sets_egresado_status(self):
+        ps, err = self._graduate({"prog-a": 2}, {"prog-a": "activo"}, "prog-a", {"prog-a": 2})
+        assert ps["prog-a"] == "egresado"
+        assert err is None
+
+    def test_graduate_blocked_on_non_last_module_returns_error(self):
+        ps, err = self._graduate({"prog-a": 1}, {"prog-a": "activo"}, "prog-a", {"prog-a": 2})
+        assert ps is None
+        assert err == "not_final"
+
+    def test_graduate_derives_egresado_when_only_program(self):
+        ps, _ = self._graduate({"prog-a": 2}, {"prog-a": "activo"}, "prog-a", {"prog-a": 2})
+        assert self._derive(ps) == "egresado"
+
+    def test_graduate_derives_activo_when_other_program_still_active(self):
+        """Multi-program: graduating one program while another is activo → global activo."""
+        ps, _ = self._graduate(
+            {"prog-a": 2, "prog-b": 1},
+            {"prog-a": "activo", "prog-b": "activo"},
+            "prog-a",
+            {"prog-a": 2, "prog-b": 2},
+        )
+        assert ps["prog-a"] == "egresado"
+        assert ps["prog-b"] == "activo"
+        assert self._derive(ps) == "activo"
+
+    def test_graduate_derives_egresado_when_all_programs_egresado(self):
+        """Both programs egresado → global egresado."""
+        ps1, _ = self._graduate(
+            {"prog-a": 2}, {"prog-a": "activo", "prog-b": "egresado"}, "prog-a", {"prog-a": 2}
+        )
+        assert self._derive(ps1) == "egresado"
+
+    def test_graduate_preserves_other_program_statuses(self):
+        """Graduating prog-a must not alter prog-b status."""
+        ps, _ = self._graduate(
+            {"prog-a": 3, "prog-b": 2},
+            {"prog-a": "activo", "prog-b": "pendiente_recuperacion"},
+            "prog-a",
+            {"prog-a": 3},
+        )
+        assert ps["prog-b"] == "pendiente_recuperacion"
