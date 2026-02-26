@@ -105,12 +105,12 @@ UPLOAD_WINDOW = 60  # 1 minute in seconds
 
 # Module validation constants
 MIN_MODULE_NUMBER = 1
-MAX_MODULE_NUMBER = 2
+# MAX_MODULE_NUMBER is not enforced – the system supports N modules per program definition.
 
 def validate_module_number(module_num, field_name="module"):
-    """Validate that a module number is within the valid range"""
-    if not isinstance(module_num, int) or module_num < MIN_MODULE_NUMBER or module_num > MAX_MODULE_NUMBER:
-        raise ValueError(f"{field_name} must be between {MIN_MODULE_NUMBER} and {MAX_MODULE_NUMBER}, got {module_num}")
+    """Validate that a module number is a positive integer (no upper bound – supports N modules)."""
+    if not isinstance(module_num, int) or module_num < MIN_MODULE_NUMBER:
+        raise ValueError(f"{field_name} must be >= {MIN_MODULE_NUMBER}, got {module_num}")
     return True
 
 app = FastAPI()
@@ -170,16 +170,9 @@ async def check_and_close_modules():
         now = datetime.now(timezone.utc)
         today_str = now.strftime("%Y-%m-%d")
         
-        # Get all programs with close dates configured
-        programs = await db.programs.find(
-            {
-                "$or": [
-                    {"module1_close_date": {"$ne": None, "$lte": today_str}},
-                    {"module2_close_date": {"$ne": None, "$lte": today_str}}
-                ]
-            },
-            {"_id": 0}
-        ).to_list(100)
+        # Get all programs; check all moduleN_close_date fields in Python for N-module support.
+        # (Business rule 2026-02-25: no longer hardcoded to 2 modules)
+        programs = await db.programs.find({}, {"_id": 0}).to_list(100)
         
         if not programs:
             logger.info("No programs with close dates to process")
@@ -188,58 +181,43 @@ async def check_and_close_modules():
                 program_id = program["id"]
                 program_name = program["name"]
                 
-                # Check module 1
-                if program.get("module1_close_date") and program["module1_close_date"] <= today_str:
-                    # Check if already closed
-                    closure_check = await db.module_closures.find_one({
-                        "program_id": program_id,
-                        "module_number": 1,
-                        "closed_date": program["module1_close_date"]
-                    })
-                    
-                    if not closure_check:
-                        logger.info(f"Auto-closing Module 1 for program {program_name} (date: {program['module1_close_date']})")
-                        try:
-                            # Call the internal module closure function
-                            result = await close_module_internal(module_number=1, program_id=program_id)
-                            
-                            # Mark as closed so we don't close it again
-                            await db.module_closures.insert_one({
-                                "id": str(uuid.uuid4()),
-                                "program_id": program_id,
-                                "module_number": 1,
-                                "closed_date": program["module1_close_date"],
-                                "closed_at": now.isoformat(),
-                                "result": result
-                            })
-                            logger.info(f"Module 1 closed for {program_name}: {result['promoted_count']} promoted, {result['graduated_count']} graduated, {result['recovery_pending_count']} in recovery")
-                        except Exception as e:
-                            logger.error(f"Error auto-closing Module 1 for {program_name}: {e}", exc_info=True)
+                # Determine how many modules this program defines (minimum 2 for backwards compatibility)
+                program_modules_list = program.get("modules") or []
+                max_modules = max(len(program_modules_list), 2)
                 
-                # Check module 2
-                if program.get("module2_close_date") and program["module2_close_date"] <= today_str:
+                # Check all modules for this program dynamically (supports N modules)
+                for mod_num in range(1, max_modules + 1):
+                    close_date_field = f"module{mod_num}_close_date"
+                    close_date = program.get(close_date_field)
+                    if not close_date or close_date > today_str:
+                        continue
+
                     closure_check = await db.module_closures.find_one({
                         "program_id": program_id,
-                        "module_number": 2,
-                        "closed_date": program["module2_close_date"]
+                        "module_number": mod_num,
+                        "closed_date": close_date
                     })
-                    
+
                     if not closure_check:
-                        logger.info(f"Auto-closing Module 2 for program {program_name} (date: {program['module2_close_date']})")
+                        logger.info(f"Auto-closing Module {mod_num} for program {program_name} (date: {close_date})")
                         try:
-                            result = await close_module_internal(module_number=2, program_id=program_id)
-                            
+                            result = await close_module_internal(module_number=mod_num, program_id=program_id)
+
                             await db.module_closures.insert_one({
                                 "id": str(uuid.uuid4()),
                                 "program_id": program_id,
-                                "module_number": 2,
-                                "closed_date": program["module2_close_date"],
+                                "module_number": mod_num,
+                                "closed_date": close_date,
                                 "closed_at": now.isoformat(),
                                 "result": result
                             })
-                            logger.info(f"Module 2 closed for {program_name}: {result['promoted_count']} promoted, {result['graduated_count']} graduated, {result['recovery_pending_count']} in recovery")
+                            logger.info(
+                                f"Module {mod_num} closed for {program_name}: "
+                                f"{result['promoted_count']} promoted, {result['graduated_count']} graduated, "
+                                f"{result['recovery_pending_count']} in recovery"
+                            )
                         except Exception as e:
-                            logger.error(f"Error auto-closing Module 2 for {program_name}: {e}", exc_info=True)
+                            logger.error(f"Error auto-closing Module {mod_num} for {program_name}: {e}", exc_info=True)
         
         # Check course-level recovery close dates: promote winners, remove losers
         all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
@@ -275,15 +253,49 @@ async def check_and_close_modules():
                     continue
                 
                 for student_id, records in students_records.items():
-                    # Only process students where admin has taken action (approved at least one recovery).
-                    # This prevents processing students whose failed_subjects were just created in the
-                    # same scheduler run (e.g., when module close and recovery close dates both passed).
+                    # Business rule (2026-02-25): if recovery_close has passed and no admin action
+                    # has been taken, treat the student as failed: remove from group and mark activo
+                    # for re-enrollment so they are never left in limbo indefinitely.
                     has_admin_action = any(
                         r.get("recovery_approved") is True or r.get("recovery_completed") is True
                         for r in records
                     )
                     if not has_admin_action:
-                        logger.info(f"Recovery close: skipping student {student_id} – no admin action taken yet on any failed subject in course {course['id']}")
+                        logger.info(
+                            f"Recovery close: no admin action for student {student_id} in course "
+                            f"{course['id']} – applying fail flow (removing from group, marking activo)"
+                        )
+                        await db.courses.update_one(
+                            {"id": course["id"]},
+                            {
+                                "$pull": {"student_ids": student_id},
+                                "$addToSet": {"removed_student_ids": student_id}
+                            }
+                        )
+                        student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
+                        _ps = (student_doc or {}).get("program_statuses") or {}
+                        if prog_id:
+                            _ps[prog_id] = "activo"
+                        _new_estado = derive_estado_from_program_statuses(_ps)
+                        _upd: dict = {"estado": _new_estado}
+                        if prog_id:
+                            _upd["program_statuses"] = _ps
+                        await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": _upd})
+                        logger.info(
+                            f"Student {student_id} marked activo for program {prog_id} "
+                            "(recovery_close passed with no admin action)"
+                        )
+                        await log_audit(
+                            "student_removed_from_group", "system", "system",
+                            {"student_id": student_id, "course_id": course["id"],
+                             "program_id": prog_id, "trigger": "recovery_close_no_admin_action"}
+                        )
+                        removed_count += 1
+                        for record in records:
+                            await db.failed_subjects.update_one(
+                                {"id": record["id"]},
+                                {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
+                            )
                         continue
 
                     # A student passes only if ALL their records are approved by admin AND completed AND approved by teacher
@@ -309,7 +321,10 @@ async def check_and_close_modules():
                                 new_global_estado = derive_estado_from_program_statuses(program_statuses)
                                 await db.users.update_one(
                                     {"id": student_id},
-                                    {"$set": {"program_statuses": program_statuses, "estado": new_global_estado}}
+                                    {
+                                        "$set": {"program_statuses": program_statuses, "estado": new_global_estado},
+                                        "$unset": {f"program_promotion_pending.{prog_id}": ""}
+                                    }
                                 )
                                 logger.info(f"Student {student_id} graduated (recovery passed all subjects in course {course['id']})")
                                 await log_audit("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close"})
@@ -323,7 +338,13 @@ async def check_and_close_modules():
                                 }
                                 if prog_id:
                                     update_fields[f"program_modules.{prog_id}"] = next_module
-                                await db.users.update_one({"id": student_id}, {"$set": update_fields})
+                                await db.users.update_one(
+                                    {"id": student_id},
+                                    {
+                                        "$set": update_fields,
+                                        "$unset": {f"program_promotion_pending.{prog_id}": ""}
+                                    }
+                                )
                                 logger.info(f"Student {student_id} promoted to module {next_module} (recovery passed in course {course['id']})")
                                 await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close"})
                             promoted_recovery_count += 1
@@ -377,7 +398,10 @@ async def check_and_close_modules():
                         new_global_estado = derive_estado_from_program_statuses(direct_prog_statuses)
                         await db.users.update_one(
                             {"id": student_id},
-                            {"$set": {"program_statuses": direct_prog_statuses, "estado": new_global_estado}}
+                            {
+                                "$set": {"program_statuses": direct_prog_statuses, "estado": new_global_estado},
+                                "$unset": {f"program_promotion_pending.{prog_id}": ""}
+                            }
                         )
                         logger.info(f"Student {student_id} graduated (direct pass, deferred to recovery_close for course {course['id']})")
                         await log_audit("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close_direct_pass"})
@@ -391,7 +415,13 @@ async def check_and_close_modules():
                         }
                         if prog_id:
                             update_fields[f"program_modules.{prog_id}"] = next_module
-                        await db.users.update_one({"id": student_id}, {"$set": update_fields})
+                        await db.users.update_one(
+                            {"id": student_id},
+                            {
+                                "$set": update_fields,
+                                "$unset": {f"program_promotion_pending.{prog_id}": ""}
+                            }
+                        )
                         logger.info(f"Student {student_id} promoted to module {next_module} (direct pass, deferred to recovery_close for course {course['id']})")
                         await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close_direct_pass"})
                     promoted_recovery_count += 1
@@ -959,6 +989,22 @@ def validate_module_dates_order(module_dates: dict) -> Optional[str]:
     return None
 
 
+def validate_module_dates_recovery_close(module_dates: dict) -> Optional[str]:
+    """Validate that every module_dates entry includes a recovery_close date.
+
+    Business rule (2026-02-25): all module date windows must define a recovery_close
+    so that the scheduler can deterministically resolve every student's status.
+    Returns an error message string if any module is missing recovery_close, else None.
+    """
+    for mod_key, dates in (module_dates or {}).items():
+        if not (dates or {}).get("recovery_close"):
+            return (
+                f"El Módulo {mod_key} no tiene fecha de cierre de recuperaciones "
+                "(recovery_close). Todas las entradas de fechas de módulo deben incluirla."
+            )
+    return None
+
+
 def derive_estado_from_program_statuses(program_statuses: dict) -> str:
     """Derive the global 'estado' from per-program statuses.
 
@@ -1261,7 +1307,7 @@ class UserCreate(BaseModel):
     course_ids: Optional[List[str]] = None  # Ignored on creation; handled via course enrollment endpoints
     subject_ids: Optional[List[str]] = None  # For professors - subjects they teach
     phone: Optional[str] = Field(None, max_length=50)
-    module: Optional[int] = Field(None, ge=1, le=2)  # Deprecated: use program_modules
+    module: Optional[int] = Field(None, ge=1)  # Deprecated: use program_modules (no upper bound – N modules)
     program_modules: Optional[dict] = None  # Maps program_id to module number, e.g., {"prog-admin": 1, "prog-infancia": 2}
     program_statuses: Optional[dict] = None  # Maps program_id to status, e.g., {"prog-admin": "activo"}
     estado: Optional[str] = Field(None, pattern="^(activo|egresado|pendiente_recuperacion|retirado)$")  # Student status
@@ -1308,7 +1354,7 @@ class UserUpdate(BaseModel):
     program_ids: Optional[List[str]] = None  # Multiple programs support
     subject_ids: Optional[List[str]] = None  # For professors - subjects they teach
     active: Optional[bool] = None
-    module: Optional[int] = Field(None, ge=1, le=2)  # Deprecated: use program_modules
+    module: Optional[int] = Field(None, ge=1)  # Deprecated: use program_modules (no upper bound – N modules)
     program_modules: Optional[dict] = None  # Maps program_id to module number, e.g., {"prog-admin": 1, "prog-infancia": 2}
     program_statuses: Optional[dict] = None  # Maps program_id to status, e.g., {"prog-admin": "activo"}
     estado: Optional[str] = Field(None, pattern="^(activo|egresado|pendiente_recuperacion|retirado)$")  # Student status
@@ -2131,9 +2177,15 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     if date_order_error:
         raise HTTPException(status_code=400, detail=date_order_error)
     
+    # Business rule (2026-02-25): all module_dates entries must define recovery_close.
+    recovery_close_error = validate_module_dates_recovery_close(module_dates)
+    if recovery_close_error:
+        raise HTTPException(status_code=400, detail=recovery_close_error)
+    
     # Validate enrollment deadline per module
     student_ids_to_add = req.student_ids or []
     if student_ids_to_add:
+        # Determine the current module for this course based on module_dates
         course_current_module = get_current_module_from_dates(module_dates) or 1
         if not can_enroll_in_module(module_dates, course_current_module):
             # Enrollment window closed – only allow reingreso for retirado students in the current module
@@ -2166,6 +2218,27 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                     status_code=400,
                     detail=f"No se puede matricular estudiantes: el período de matrícula para el Módulo {course_current_module} ha cerrado"
                 )
+        
+        # Issue 5 (2026-02-25): validate that each student's program module matches the group's module.
+        if req.program_id:
+            students_mod_info = await db.users.find(
+                {"id": {"$in": student_ids_to_add}, "role": "estudiante"},
+                {"_id": 0, "id": 1, "program_modules": 1}
+            ).to_list(None)
+            student_mod_map = {s["id"]: s for s in students_mod_info}
+            for sid in student_ids_to_add:
+                s = student_mod_map.get(sid) or {}
+                prog_modules = s.get("program_modules") or {}
+                student_mod = prog_modules.get(req.program_id)
+                if student_mod is not None and student_mod != course_current_module:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"El estudiante está en el Módulo {student_mod} del programa, pero el grupo "
+                            f"corresponde al Módulo {course_current_module}. Solo puede inscribirse en "
+                            "grupos del módulo en que se encuentra."
+                        )
+                    )
 
     # Validate: a student cannot be in 2+ groups of the same program
     if student_ids_to_add and req.program_id:
@@ -2248,6 +2321,10 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
         date_order_error = validate_module_dates_order(update_data["module_dates"])
         if date_order_error:
             raise HTTPException(status_code=400, detail=date_order_error)
+        # Business rule (2026-02-25): all module_dates entries must define recovery_close.
+        recovery_close_error = validate_module_dates_recovery_close(update_data["module_dates"])
+        if recovery_close_error:
+            raise HTTPException(status_code=400, detail=recovery_close_error)
     
     # Handle subject_ids backward compatibility: if subject_ids provided, also update subject_id for compatibility
     if "subject_ids" in update_data and update_data["subject_ids"]:
@@ -2327,6 +2404,25 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                             "de este grupo por no pasar la recuperación. Deben inscribirse en un nuevo grupo."
                         )
                     )
+            
+            # Issue 5 (2026-02-25): validate module match for newly added students.
+            if program_id and newly_added_ids:
+                students_mod_info = await db.users.find(
+                    {"id": {"$in": newly_added_ids}, "role": "estudiante"},
+                    {"_id": 0, "id": 1, "program_modules": 1}
+                ).to_list(None)
+                for s in students_mod_info:
+                    prog_modules = s.get("program_modules") or {}
+                    student_mod = prog_modules.get(program_id)
+                    if student_mod is not None and student_mod != course_current_module:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"El estudiante está en el Módulo {student_mod} del programa, pero el grupo "
+                                f"corresponde al Módulo {course_current_module}. Solo puede inscribirse en "
+                                "grupos del módulo en que se encuentra."
+                            )
+                        )
     
     result = await db.courses.update_one({"id": course_id}, {"$set": update_data})
     if result.matched_count == 0:
@@ -3170,18 +3266,26 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     
     This function can be called both by the API endpoint and the automatic scheduler.
     """
-    if module_number not in [1, 2]:
-        raise ValueError(f"Número de módulo inválido. Debe ser 1 o 2, got {module_number}")
+    # Business rule (2026-02-25): no longer restricting to modules 1-2; supports N modules.
+    if not isinstance(module_number, int) or module_number < 1:
+        raise ValueError(f"Número de módulo inválido: debe ser un entero >= 1, got {module_number}")
     
-    # Get all active students in the specified module
-    query = {"role": "estudiante", "estado": "activo"}
-    
+    # Get students enrolled in this program who are currently activo for that program.
+    # Business rule (2026-02-25): filter by per-program status (not global estado) so that
+    # multi-program students in pendiente_recuperacion for another program are not incorrectly
+    # included in this module's closure.
+    # Dual-filter rationale: program_statuses.{program_id}=="activo" ensures per-program
+    # correctness; the $or on program_id/program_ids restricts to students enrolled in the
+    # target program (supports both legacy single-program and multi-program data shapes).
+    query: dict = {"role": "estudiante"}
     if program_id:
-        # If program specified, filter students in that program
+        query[f"program_statuses.{program_id}"] = "activo"
         query["$or"] = [
             {"program_id": program_id},
             {"program_ids": program_id}
         ]
+    else:
+        query["estado"] = "activo"
     
     students = await db.users.find(query, {"_id": 0}).to_list(1000)
     
@@ -3197,6 +3301,13 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(1000)
     subject_name_map = {s["id"]: s["name"] for s in all_subjects}
     subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subjects}
+    
+    # Pre-load programs for N-module max_modules determination
+    all_programs = await db.programs.find({}, {"_id": 0, "id": 1, "modules": 1}).to_list(100)
+    program_max_modules_map = {
+        p["id"]: max(len(p.get("modules") or []), 2)
+        for p in all_programs
+    }
     
     # Cargar TODAS las grades de todos los cursos en UNA sola query (optimización crítica)
     all_course_ids = [c["id"] for c in courses]
@@ -3334,20 +3445,26 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
             )
             if any_recovery_close:
                 # Promotion deferred; the scheduler's recovery_close section will handle it.
+                # Business rule (2026-02-25): set program_promotion_pending so the frontend
+                # can show "Aprobado (pend. avance)" and the field is cleared at recovery_close.
+                pending_set = {f"program_promotion_pending.{p}": True for p in programs_in_module}
+                if pending_set:
+                    await db.users.update_one({"id": student_id}, {"$set": pending_set})
                 promoted_count += 1
             else:
                 # No recovery period configured: promote immediately (backward compatibility).
                 student_program_statuses = student.get("program_statuses") or {}
                 for prog_id in programs_in_module:
                     current_module = student_program_modules.get(prog_id, 1)
-                    
-                    if current_module < 2:
+                    prog_max_modules = program_max_modules_map.get(prog_id, 2)
+
+                    if current_module < prog_max_modules:
                         # Promote to next module
                         student_program_modules[prog_id] = current_module + 1
                         student_program_statuses[prog_id] = "activo"
                         promoted_count += 1
                     else:
-                        # Module 2 completed - graduate
+                        # Last module completed - graduate
                         graduated_count += 1
                         student_program_statuses[prog_id] = "egresado"
                 
