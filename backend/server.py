@@ -226,6 +226,8 @@ async def check_and_close_modules():
         
         # Check course-level recovery close dates: promote winners, remove losers
         all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+        all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "module_number": 1}).to_list(5000)
+        subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subjects}
         # Pre-load programs indexed by id for fallback module_dates construction
         all_programs_map = {p["id"]: p for p in programs} if programs else {}
         removed_count = 0
@@ -519,7 +521,96 @@ async def check_and_close_modules():
                         logger.info(f"Student {student_id} promoted to module {next_module} (direct pass, deferred to recovery_close for course {course['id']})")
                         await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close_direct_pass"})
                     promoted_recovery_count += 1
-        
+
+                # Strict fallback at recovery_close: if a student still has failing averages
+                # in this course/module and did not fully pass recovery records, remove them.
+                # This covers edge cases where failed_subjects records are missing/stale.
+                subject_ids = course.get("subject_ids") or []
+                if not subject_ids and course.get("subject_id"):
+                    subject_ids = [course["subject_id"]]
+                module_subject_ids = [sid for sid in subject_ids if subject_module_map.get(sid, 1) == int(module_key)]
+                course_grades = await db.grades.find(
+                    {"course_id": course["id"]},
+                    {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
+                ).to_list(None)
+                grades_index = {}
+                for g in course_grades:
+                    if g.get("value") is None:
+                        continue
+                    grades_index.setdefault((g.get("student_id"), g.get("subject_id")), []).append(g["value"])
+
+                for student_id in list(course.get("student_ids", [])):
+                    # Skip if already unenrolled in previous steps
+                    current_course_doc = await db.courses.find_one({"id": course["id"]}, {"_id": 0, "student_ids": 1})
+                    if not current_course_doc or student_id not in (current_course_doc.get("student_ids") or []):
+                        continue
+
+                    # Only enforce for students still in the module being closed
+                    stud = await db.users.find_one({"id": student_id}, {"_id": 0, "program_modules": 1})
+                    if not stud:
+                        continue
+                    if prog_id and (stud.get("program_modules") or {}).get(prog_id) != int(module_key):
+                        continue
+
+                    # Determine if student has failing performance in this course/module
+                    if module_subject_ids:
+                        has_failing = False
+                        for sid in module_subject_ids:
+                            values = grades_index.get((student_id, sid), [])
+                            avg = (sum(values) / len(values)) if values else 0.0
+                            if avg < 3.0:
+                                has_failing = True
+                                break
+                    else:
+                        values = [g.get("value") for g in course_grades if g.get("student_id") == student_id and g.get("value") is not None]
+                        avg = (sum(values) / len(values)) if values else 0.0
+                        has_failing = avg < 3.0
+
+                    if not has_failing:
+                        continue
+
+                    unresolved_records = await db.failed_subjects.find({
+                        "student_id": student_id,
+                        "course_id": course["id"],
+                        "module_number": int(module_key),
+                        "recovery_processed": {"$ne": True},
+                        "recovery_expired": {"$ne": True},
+                    }, {"_id": 0}).to_list(None)
+
+                    # If all unresolved records are fully approved+graded, let normal pass flow apply
+                    if unresolved_records and all(
+                        r.get("recovery_approved") is True and
+                        r.get("recovery_completed") is True and
+                        r.get("teacher_graded_status") == "approved"
+                        for r in unresolved_records
+                    ):
+                        continue
+
+                    await _unenroll_student_from_course(student_id, course["id"])
+                    removed_count += 1
+                    student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
+                    ps = (student_doc or {}).get("program_statuses") or {}
+                    if prog_id:
+                        ps[prog_id] = "reprobado"
+                    new_estado = derive_estado_from_program_statuses(ps)
+                    upd = {"estado": new_estado}
+                    if prog_id:
+                        upd["program_statuses"] = ps
+                    await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": upd})
+
+                    if unresolved_records:
+                        for rec in unresolved_records:
+                            await db.failed_subjects.update_one(
+                                {"id": rec["id"]},
+                                {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
+                            )
+
+                    await log_audit(
+                        "student_removed_from_group", "system", "system",
+                        {"student_id": student_id, "course_id": course["id"],
+                         "program_id": prog_id, "trigger": "recovery_close_strict_fallback_failed"}
+                    )
+
         if removed_count > 0:
             logger.info(f"Recovery check: removed {removed_count} students from groups due to failed recovery")
         if promoted_recovery_count > 0:
