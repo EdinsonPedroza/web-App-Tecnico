@@ -27,7 +27,6 @@ import StudentProgramSelector from '@/pages/student/StudentProgramSelector';
 import StudentCourseSelector from '@/pages/student/StudentCourseSelector';
 import StudentCourseDashboard from '@/pages/student/StudentCourseDashboard';
 import StudentDashboard from '@/pages/student/StudentDashboard';
-import StudentCourses from '@/pages/student/StudentCourses';
 import StudentActivities from '@/pages/student/StudentActivities';
 import StudentGrades from '@/pages/student/StudentGrades';
 import StudentVideos from '@/pages/student/StudentVideos';
@@ -110,11 +109,11 @@ function App() {
               <Route path="/student/course/:courseId/activities" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentActivities /></ProtectedRoute>} />
               <Route path="/student/course/:courseId/grades" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentGrades /></ProtectedRoute>} />
               <Route path="/student/course/:courseId/videos" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentVideos /></ProtectedRoute>} />
-              {/* Legacy routes for backward compatibility */}
-              <Route path="/student/dashboard" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentDashboard /></ProtectedRoute>} />
-              <Route path="/student/activities" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentActivities /></ProtectedRoute>} />
-              <Route path="/student/grades" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentGrades /></ProtectedRoute>} />
-              <Route path="/student/videos" element={<ProtectedRoute allowedRoles={['estudiante']}><StudentVideos /></ProtectedRoute>} />
+              {/* Legacy routes - redirect to course selector */}
+              <Route path="/student/dashboard" element={<Navigate to="/student" replace />} />
+              <Route path="/student/activities" element={<Navigate to="/student" replace />} />
+              <Route path="/student/grades" element={<Navigate to="/student" replace />} />
+              <Route path="/student/videos" element={<Navigate to="/student" replace />} />
 
               {/* Catch all - Show 404 page instead of redirecting */}
               <Route path="*" element={<NotFoundPage />} />
