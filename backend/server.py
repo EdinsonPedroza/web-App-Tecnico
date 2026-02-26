@@ -3424,8 +3424,37 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
 
     _unique_suffix = str(uuid.uuid4())[:8]
 
-    if _ext == "pdf" and USE_S3:
+    if USE_S3:
         import boto3
+
+        # Content-type correcto por extensión
+        _content_type_map = {
+            "pdf":  "application/pdf",
+            "doc":  "application/msword",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xls":  "application/vnd.ms-excel",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "ppt":  "application/vnd.ms-powerpoint",
+            "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "txt":  "text/plain",
+            "jpg":  "image/jpeg",
+            "jpeg": "image/jpeg",
+            "png":  "image/png",
+            "gif":  "image/gif",
+            "webp": "image/webp",
+        }
+        _content_type = _content_type_map.get(_ext, "application/octet-stream")
+
+        # Subcarpeta por tipo de archivo dentro del bucket
+        if _ext == "pdf":
+            _folder = "uploads/pdf"
+        elif _ext in {"jpg", "jpeg", "png", "gif", "webp"}:
+            _folder = "uploads/images"
+        else:
+            _folder = "uploads/docs"
+
+        _s3_key = f"{_folder}/{_safe_basename}_{_unique_suffix}.{_ext}"
+
         try:
             s3_client = boto3.client(
                 's3',
@@ -3433,21 +3462,20 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
                 aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
                 region_name=AWS_S3_REGION
             )
-            _s3_key = f"uploads/pdf/{_safe_basename}_{_unique_suffix}.pdf"
             logger.info(f"Attempting S3 upload: bucket={AWS_S3_BUCKET_NAME}, region={AWS_S3_REGION}, key={_s3_key}")
             s3_client.put_object(
                 Bucket=AWS_S3_BUCKET_NAME,
                 Key=_s3_key,
                 Body=file_content,
-                ContentType='application/pdf',
+                ContentType=_content_type,
                 ContentDisposition=f'inline; filename="{original_name}"',
             )
-            _pdf_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/{_s3_key}"
-            logger.info(f"PDF uploaded to S3: {_pdf_url}")
+            _file_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/{_s3_key}"
+            logger.info(f"File uploaded to S3: {_file_url}")
             return {
                 "filename": original_name,
                 "stored_name": _s3_key,
-                "url": _pdf_url,
+                "url": _file_url,
                 "size": file_size,
                 "storage": "s3",
                 "resource_type": "raw"
@@ -3456,10 +3484,10 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
             logger.error(f"S3 upload failed: {e}", exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Error uploading PDF to S3: {str(e)}. Please check S3 configuration."
+                detail=f"Error uploading file to S3: {str(e)}. Please check S3 configuration."
             )
 
-    # Non-PDF: use Cloudinary if configured
+    # Fallback: use Cloudinary if configured
     if USE_CLOUDINARY:
         import cloudinary.uploader
         import io as _io
