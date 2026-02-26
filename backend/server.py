@@ -1905,15 +1905,12 @@ async def login(req: LoginRequest, request: Request):
             {"_id": 0}
         )
         identifier = req.cedula
-    elif req.role == "profesor":
-        # For profesor role, also allow admin and editor to login
+    elif req.role in ["profesor", "admin", "editor"]:
         if not req.email:
             raise HTTPException(status_code=400, detail="Correo requerido")
-        # Allow profesor, admin, or editor to login through profesor tab
-        user = await db.users.find_one(
-            {"email": req.email, "role": {"$in": ["profesor", "admin", "editor"]}}, 
-            {"_id": 0}
-        )
+        # Profesor tab continues supporting admin/editor, and direct role login now works too
+        role_filter = {"$in": ["profesor", "admin", "editor"]} if req.role == "profesor" else req.role
+        user = await db.users.find_one({"email": req.email, "role": role_filter}, {"_id": 0})
         identifier = req.email
     else:
         # Invalid role
