@@ -26,6 +26,7 @@ async def create_indexes(db):
         ("users", [("role", 1)], {"name": "users_role"}),
         ("users", [("estado", 1)], {"name": "users_estado"}),
         ("users", [("role", 1), ("estado", 1)], {"name": "users_role_estado"}),
+        ("users", [("name", 1)], {"name": "users_name"}),
         # courses
         ("courses", [("teacher_id", 1)], {"name": "courses_teacher_id"}),
         ("courses", [("program_id", 1)], {"name": "courses_program_id"}),

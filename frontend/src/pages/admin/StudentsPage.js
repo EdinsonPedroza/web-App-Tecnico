@@ -22,6 +22,9 @@ export default function StudentsPage() {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [totalStudents, setTotalStudents] = useState(0);
+  const [serverTotalPages, setServerTotalPages] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, program_statuses: {}, estado: 'activo' });
@@ -34,16 +37,37 @@ export default function StudentsPage() {
   const [programSearch, setProgramSearch] = useState('');
   const [courseSearch, setCourseSearch] = useState('');
 
+  // Debounce the search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reset page when filters change
+  useEffect(() => { setPage(1); }, [filterEstado, filterProgram, filterModule]);
+
   const fetchData = useCallback(async () => {
+    setLoading(true);
     try {
-      // Fetch students with optional estado filter
-      const studentParams = filterEstado === 'all' ? '?role=estudiante' : `?role=estudiante&estado=${filterEstado}`;
+      const params = new URLSearchParams();
+      params.set('role', 'estudiante');
+      params.set('page', page.toString());
+      params.set('page_size', pageSize.toString());
+      if (filterEstado !== 'all') params.set('estado', filterEstado);
+      if (filterProgram !== 'all') params.set('program_id', filterProgram);
+      if (debouncedSearch) params.set('search', debouncedSearch);
+
       const [studRes, progRes, courseRes] = await Promise.all([
-        api.get(`/users${studentParams}`),
+        api.get(`/users?${params.toString()}`),
         api.get('/programs'),
         api.get('/courses')
       ]);
-      setStudents(studRes.data);
+      setStudents(studRes.data.users);
+      setTotalStudents(studRes.data.total);
+      setServerTotalPages(studRes.data.total_pages);
       setPrograms(progRes.data);
       setCourses(courseRes.data);
     } catch (err) {
@@ -51,38 +75,25 @@ export default function StudentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterEstado]);
+  }, [page, pageSize, filterEstado, filterProgram, debouncedSearch]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Module filter is kept client-side (filters current page only)
   const filtered = students.filter(s => {
-    const matchesSearch = (s.name || '').toLowerCase().includes(search.toLowerCase()) || (s.cedula || '').includes(search);
-    
-    // For program filter: check if student has this program
-    let matchesProgram = filterProgram === 'all';
-    if (!matchesProgram) {
-      const studentProgramIds = s.program_ids || (s.program_id ? [s.program_id] : []);
-      matchesProgram = studentProgramIds.some(id => String(id) === String(filterProgram));
-    }
-    
-    // For module filter: check if student has this module in any of their programs
     let matchesModule = filterModule === 'all';
     if (!matchesModule) {
       if (s.program_modules) {
-        // New structure: check if any program has this module
         matchesModule = Object.values(s.program_modules).some(m => String(m) === filterModule);
       } else if (s.module) {
-        // Old structure: fallback to global module
         matchesModule = String(s.module) === filterModule;
       }
     }
-    
-    const matchesEstado = filterEstado === 'all' || (s.estado || 'activo') === filterEstado;
-    return matchesSearch && matchesProgram && matchesModule && matchesEstado;
+    return matchesModule;
   });
-  
-  const totalPages = Math.ceil(filtered.length / pageSize);
-  const paginatedStudents = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  const totalPages = serverTotalPages;
+  const paginatedStudents = filtered; // Already paginated from backend
   
   const getProgramName = (id) => programs.find(p => p.id === id)?.name || 'Sin asignar';
   const getProgramShortName = (id) => {
@@ -404,13 +415,13 @@ export default function StudentsPage() {
             </Select>
           </div>
           <div className="text-sm text-muted-foreground">
-            Mostrando {paginatedStudents.length > 0 ? ((page - 1) * pageSize + 1) : 0}-{Math.min(page * pageSize, filtered.length)} de {filtered.length} estudiantes
+            Mostrando {students.length > 0 ? ((page - 1) * pageSize + 1) : 0}-{Math.min(page * pageSize, totalStudents)} de {totalStudents} estudiantes
           </div>
         </div>
 
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
-        ) : filtered.length === 0 ? (
+        ) : paginatedStudents.length === 0 ? (
           <Card className="shadow-card"><CardContent className="p-10 text-center">
             <GraduationCap className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">No hay estudiantes registrados</p>

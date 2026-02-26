@@ -27,14 +27,14 @@ export default function TeacherStudents() {
       if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
       const requests = [
         api.get(`/courses/${courseId}`),
-        api.get('/users?role=estudiante'),
+        api.get(`/courses/${courseId}/students`),
         api.get(gradesUrl)
       ];
       if (subjectId) requests.push(api.get(`/subjects/${subjectId}`));
       const [cRes, uRes, gRes, sRes] = await Promise.all(requests);
       setCourse(cRes.data);
       setGrades(gRes.data);
-      setStudents(uRes.data.filter(u => (cRes.data.student_ids || []).includes(u.id)));
+      setStudents(uRes.data);
       if (sRes) setSubjectName(sRes.data?.name || null);
     } catch (err) {
       toast.error('Error cargando datos');
