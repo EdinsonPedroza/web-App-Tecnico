@@ -274,7 +274,9 @@ export default function RecoveriesPage() {
                   (statusFilter === 'pending' && student.failed_subjects.some(s => !s.recovery_approved && !s.recovery_processed)) ||
                   (statusFilter === 'approved' && student.failed_subjects.some(s => s.recovery_approved && !s.recovery_completed)) ||
                   (statusFilter === 'graded' && student.failed_subjects.some(s => s.teacher_graded_status !== null && s.teacher_graded_status !== undefined)) ||
-                  (statusFilter === 'rejected' && student.failed_subjects.some(s => s.teacher_graded_status === 'rejected')) ||
+                  (statusFilter === 'rejected' && student.failed_subjects.some(s => 
+                    s.teacher_graded_status === 'rejected' || s.status === 'teacher_rejected' || s.status === 'expired_teacher_rejected'
+                  )) ||
                   (statusFilter === 'expired' && student.failed_subjects.some(s => {
                     const closed = s.recovery_close && s.recovery_close <= today;
                     return closed && s.status !== 'processed_passed' && s.status !== 'teacher_approved';

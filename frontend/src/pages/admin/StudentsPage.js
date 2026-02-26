@@ -410,6 +410,7 @@ export default function StudentsPage() {
                 <SelectItem value="activo">Activos</SelectItem>
                 <SelectItem value="egresado">Egresados</SelectItem>
                 <SelectItem value="pendiente_recuperacion">Pendiente Recuperación</SelectItem>
+                <SelectItem value="reprobado">Reprobados</SelectItem>
                 <SelectItem value="retirado">Retirados</SelectItem>
               </SelectContent>
             </Select>
@@ -521,6 +522,7 @@ export default function StudentsPage() {
                             if (st === 'activo') return 'Activo';
                             if (st === 'egresado') return 'Egresado';
                             if (st === 'retirado') return 'Retirado';
+                            if (st === 'reprobado') return 'Reprobado';
                             if (st === 'pendiente_recuperacion') return 'Pend. Rec.';
                             return st || 'Activo';
                           };
@@ -529,6 +531,7 @@ export default function StudentsPage() {
                             if (st === 'activo') return 'success';
                             if (st === 'pendiente_recuperacion') return 'warning';
                             if (st === 'retirado') return 'destructive';
+                            if (st === 'reprobado') return 'destructive';
                             if (st === 'egresado') return 'blue';
                             return 'secondary';
                           };

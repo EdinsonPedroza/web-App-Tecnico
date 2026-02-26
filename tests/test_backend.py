@@ -645,6 +645,8 @@ class TestDeriveEstadoFromProgramStatuses:
             return "pendiente_recuperacion"
         if "egresado" in statuses:
             return "egresado"
+        if "reprobado" in statuses:
+            return "reprobado"
         return "retirado"
 
     def test_empty_returns_activo(self):
@@ -2833,6 +2835,8 @@ class TestPromoteStudentLogic:
             return "pendiente_recuperacion"
         if "egresado" in statuses:
             return "egresado"
+        if "reprobado" in statuses:
+            return "reprobado"
         return "retirado"
 
     def test_module1_can_be_promoted_in_2module_program(self):
@@ -2928,6 +2932,8 @@ class TestGraduateStudentLogic:
             return "pendiente_recuperacion"
         if "egresado" in statuses:
             return "egresado"
+        if "reprobado" in statuses:
+            return "reprobado"
         return "retirado"
 
     def test_module2_in_2module_program_can_graduate(self):

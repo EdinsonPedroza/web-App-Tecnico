@@ -263,7 +263,7 @@ async def check_and_close_modules():
                     if not has_admin_action:
                         logger.info(
                             f"Recovery close: no admin action for student {student_id} in course "
-                            f"{course['id']} – applying fail flow (removing from group, marking activo)"
+                            f"{course['id']} – applying fail flow (removing from group, marking reprobado)"
                         )
                         await db.courses.update_one(
                             {"id": course["id"]},
@@ -275,14 +275,14 @@ async def check_and_close_modules():
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         _ps = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
-                            _ps[prog_id] = "activo"
+                            _ps[prog_id] = "reprobado"
                         _new_estado = derive_estado_from_program_statuses(_ps)
                         _upd: dict = {"estado": _new_estado}
                         if prog_id:
                             _upd["program_statuses"] = _ps
                         await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": _upd})
                         logger.info(
-                            f"Student {student_id} marked activo for program {prog_id} "
+                            f"Student {student_id} marked reprobado for program {prog_id} "
                             "(recovery_close passed with no admin action)"
                         )
                         await log_audit(
@@ -361,13 +361,13 @@ async def check_and_close_modules():
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         student_program_statuses = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
-                            student_program_statuses[prog_id] = "activo"
+                            student_program_statuses[prog_id] = "reprobado"
                         new_estado = derive_estado_from_program_statuses(student_program_statuses)
                         update_fields = {"estado": new_estado}
                         if prog_id:
                             update_fields["program_statuses"] = student_program_statuses
                         await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": update_fields})
-                        logger.info(f"Student {student_id} marked as activo for program {prog_id} (recovery closed, can re-enroll)")
+                        logger.info(f"Student {student_id} marked as reprobado for program {prog_id} (recovery closed, did not pass)")
                         await log_audit("student_removed_from_group", "system", "system", {"student_id": student_id, "course_id": course["id"], "program_id": prog_id, "trigger": "recovery_close_failed"})
                         removed_count += 1
                     
@@ -1026,6 +1026,8 @@ def derive_estado_from_program_statuses(program_statuses: dict) -> str:
         return "pendiente_recuperacion"
     if "egresado" in statuses:
         return "egresado"
+    if "reprobado" in statuses:
+        return "reprobado"
     return "retirado"
 
 
@@ -3847,7 +3849,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "processed_at": record.get("processed_at"),
             "recovery_close": recovery_close,
             "next_module_start": next_module_start,
-            "teacher_graded_status": teacher_status,
+            "teacher_graded_status": ts,
             "status": rec_status
         })
     
