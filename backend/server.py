@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, ConfigDict, validator
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import jwt
 import hashlib
 import json
@@ -27,6 +28,8 @@ from collections import defaultdict
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+
+BOGOTA_TZ = ZoneInfo("America/Bogota")
 
 ROOT_DIR = Path(__file__).parent
 # Load .env.local first (for local development with real credentials)
@@ -168,7 +171,9 @@ async def check_and_close_modules():
     try:
         logger.info("Running automatic module closure check...")
         now = datetime.now(timezone.utc)
-        today_str = now.strftime("%Y-%m-%d")
+        # Use Bogotá timezone for date comparisons so scheduler results are
+        # consistent with the dates configured by administrators (UTC-5).
+        today_str = datetime.now(BOGOTA_TZ).strftime("%Y-%m-%d")
         
         # Get all programs; check all moduleN_close_date fields in Python for N-module support.
         # (Business rule 2026-02-25: no longer hardcoded to 2 modules)
@@ -221,15 +226,93 @@ async def check_and_close_modules():
         
         # Check course-level recovery close dates: promote winners, remove losers
         all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+        # Pre-load programs indexed by id for fallback module_dates construction
+        all_programs_map = {p["id"]: p for p in programs} if programs else {}
         removed_count = 0
         promoted_recovery_count = 0
         for course in all_courses:
             module_dates = course.get("module_dates") or {}
+            prog_id_for_course = course.get("program_id", "")
+
+            # --- Causa 1: fallback module_dates from program when course has none ---
+            if not module_dates and prog_id_for_course:
+                prog = all_programs_map.get(prog_id_for_course)
+                if prog:
+                    prog_modules_list = prog.get("modules") or []
+                    max_mod = max(len(prog_modules_list), 2)
+                    for mn in range(1, max_mod + 1):
+                        close_field = f"module{mn}_close_date"
+                        close_val = prog.get(close_field)
+                        if close_val:
+                            # Use moduleN_close_date as a proxy recovery_close when no
+                            # per-course module_dates are configured.
+                            module_dates[str(mn)] = {"recovery_close": close_val}
+                if module_dates:
+                    logger.warning(
+                        f"Course {course['id']} has no module_dates; synthesized fallback "
+                        f"from program {prog_id_for_course}: {list(module_dates.keys())}"
+                    )
+                else:
+                    logger.warning(
+                        f"Course {course['id']} has no module_dates and program "
+                        f"{prog_id_for_course!r} has no moduleN_close_date fields – "
+                        "skipping recovery check for this course."
+                    )
+                    continue
+
             for module_key, dates in module_dates.items():
                 recovery_close = dates.get("recovery_close") if dates else None
                 if not recovery_close or recovery_close > today_str:
                     continue  # Recovery period not closed yet
                 
+                # --- Causa 3: retroactively run close_module_internal if it was never executed ---
+                # Check whether failed_subjects records already exist for this course/module.
+                existing_any = await db.failed_subjects.find_one(
+                    {"course_id": course["id"], "module_number": int(module_key)},
+                    {"_id": 0, "id": 1}
+                )
+                if not existing_any:
+                    # Check if close_module_internal was already recorded for this program/module.
+                    closure_exists = await db.module_closures.find_one({
+                        "program_id": prog_id_for_course,
+                        "module_number": int(module_key),
+                    }) if prog_id_for_course else None
+                    if not closure_exists and prog_id_for_course:
+                        logger.warning(
+                            f"Recovery close passed for course {course['id']} module {module_key} "
+                            "but no failed_subjects records found and no module closure recorded – "
+                            "running close_module_internal retroactively."
+                        )
+                        try:
+                            retro_result = await close_module_internal(
+                                module_number=int(module_key),
+                                program_id=prog_id_for_course
+                            )
+                            await db.module_closures.insert_one({
+                                "id": str(uuid.uuid4()),
+                                "program_id": prog_id_for_course,
+                                "module_number": int(module_key),
+                                "closed_date": recovery_close,
+                                "closed_at": now.isoformat(),
+                                "result": retro_result,
+                                "retroactive": True
+                            })
+                            logger.info(
+                                f"Retroactive close_module_internal for program {prog_id_for_course} "
+                                f"module {module_key}: {retro_result}"
+                            )
+                            # Re-fetch records after the retroactive closure
+                            existing_any = await db.failed_subjects.find_one(
+                                {"course_id": course["id"], "module_number": int(module_key)},
+                                {"_id": 0, "id": 1}
+                            )
+                        except Exception as retro_err:
+                            logger.error(
+                                f"Error in retroactive close_module_internal for course "
+                                f"{course['id']} module {module_key}: {retro_err}",
+                                exc_info=True
+                            )
+
                 # Find ALL failed_subjects for this course/module that haven't been processed yet.
                 all_records = await db.failed_subjects.find({
                     "course_id": course["id"],
@@ -3820,6 +3903,29 @@ async def close_module(module_number: int, program_id: Optional[str] = None, use
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post("/admin/force-recovery-check")
+async def force_recovery_check(user=Depends(get_current_user)):
+    """
+    Manually trigger the automatic recovery-close check and expulsion logic
+    (same logic that the daily scheduler runs at 02:00 AM).
+
+    Use this endpoint when the scheduler may not have run at the expected time
+    or when you need to immediately apply expulsions after recovery deadlines have passed.
+    Only accessible by admin users.
+    """
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede forzar la verificación de recuperaciones")
+    try:
+        await check_and_close_modules()
+        await log_audit(
+            "force_recovery_check", user["id"], user["role"],
+            {"trigger": "manual_admin"}
+        )
+        return {"message": "Verificación de recuperaciones ejecutada exitosamente"}
+    except Exception as e:
+        logger.error(f"Error in force_recovery_check endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error ejecutando verificación: {str(e)}")
 
 @api_router.get("/admin/recovery-panel")
 async def get_recovery_panel(user=Depends(get_current_user)):
