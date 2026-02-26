@@ -226,6 +226,8 @@ async def check_and_close_modules():
         
         # Check course-level recovery close dates: promote winners, remove losers
         all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+        all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "module_number": 1}).to_list(5000)
+        subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subjects}
         # Pre-load programs indexed by id for fallback module_dates construction
         all_programs_map = {p["id"]: p for p in programs} if programs else {}
         removed_count = 0
@@ -348,16 +350,8 @@ async def check_and_close_modules():
                             f"Recovery close: no admin action for student {student_id} in course "
                             f"{course['id']} – applying fail flow (removing from group, marking reprobado)"
                         )
-                        # Remove student from ALL courses in the same program so they are not
-                        # left enrolled in sibling courses for the same module.
-                        for _pc in await _get_program_courses_for_student(student_id, prog_id, course["id"]):
-                            await db.courses.update_one(
-                                {"id": _pc["id"]},
-                                {
-                                    "$pull": {"student_ids": student_id},
-                                    "$addToSet": {"removed_student_ids": student_id}
-                                }
-                            )
+                        # Remove student only from the course where recovery was not passed.
+                        await _unenroll_student_from_course(student_id, course["id"])
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         _ps = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
@@ -437,16 +431,8 @@ async def check_and_close_modules():
                     else:
                         # At least one subject not passed: remove from group, mark activo for re-enrollment
                         logger.info(f"Recovery close: student {student_id} did not pass all subjects in course {course['id']} – removing from group")
-                        # Remove student from ALL courses in the same program so they are not
-                        # left enrolled in sibling courses for the same module.
-                        for _pc in await _get_program_courses_for_student(student_id, prog_id, course["id"]):
-                            await db.courses.update_one(
-                                {"id": _pc["id"]},
-                                {
-                                    "$pull": {"student_ids": student_id},
-                                    "$addToSet": {"removed_student_ids": student_id}
-                                }
-                            )
+                        # Remove student only from the course where recovery was not passed.
+                        await _unenroll_student_from_course(student_id, course["id"])
                         student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
                         student_program_statuses = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
@@ -498,23 +484,8 @@ async def check_and_close_modules():
                     # yet pulled from THIS course's student_ids.  Remove them instead of
                     # promoting them.
                     if direct_prog_statuses.get(prog_id) == "reprobado":
-                        await db.courses.update_one(
-                            {"id": course["id"]},
-                            {
-                                "$pull": {"student_ids": student_id},
-                                "$addToSet": {"removed_student_ids": student_id}
-                            }
-                        )
-                        removed_count += 1
-                        logger.info(
-                            f"Recovery close: removed reprobado student {student_id} "
-                            f"from course {course['id']} (was still enrolled after failing in another course)"
-                        )
-                        await log_audit(
-                            "student_removed_from_group", "system", "system",
-                            {"student_id": student_id, "course_id": course["id"],
-                             "program_id": prog_id, "trigger": "recovery_close_reprobado_cleanup"}
-                        )
+                        # Keep enrollment in other courses untouched. A failed recovery in one
+                        # course only removes the student from that specific course.
                         continue
                     program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
                     max_modules = max(len(program.get("modules", [])) if program and program.get("modules") else 2, 2)
@@ -550,7 +521,96 @@ async def check_and_close_modules():
                         logger.info(f"Student {student_id} promoted to module {next_module} (direct pass, deferred to recovery_close for course {course['id']})")
                         await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close_direct_pass"})
                     promoted_recovery_count += 1
-        
+
+                # Strict fallback at recovery_close: if a student still has failing averages
+                # in this course/module and did not fully pass recovery records, remove them.
+                # This covers edge cases where failed_subjects records are missing/stale.
+                subject_ids = course.get("subject_ids") or []
+                if not subject_ids and course.get("subject_id"):
+                    subject_ids = [course["subject_id"]]
+                module_subject_ids = [sid for sid in subject_ids if subject_module_map.get(sid, 1) == int(module_key)]
+                course_grades = await db.grades.find(
+                    {"course_id": course["id"]},
+                    {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
+                ).to_list(None)
+                grades_index = {}
+                for g in course_grades:
+                    if g.get("value") is None:
+                        continue
+                    grades_index.setdefault((g.get("student_id"), g.get("subject_id")), []).append(g["value"])
+
+                for student_id in list(course.get("student_ids", [])):
+                    # Skip if already unenrolled in previous steps
+                    current_course_doc = await db.courses.find_one({"id": course["id"]}, {"_id": 0, "student_ids": 1})
+                    if not current_course_doc or student_id not in (current_course_doc.get("student_ids") or []):
+                        continue
+
+                    # Only enforce for students still in the module being closed
+                    stud = await db.users.find_one({"id": student_id}, {"_id": 0, "program_modules": 1})
+                    if not stud:
+                        continue
+                    if prog_id and (stud.get("program_modules") or {}).get(prog_id) != int(module_key):
+                        continue
+
+                    # Determine if student has failing performance in this course/module
+                    if module_subject_ids:
+                        has_failing = False
+                        for sid in module_subject_ids:
+                            values = grades_index.get((student_id, sid), [])
+                            avg = (sum(values) / len(values)) if values else 0.0
+                            if avg < 3.0:
+                                has_failing = True
+                                break
+                    else:
+                        values = [g.get("value") for g in course_grades if g.get("student_id") == student_id and g.get("value") is not None]
+                        avg = (sum(values) / len(values)) if values else 0.0
+                        has_failing = avg < 3.0
+
+                    if not has_failing:
+                        continue
+
+                    unresolved_records = await db.failed_subjects.find({
+                        "student_id": student_id,
+                        "course_id": course["id"],
+                        "module_number": int(module_key),
+                        "recovery_processed": {"$ne": True},
+                        "recovery_expired": {"$ne": True},
+                    }, {"_id": 0}).to_list(None)
+
+                    # If all unresolved records are fully approved+graded, let normal pass flow apply
+                    if unresolved_records and all(
+                        r.get("recovery_approved") is True and
+                        r.get("recovery_completed") is True and
+                        r.get("teacher_graded_status") == "approved"
+                        for r in unresolved_records
+                    ):
+                        continue
+
+                    await _unenroll_student_from_course(student_id, course["id"])
+                    removed_count += 1
+                    student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
+                    ps = (student_doc or {}).get("program_statuses") or {}
+                    if prog_id:
+                        ps[prog_id] = "reprobado"
+                    new_estado = derive_estado_from_program_statuses(ps)
+                    upd = {"estado": new_estado}
+                    if prog_id:
+                        upd["program_statuses"] = ps
+                    await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": upd})
+
+                    if unresolved_records:
+                        for rec in unresolved_records:
+                            await db.failed_subjects.update_one(
+                                {"id": rec["id"]},
+                                {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
+                            )
+
+                    await log_audit(
+                        "student_removed_from_group", "system", "system",
+                        {"student_id": student_id, "course_id": course["id"],
+                         "program_id": prog_id, "trigger": "recovery_close_strict_fallback_failed"}
+                    )
+
         if removed_count > 0:
             logger.info(f"Recovery check: removed {removed_count} students from groups due to failed recovery")
         if promoted_recovery_count > 0:
@@ -1176,6 +1236,31 @@ async def _get_program_courses_for_student(
     return [{"id": fallback_course_id}]
 
 
+async def _unenroll_student_from_course(
+    student_id: str, course_id: str
+) -> list:
+    """Unenroll student only from the specified course and clear stale group label."""
+    await db.courses.update_one(
+        {"id": course_id},
+        {
+            "$pull": {"student_ids": student_id},
+            "$addToSet": {"removed_student_ids": student_id}
+        }
+    )
+
+    still_enrolled_anywhere = await db.courses.find_one(
+        {"student_ids": student_id},
+        {"_id": 0, "id": 1}
+    )
+    if not still_enrolled_anywhere:
+        await db.users.update_one(
+            {"id": student_id, "role": "estudiante"},
+            {"$unset": {"grupo": ""}}
+        )
+
+    return [course_id]
+
+
 async def _check_and_update_recovery_completion(student_id: str, course_id: str):
     """Check if all recovery subjects for a student in a course are now completed
     and approved by both admin and teacher. If so, immediately update the student's
@@ -1320,16 +1405,8 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
     if program_statuses.get(prog_id) != "pendiente_recuperacion":
         return
 
-    # Remove from ALL courses for this program so the student is not left enrolled
-    # in sibling courses for the same module.
-    for pc in await _get_program_courses_for_student(student_id, prog_id, course_id):
-        await db.courses.update_one(
-            {"id": pc["id"]},
-            {
-                "$pull": {"student_ids": student_id},
-                "$addToSet": {"removed_student_ids": student_id}
-            }
-        )
+    # Remove only from the course where teacher rejection occurred.
+    await _unenroll_student_from_course(student_id, course_id)
     # Mark reprobado
     program_statuses[prog_id] = "reprobado"
     new_estado = derive_estado_from_program_statuses(program_statuses)
@@ -1734,6 +1811,7 @@ class SubmissionCreate(BaseModel):
 class RecoveryEnableRequest(BaseModel):
     student_id: str
     course_id: str
+    subject_id: Optional[str] = None
 
 class ModuleCloseDateUpdate(BaseModel):
     module1_close_date: Optional[str] = None
@@ -2903,15 +2981,27 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
         query["subject_id"] = subject_id
     activities = await db.activities.find(query, {"_id": 0}).to_list(500)
     
-    # For students: filter out recovery activities unless recovery is enabled for them in this course
+    # For students: show recovery activities only for subjects explicitly approved by admin.
     if user["role"] == "estudiante" and course_id:
-        recovery_enabled = await db.recovery_enabled.find_one({
+        approved_records = await db.failed_subjects.find({
             "student_id": user["id"],
             "course_id": course_id,
-            "enabled": True
-        })
-        if not recovery_enabled:
-            activities = [a for a in activities if not a.get("is_recovery")]
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        }, {"_id": 0, "subject_id": 1}).to_list(None)
+        approved_subject_ids = {r.get("subject_id") for r in approved_records if r.get("subject_id")}
+        has_course_level_approval = any(not r.get("subject_id") for r in approved_records)
+
+        filtered_activities = []
+        for a in activities:
+            if not a.get("is_recovery"):
+                filtered_activities.append(a)
+                continue
+            act_sid = a.get("subject_id")
+            if (act_sid and act_sid in approved_subject_ids) or (not act_sid and has_course_level_approval):
+                filtered_activities.append(a)
+        activities = filtered_activities
     
     return activities
 
@@ -3005,7 +3095,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     
     # Rule E: For recovery activities, only approve/reject is allowed — no numeric grade
     if req.activity_id:
-        activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1, "course_id": 1})
+        activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1, "course_id": 1, "subject_id": 1})
         if activity_doc and activity_doc.get("is_recovery"):
             if req.value is not None and not req.recovery_status:
                 raise HTTPException(
@@ -3015,11 +3105,17 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             if req.recovery_status not in ("approved", "rejected", None):
                 raise HTTPException(status_code=400, detail="Estado de recuperación inválido")
             # Recovery must be admin-approved before teacher can grade it
-            failed_record = await db.failed_subjects.find_one({
+            rec_subject_id = req.subject_id or activity_doc.get("subject_id")
+            failed_filter = {
                 "student_id": req.student_id,
                 "course_id": req.course_id,
-                "recovery_approved": True
-            })
+                "recovery_approved": True,
+                "recovery_processed": {"$ne": True},
+                "recovery_rejected": {"$ne": True},
+            }
+            if rec_subject_id:
+                failed_filter["subject_id"] = rec_subject_id
+            failed_record = await db.failed_subjects.find_one(failed_filter)
             if not failed_record:
                 raise HTTPException(
                     status_code=400,
@@ -3036,9 +3132,20 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     grade_value = req.value
     if req.recovery_status:
         # Build the filter to find the specific failed_subjects record
-        fs_filter = {"student_id": req.student_id, "course_id": req.course_id, "recovery_approved": True}
-        if req.subject_id:
-            fs_filter["subject_id"] = req.subject_id
+        rec_subject_id = req.subject_id
+        if req.activity_id:
+            _act = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "subject_id": 1})
+            rec_subject_id = rec_subject_id or (_act or {}).get("subject_id")
+
+        fs_filter = {
+            "student_id": req.student_id,
+            "course_id": req.course_id,
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        }
+        if rec_subject_id:
+            fs_filter["subject_id"] = rec_subject_id
 
         if req.recovery_status == "approved":
             # Calculate what grade is needed to get exactly 3.0 average
@@ -3384,13 +3491,18 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
     
     now = datetime.now(timezone.utc)
     
-    # Check admin approval for recovery activities
+    # Check admin approval for recovery activities (subject-scoped)
     if activity.get("is_recovery"):
-        failed_record = await db.failed_subjects.find_one({
+        failed_filter = {
             "student_id": user["id"],
             "course_id": activity["course_id"],
-            "recovery_approved": True
-        })
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        }
+        if activity.get("subject_id"):
+            failed_filter["subject_id"] = activity["subject_id"]
+        failed_record = await db.failed_subjects.find_one(failed_filter)
         if not failed_record:
             raise HTTPException(
                 status_code=400,
@@ -3467,6 +3579,7 @@ async def enable_recovery(req: RecoveryEnableRequest, user=Depends(get_current_u
         "id": str(uuid.uuid4()),
         "student_id": req.student_id,
         "course_id": req.course_id,
+        "subject_id": req.subject_id,
         "enabled": True,
         "enabled_by": user["id"],
         "enabled_at": datetime.now(timezone.utc).isoformat()
@@ -3474,7 +3587,8 @@ async def enable_recovery(req: RecoveryEnableRequest, user=Depends(get_current_u
     
     existing = await db.recovery_enabled.find_one({
         "student_id": req.student_id,
-        "course_id": req.course_id
+        "course_id": req.course_id,
+        "subject_id": req.subject_id
     })
     
     if existing:
@@ -4005,16 +4119,9 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         next_dates = module_dates.get(str(module_number + 1)) or {}
         return next_dates.get("start")
 
-    # Fetch all records that haven't been processed yet, plus recently processed ones (last 30 days)
-    # This ensures admins can see the full status of each recovery even after recovery_close passes.
-    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    # Fetch only records still in-process for admin action.
     failed_records = await db.failed_subjects.find(
-        {
-            "$or": [
-                {"recovery_processed": {"$ne": True}},
-                {"processed_at": {"$gte": thirty_days_ago}}
-            ]
-        },
+        {"recovery_processed": {"$ne": True}},
         {"_id": 0}
     ).to_list(1000)
     
@@ -4075,25 +4182,13 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         if not teacher_status:
             teacher_status = teacher_graded_index.get((student_id, record["course_id"], None))
 
+        # Skip closed recovery windows in admin panel. These are resolved by scheduler.
+        if recovery_close and recovery_close < today_str:
+            continue
+
         # Compute a human-readable status for the record
         ts = record.get("teacher_graded_status") if record.get("teacher_graded_status") is not None else teacher_status
-        if recovery_close and recovery_close <= today_str:
-            if record.get("recovery_approved") and ts == "approved":
-                rec_status = "processed_passed"
-            elif ts == "rejected":
-                rec_status = "expired_teacher_rejected"
-            elif not record.get("recovery_approved"):
-                rec_status = "expired_no_admin_action"
-            elif record.get("recovery_approved") and ts != "approved":
-                rec_status = "expired_not_graded"
-            else:
-                rec_status = "expired_unknown"
-        elif record.get("recovery_processed"):
-            if record.get("recovery_approved") and ts == "approved":
-                rec_status = "processed_passed"
-            else:
-                rec_status = "processed_failed"
-        elif record.get("recovery_completed"):
+        if record.get("recovery_completed"):
             rec_status = "teacher_approved" if ts == "approved" else "teacher_rejected"
         else:
             # Not yet graded by teacher (may or may not be admin-approved)
@@ -4233,10 +4328,12 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     })
                     already_tracked.add((student_id, course["id"], None))
     
+    filtered_students = [s for s in students_map.values() if s.get("failed_subjects")]
+
     return {
-        "students": list(students_map.values()),
-        "total_students": len(students_map),
-        "total_failed_subjects": sum(len(s["failed_subjects"]) for s in students_map.values())
+        "students": filtered_students,
+        "total_students": len(filtered_students),
+        "total_failed_subjects": sum(len(s["failed_subjects"]) for s in filtered_students)
     }
 
 @api_router.post("/admin/approve-recovery")
@@ -4305,7 +4402,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
 
         if not approve:
             # Admin explicitly rejects this auto-detected recovery: create a rejection record,
-            # remove student from all program courses and mark as reprobado.
+            # remove student from the affected course and mark as reprobado.
             rejection_record = {
                 "id": str(uuid.uuid4()),
                 "student_id": student_id,
@@ -4329,12 +4426,8 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 rejection_record["subject_id"] = subject_id
                 rejection_record["subject_name"] = subject_doc.get("name", "Desconocido") if subject_doc else "Desconocido"
             await db.failed_subjects.insert_one(rejection_record)
-            # Remove student from ALL courses in the program
-            for pc in await _get_program_courses_for_student(student_id, prog_id, course_id):
-                await db.courses.update_one(
-                    {"id": pc["id"]},
-                    {"$pull": {"student_ids": student_id}, "$addToSet": {"removed_student_ids": student_id}}
-                )
+            # Remove student only from this course (auto-detected rejection path)
+            await _unenroll_student_from_course(student_id, course_id)
             # Mark student as reprobado
             student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
             student_program_statuses = (student_doc or {}).get("program_statuses") or {}
@@ -4354,7 +4447,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 {"student_id": student_id, "course_id": course_id, "program_id": prog_id,
                  "module_number": module_number}
             )
-            return {"message": "Recuperación rechazada. El estudiante ha sido retirado del programa."}
+            return {"message": "Recuperación rechazada. El estudiante ha sido retirado del grupo correspondiente."}
 
         # Module alignment: recovery can only be approved for the student's current module
         if student_module is not None and student_module != module_number:
@@ -4389,12 +4482,13 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         await db.failed_subjects.insert_one(new_record)
 
         # Enable recovery activities for this student/course
-        existing = await db.recovery_enabled.find_one({"student_id": student_id, "course_id": course_id})
+        existing = await db.recovery_enabled.find_one({"student_id": student_id, "course_id": course_id, "subject_id": subject_id})
         if not existing:
             await db.recovery_enabled.insert_one({
                 "id": str(uuid.uuid4()),
                 "student_id": student_id,
                 "course_id": course_id,
+                "subject_id": subject_id,
                 "enabled": True,
                 "enabled_by": user["id"],
                 "enabled_at": now.isoformat()
@@ -4425,7 +4519,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
 
     if not approve:
         # Admin explicitly rejects this persisted recovery record.
-        # Remove student from all program courses and mark as reprobado.
+        # Remove student only from this course and mark as reprobado for that program.
         rej_student_id = failed_record["student_id"]
         rej_course_id = failed_record["course_id"]
         rej_prog_id = failed_record.get("program_id", "")
@@ -4451,12 +4545,8 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             },
             {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
         )
-        # Remove student from ALL courses in the program
-        for pc in await _get_program_courses_for_student(rej_student_id, rej_prog_id, rej_course_id):
-            await db.courses.update_one(
-                {"id": pc["id"]},
-                {"$pull": {"student_ids": rej_student_id}, "$addToSet": {"removed_student_ids": rej_student_id}}
-            )
+        # Remove student only from this course (auto-detected rejection path)
+        await _unenroll_student_from_course(rej_student_id, rej_course_id)
         # Mark student as reprobado
         rej_student_doc = await db.users.find_one({"id": rej_student_id}, {"_id": 0, "program_statuses": 1})
         rej_program_statuses = (rej_student_doc or {}).get("program_statuses") or {}
@@ -4476,7 +4566,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             {"student_id": rej_student_id, "failed_subject_id": failed_subject_id,
              "course_id": rej_course_id, "program_id": rej_prog_id}
         )
-        return {"message": "Recuperación rechazada. El estudiante ha sido retirado del programa."}
+        return {"message": "Recuperación rechazada. El estudiante ha sido retirado del grupo correspondiente."}
 
     # Module alignment: reject approval if subject module doesn't match student's current module
     record_module = failed_record.get("module_number")
@@ -4510,6 +4600,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
         "id": str(uuid.uuid4()),
         "student_id": failed_record["student_id"],
         "course_id": failed_record["course_id"],
+        "subject_id": failed_record.get("subject_id"),
         "enabled": True,
         "enabled_by": user["id"],
         "enabled_at": datetime.now(timezone.utc).isoformat()
@@ -4517,7 +4608,8 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
     
     existing = await db.recovery_enabled.find_one({
         "student_id": failed_record["student_id"],
-        "course_id": failed_record["course_id"]
+        "course_id": failed_record["course_id"],
+        "subject_id": failed_record.get("subject_id")
     })
     
     if not existing:
