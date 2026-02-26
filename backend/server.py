@@ -1138,10 +1138,16 @@ async def _check_and_update_recovery_completion(student_id: str, course_id: str)
 async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
     """Check if a teacher rejection means the student definitively cannot pass recovery.
 
-    Called after a teacher rejects a recovery subject. If ALL admin-approved recovery
-    records for this student+course have been teacher-graded (completed) and at least
-    one is rejected, the student cannot pass all subjects. In that case, immediately
-    remove the student from the group and mark them as 'reprobado'.
+    Called after a teacher rejects a recovery subject. Only checks admin-approved records
+    (recovery_approved=True) because non-approved subjects can't be teacher-graded.
+    If ALL admin-approved records have been teacher-graded and at least one is rejected,
+    the student cannot pass all subjects. In that case, immediately remove the student
+    from the group and mark them as 'reprobado'.
+
+    Note: this only checks admin-approved records (unlike _check_and_update_recovery_completion
+    which checks ALL records) because we're determining if the student can still pass the
+    subjects that were approved for recovery — unapproved subjects are already considered
+    failed and will be handled at recovery_close by the scheduler.
     """
     course = await db.courses.find_one({"id": course_id}, {"_id": 0})
     if not course:
