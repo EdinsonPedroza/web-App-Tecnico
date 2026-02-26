@@ -26,7 +26,6 @@ import TeacherStudents from '@/pages/teacher/TeacherStudents';
 import StudentProgramSelector from '@/pages/student/StudentProgramSelector';
 import StudentCourseSelector from '@/pages/student/StudentCourseSelector';
 import StudentCourseDashboard from '@/pages/student/StudentCourseDashboard';
-import StudentDashboard from '@/pages/student/StudentDashboard';
 import StudentActivities from '@/pages/student/StudentActivities';
 import StudentGrades from '@/pages/student/StudentGrades';
 import StudentVideos from '@/pages/student/StudentVideos';
