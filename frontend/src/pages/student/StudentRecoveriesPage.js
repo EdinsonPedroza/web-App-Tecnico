@@ -88,7 +88,8 @@ export default function StudentRecoveriesPage() {
               {recoveries.map((recovery) => {
                 const isApproved = recovery.recovery_approved;
                 const isClosed = recovery.recovery_closed;
-                const canNavigate = isApproved && !isClosed;
+                const isRejected = recovery.teacher_graded_status === 'rejected' || recovery.status_label === 'reprobado';
+                const canNavigate = isApproved && !isClosed && !isRejected;
 
                 return (
                   <Card
@@ -104,11 +105,13 @@ export default function StudentRecoveriesPage() {
                             ? <BookOpen className="h-5 w-5 text-primary shrink-0 mt-1" />
                             : <Clock className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
                         }
-                        {isClosed
-                          ? <Badge variant="outline" className="text-xs text-destructive border-destructive">Plazo vencido</Badge>
-                          : isApproved
-                            ? <Badge variant="destructive" className="text-xs">Recuperación</Badge>
-                            : <Badge variant="secondary" className="text-xs">Pendiente aprobación</Badge>
+                        {isRejected
+                          ? <Badge variant="destructive" className="text-xs">Reprobada</Badge>
+                          : isClosed
+                            ? <Badge variant="outline" className="text-xs text-destructive border-destructive">Plazo vencido</Badge>
+                            : isApproved
+                              ? <Badge variant="default" className="text-xs">Habilitada</Badge>
+                              : <Badge variant="secondary" className="text-xs">Pendiente aprobación</Badge>
                         }
                       </div>
                       <CardTitle className="text-lg mt-3">{recovery.subject_name || recovery.course_name}</CardTitle>
@@ -152,7 +155,11 @@ export default function StudentRecoveriesPage() {
                         </div>
                       )}
                       <div className="pt-2 border-t">
-                        {isClosed ? (
+                        {isRejected ? (
+                          <p className="text-xs text-destructive font-medium">
+                            Recuperación rechazada por el profesor (reprobada)
+                          </p>
+                        ) : isClosed ? (
                           <p className="text-xs text-destructive font-medium">
                             El plazo de recuperación ha vencido
                           </p>
@@ -175,7 +182,7 @@ export default function StudentRecoveriesPage() {
                           if (canNavigate) navigate(`/student/course/${recovery.course_id}`);
                         }}
                       >
-                        {isClosed ? 'Plazo vencido' : !isApproved ? 'Pendiente aprobación' : 'Ver Actividades'}
+                        {isRejected ? 'Reprobada' : isClosed ? 'Plazo vencido' : !isApproved ? 'Pendiente aprobación' : 'Ver Actividades'}
                       </Button>
                     </CardContent>
                   </Card>
