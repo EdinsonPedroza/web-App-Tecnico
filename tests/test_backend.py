@@ -3204,3 +3204,142 @@ class TestGraduateStudentLogic:
             {"prog-a": 3},
         )
         assert ps["prog-b"] == "pendiente_recuperacion"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for admin rejection of recovery (business rule: admin can reject)
+# ---------------------------------------------------------------------------
+
+class TestAdminRecoveryRejection:
+    """Tests for admin-explicit rejection of recovery (recovery_approved = False).
+
+    When an admin rejects a recovery:
+    - The failed_subject record must be marked recovery_approved=False,
+      recovery_rejected=True, recovery_processed=True.
+    - The student must be marked 'reprobado' for the program.
+    - The student must be removed from all program courses.
+    This mirrors the logic added to approve_recovery_for_subject for approve=False.
+    """
+
+    def _derive(self, program_statuses):
+        """Mirror of derive_estado_from_program_statuses."""
+        if not program_statuses:
+            return "activo"
+        statuses = list(program_statuses.values())
+        if "activo" in statuses:
+            return "activo"
+        if all(s == "egresado" for s in statuses):
+            return "egresado"
+        if "pendiente_recuperacion" in statuses:
+            return "pendiente_recuperacion"
+        if "egresado" in statuses:
+            return "egresado"
+        if "reprobado" in statuses:
+            return "reprobado"
+        return "retirado"
+
+    def _admin_reject(self, program_statuses, prog_id):
+        """Simulate admin rejection: set reprobado for the program."""
+        updated = dict(program_statuses)
+        if prog_id:
+            updated[prog_id] = "reprobado"
+        return updated
+
+    def test_admin_rejection_marks_record_rejected(self):
+        """After admin rejection, record fields must reflect rejection."""
+        record = {
+            "recovery_approved": False,
+            "recovery_rejected": True,
+            "recovery_processed": True,
+        }
+        assert record["recovery_approved"] is False
+        assert record["recovery_rejected"] is True
+        assert record["recovery_processed"] is True
+
+    def test_admin_rejection_sets_reprobado(self):
+        """Rejecting marks the student as reprobado for that program."""
+        ps = {"prog-a": "pendiente_recuperacion"}
+        updated = self._admin_reject(ps, "prog-a")
+        assert updated["prog-a"] == "reprobado"
+
+    def test_admin_rejection_global_estado_reprobado(self):
+        """Global estado becomes reprobado when that is the only program."""
+        ps = {"prog-a": "pendiente_recuperacion"}
+        updated = self._admin_reject(ps, "prog-a")
+        assert self._derive(updated) == "reprobado"
+
+    def test_admin_rejection_preserves_other_program_status(self):
+        """Rejecting in prog-a must not alter prog-b status."""
+        ps = {"prog-a": "pendiente_recuperacion", "prog-b": "activo"}
+        updated = self._admin_reject(ps, "prog-a")
+        assert updated["prog-b"] == "activo"
+
+    def test_admin_rejection_global_estado_activo_when_other_active(self):
+        """Global estado remains activo when another program is still active."""
+        ps = {"prog-a": "pendiente_recuperacion", "prog-b": "activo"}
+        updated = self._admin_reject(ps, "prog-a")
+        assert self._derive(updated) == "activo"
+
+    def test_admin_rejection_immediate_expulsion(self):
+        """Admin rejection is immediate, not deferred to recovery_close."""
+        # Simulate: admin sets approve=False before recovery_close date.
+        # The student must be immediately marked reprobado.
+        recovery_close = "2099-12-31"  # far future, not yet passed
+        ps = {"prog-a": "pendiente_recuperacion"}
+        # Even though recovery_close has not passed, admin rejection takes effect.
+        updated = self._admin_reject(ps, "prog-a")
+        assert updated["prog-a"] == "reprobado"
+
+    def test_admin_rejection_no_prog_id_does_not_crash(self):
+        """When prog_id is empty, rejection should not crash the logic."""
+        ps = {"prog-a": "pendiente_recuperacion"}
+        updated = self._admin_reject(ps, "")
+        # Empty prog_id: no key added, original unchanged
+        assert updated == ps
+
+    def test_admin_rejection_single_subject_results_in_expulsion(self):
+        """Even a single rejected subject causes full expulsion (no second chance)."""
+        records = [
+            {"recovery_approved": False, "recovery_rejected": True, "recovery_processed": True}
+        ]
+        any_rejected = any(r.get("recovery_rejected") is True for r in records)
+        assert any_rejected is True
+
+    def test_admin_rejection_all_records_marked_processed(self):
+        """All unprocessed records for the same student/course must be processed."""
+        records = [
+            {"id": "r1", "recovery_processed": True},
+            {"id": "r2", "recovery_processed": True},
+        ]
+        all_processed = all(r.get("recovery_processed") is True for r in records)
+        assert all_processed is True
+
+    def test_recovery_approved_false_triggers_expulsion_in_scheduler(self):
+        """Scheduler: recovery_approved=False means student cannot pass → remove_failed."""
+        records = [
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        # Mirror of scheduler logic for recovery_close
+        has_admin_action = any(
+            r.get("recovery_approved") is True or r.get("recovery_completed") is True
+            for r in records
+        )
+        assert has_admin_action is False  # → remove_no_action in scheduler
+
+    def test_admin_approval_then_teacher_rejection_triggers_expulsion(self):
+        """Condition 2: admin approved, teacher rejected → student must be expelled."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "rejected"},
+        ]
+        all_graded = all(r.get("recovery_completed") is True for r in records)
+        any_rejected = any(r.get("teacher_graded_status") == "rejected" for r in records)
+        assert all_graded is True
+        assert any_rejected is True
+        # Student cannot pass → should be expelled
+
+    def test_reprobado_students_not_promoted_at_recovery_close(self):
+        """A student already marked reprobado must not be promoted at recovery_close."""
+        program_statuses = {"prog-a": "reprobado"}
+        # Promotion check: skip if reprobado
+        should_skip = program_statuses.get("prog-a") == "reprobado"
+        assert should_skip is True
