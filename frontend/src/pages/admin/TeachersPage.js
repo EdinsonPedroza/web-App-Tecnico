@@ -30,11 +30,11 @@ export default function TeachersPage() {
   const fetchTeachers = useCallback(async () => {
     try {
       const [tRes, sRes, pRes] = await Promise.all([
-        api.get('/users?role=profesor'),
+        api.get('/users?role=profesor&page_size=200'),
         api.get('/subjects'),
         api.get('/programs')
       ]);
-      setTeachers(tRes.data);
+      setTeachers(tRes.data.users || []);
       setSubjects(sRes.data);
       setPrograms(pRes.data);
     } catch (err) {

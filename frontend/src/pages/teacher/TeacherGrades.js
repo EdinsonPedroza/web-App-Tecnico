@@ -34,7 +34,7 @@ export default function TeacherGrades() {
         api.get(`/courses/${courseId}`),
         api.get(activitiesUrl),
         api.get(gradesUrl),
-        api.get('/users?role=estudiante'),
+        api.get(`/courses/${courseId}/students`),
         api.get(`/recovery/enabled?course_id=${courseId}`)
       ]);
       setCourse(cRes.data);
@@ -46,8 +46,7 @@ export default function TeacherGrades() {
       });
       setActivities(sorted);
       setGrades(gRes.data);
-      const courseStudents = uRes.data.filter(u => (cRes.data.student_ids || []).includes(u.id));
-      setStudents(courseStudents);
+      setStudents(uRes.data);
       setRecoveryEnabled((rRes.data || []).map(r => r.student_id));
     } catch (err) {
       toast.error('Error cargando datos');

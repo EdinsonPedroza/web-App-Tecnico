@@ -76,9 +76,8 @@ export default function TeacherActivities() {
       // Obtener lista de estudiantes del curso
       const courseData = studentsRes.data;
       if (courseData.student_ids && courseData.student_ids.length > 0) {
-        const usersRes = await api.get('/users?role=estudiante');
-        const enrolled = usersRes.data.filter(u => courseData.student_ids.includes(u.id));
-        setStudents(enrolled);
+        const usersRes = await api.get(`/courses/${courseId}/students`);
+        setStudents(usersRes.data);
       } else {
         setStudents([]);
       }

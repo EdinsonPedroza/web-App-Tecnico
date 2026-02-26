@@ -1606,9 +1606,23 @@ async def get_my_subjects(user=Depends(get_current_user)):
 
 # --- Users Routes ---
 @api_router.get("/users")
-async def get_users(role: Optional[str] = None, estado: Optional[str] = None, user=Depends(get_current_user)):
+async def get_users(
+    role: Optional[str] = None,
+    estado: Optional[str] = None,
+    search: Optional[str] = None,
+    program_id: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    user=Depends(get_current_user)
+):
     if user["role"] not in ["admin", "profesor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
+
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 200:
+        page_size = 50
+
     query = {}
     if role:
         query["role"] = role
@@ -1618,8 +1632,40 @@ async def get_users(role: Optional[str] = None, estado: Optional[str] = None, us
             query["$or"] = [{"estado": "activo"}, {"estado": None}, {"estado": {"$exists": False}}]
         else:
             query["estado"] = estado
-    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).to_list(1000)
-    return users
+
+    # Program filter
+    if program_id:
+        program_filter = {"$or": [{"program_id": program_id}, {"program_ids": program_id}]}
+        if "$or" in query:
+            # Already have $or from estado filter — combine with $and
+            estado_or = query.pop("$or")
+            query["$and"] = [{"$or": estado_or}, program_filter]
+        else:
+            query["$or"] = [{"program_id": program_id}, {"program_ids": program_id}]
+
+    # Text search by name or cedula
+    if search and search.strip():
+        search_regex = {"$regex": search.strip(), "$options": "i"}
+        search_cond = {"$or": [{"name": search_regex}, {"cedula": search_regex}]}
+        if "$and" in query:
+            query["$and"].append(search_cond)
+        elif "$or" in query:
+            existing_or = query.pop("$or")
+            query["$and"] = [{"$or": existing_or}, search_cond]
+        else:
+            query.update(search_cond)
+
+    total = await db.users.count_documents(query)
+    skip = (page - 1) * page_size
+    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("name", 1).skip(skip).limit(page_size).to_list(page_size)
+
+    return {
+        "users": users,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size)
+    }
 
 @api_router.post("/users")
 async def create_user(req: UserCreate, user=Depends(get_current_user)):
@@ -2151,7 +2197,7 @@ async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str
     else:
         query = {"$and": conditions}
     
-    courses = await db.courses.find(query, {"_id": 0}).to_list(500)
+    courses = await db.courses.find(query, {"_id": 0}).to_list(2000)
     return courses
 
 @api_router.get("/courses/{course_id}")
@@ -2160,6 +2206,24 @@ async def get_course(course_id: str, user=Depends(get_current_user)):
     if not course:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
     return course
+
+@api_router.get("/courses/{course_id}/students")
+async def get_course_students(course_id: str, user=Depends(get_current_user)):
+    """Return students enrolled in a specific course. Much more efficient than
+    fetching all students and filtering client-side."""
+    if user["role"] not in ["admin", "profesor"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    course = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+    student_ids = course.get("student_ids") or []
+    if not student_ids:
+        return []
+    students = await db.users.find(
+        {"id": {"$in": student_ids}, "role": "estudiante"},
+        {"_id": 0, "password_hash": 0}
+    ).to_list(5000)
+    return students
 
 @api_router.post("/courses")
 async def create_course(req: CourseCreate, user=Depends(get_current_user)):
@@ -2691,7 +2755,7 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
         query["subject_id"] = subject_id
     if activity_id:
         query["activity_id"] = activity_id
-    grades = await db.grades.find(query, {"_id": 0}).to_list(5000)
+    grades = await db.grades.find(query, {"_id": 0}).to_list(50000)
     return grades
 
 @api_router.post("/grades")
@@ -3062,7 +3126,7 @@ async def get_submissions(activity_id: Optional[str] = None, student_id: Optiona
         query["activity_id"] = activity_id
     if student_id:
         query["student_id"] = student_id
-    submissions = await db.submissions.find(query, {"_id": 0}).to_list(5000)
+    submissions = await db.submissions.find(query, {"_id": 0}).to_list(50000)
     return submissions
 
 @api_router.post("/submissions")
@@ -3369,7 +3433,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     else:
         query["estado"] = "activo"
     
-    students = await db.users.find(query, {"_id": 0}).to_list(1000)
+    students = await db.users.find(query, {"_id": 0}).to_list(5000)
     
     promoted_count = 0
     graduated_count = 0
@@ -3377,7 +3441,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     failed_subjects_records = []
     
     # Get all courses/groups
-    courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+    courses = await db.courses.find({}, {"_id": 0}).to_list(5000)
     
     # Load subjects for per-subject grade calculations
     all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(1000)
