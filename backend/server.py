@@ -2222,7 +2222,7 @@ async def get_course_students(course_id: str, user=Depends(get_current_user)):
     students = await db.users.find(
         {"id": {"$in": student_ids}, "role": "estudiante"},
         {"_id": 0, "password_hash": 0}
-    ).to_list(500)
+    ).to_list(5000)
     return students
 
 @api_router.post("/courses")

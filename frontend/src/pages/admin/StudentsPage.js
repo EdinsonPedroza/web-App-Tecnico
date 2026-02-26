@@ -415,7 +415,7 @@ export default function StudentsPage() {
             </Select>
           </div>
           <div className="text-sm text-muted-foreground">
-            Mostrando {students.length > 0 ? ((page - 1) * pageSize + 1) : 0}-{Math.min(page * pageSize, totalStudents)} de {totalStudents} estudiantes
+            Mostrando {paginatedStudents.length > 0 ? ((page - 1) * pageSize + 1) : 0}-{Math.min(page * pageSize, totalStudents)} de {totalStudents} estudiantes
           </div>
         </div>
 
