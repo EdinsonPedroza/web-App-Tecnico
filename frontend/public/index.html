@@ -22,7 +22,7 @@
         Learn how to configure a non-root public URL by running `npm run build`.
         -->
         <title>Educando - Gestión Educativa</title>
-        <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
+        <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault();return;}var isScriptSyntaxError=(e.error instanceof SyntaxError&&typeof e.filename==="string"&&e.filename.indexOf("/static/")!==-1);var isScriptLoadError=(e.target&&e.target.tagName==="SCRIPT"&&e.target.src&&e.target.src.indexOf("/static/")!==-1);if(isScriptSyntaxError||isScriptLoadError){var last=parseInt(sessionStorage.getItem("_stale_reload")||"0",10);if(Date.now()-last>10000){sessionStorage.setItem("_stale_reload",String(Date.now()));window.location.reload();}}},true);</script>
     </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
