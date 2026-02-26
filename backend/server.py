@@ -3269,7 +3269,8 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             await _check_and_update_recovery_rejection(req.student_id, req.course_id)
             
             # If rejected, don't create/update a numeric grade (keep existing average)
-            # Just update the recovery status if grade already exists
+            # Just update the recovery status; if no grade exists, persist a status-only
+            # row so teacher UIs (Notas/Entregas) can display "Rechazado" consistently.
             if existing:
                 await db.grades.update_one(
                     {"id": existing["id"]},
@@ -3278,9 +3279,24 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
                 updated = await db.grades.find_one({"id": existing["id"]}, {"_id": 0})
                 await log_audit("recovery_graded", user["id"], user["role"], {"student_id": req.student_id, "course_id": req.course_id, "subject_id": req.subject_id, "result": "rejected"})
                 return updated
-            # If no existing grade, don't create one for rejection
+            # Create a status-only grade record (value=None) to expose rejected state in UI
+            grade = {
+                "id": str(uuid.uuid4()),
+                "student_id": req.student_id,
+                "course_id": req.course_id,
+                "activity_id": req.activity_id,
+                "subject_id": req.subject_id,
+                "value": None,
+                "comments": req.comments,
+                "recovery_status": req.recovery_status,
+                "graded_by": user["id"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.grades.insert_one(grade)
             await log_audit("recovery_graded", user["id"], user["role"], {"student_id": req.student_id, "course_id": req.course_id, "subject_id": req.subject_id, "result": "rejected"})
-            return {"message": "Recuperación rechazada por el profesor"}
+            grade.pop("_id", None)
+            return grade
     
     if existing:
         update_data = {
@@ -3704,14 +3720,44 @@ async def enable_recovery(req: RecoveryEnableRequest, user=Depends(get_current_u
 @api_router.get("/recovery/enabled")
 async def get_recovery_enabled(student_id: Optional[str] = None, course_id: Optional[str] = None, user=Depends(get_current_user)):
     """Get list of students with recovery enabled"""
+    # Source of truth: currently approved failed_subjects that are still in process.
+    # This prevents old approvals from previous modules from auto-enabling new recoveries.
+    fs_query = {
+        "recovery_approved": True,
+        "recovery_completed": {"$ne": True},
+        "recovery_processed": {"$ne": True},
+        "recovery_rejected": {"$ne": True},
+    }
+    if student_id:
+        fs_query["student_id"] = student_id
+    if course_id:
+        fs_query["course_id"] = course_id
+
+    active_records = await db.failed_subjects.find(fs_query, {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1}).to_list(1000)
+    if active_records:
+        seen = set()
+        enabled = []
+        for r in active_records:
+            key = (r.get("student_id"), r.get("course_id"), r.get("subject_id"))
+            if key in seen:
+                continue
+            seen.add(key)
+            enabled.append({
+                "student_id": r.get("student_id"),
+                "course_id": r.get("course_id"),
+                "subject_id": r.get("subject_id"),
+                "enabled": True,
+                "source": "failed_subjects"
+            })
+        return enabled
+
+    # Backward compatibility fallback
     query = {}
     if student_id:
         query["student_id"] = student_id
     if course_id:
         query["course_id"] = course_id
-    
-    enabled = await db.recovery_enabled.find(query, {"_id": 0}).to_list(500)
-    return enabled
+    return await db.recovery_enabled.find(query, {"_id": 0}).to_list(500)
 
 @api_router.put("/users/{user_id}/promote")
 async def promote_student(user_id: str, program_id: Optional[str] = None, user=Depends(get_current_user)):
@@ -4282,10 +4328,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         if not teacher_status:
             teacher_status = teacher_graded_index.get((student_id, record["course_id"], None))
 
-        # Skip closed recovery windows in admin panel. These are resolved by scheduler.
-        if recovery_close and recovery_close < today_str:
-            continue
-
         # Compute a human-readable status for the record
         ts = record.get("teacher_graded_status") if record.get("teacher_graded_status") is not None else teacher_status
         if record.get("recovery_completed"):
@@ -4330,10 +4372,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 continue  # Module not closed yet
 
             recovery_close = dates.get("recovery_close") if dates else None
-            # Auto-detected entries can only be approved while the recovery window is open
-            if recovery_close and recovery_close < today_str:
-                continue
-
             module_number = int(module_key) if str(module_key).isdigit() else None
             if not module_number:
                 continue
@@ -4737,7 +4775,9 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
 async def get_student_recoveries(user=Depends(get_current_user)):
     """
     Get recovery subjects for the current student.
-    Returns all pending failed subjects (not completed, not rejected)
+    Returns all failed subjects that are not fully processed by recovery-close,
+    including teacher-rejected ones, so students can still see the result
+    in the Recuperaciones tab until the module recovery period closes.
     that match the student's current module for each program.
     The 'recovery_approved' field indicates whether admin has approved recovery.
     """
@@ -4752,8 +4792,7 @@ async def get_student_recoveries(user=Depends(get_current_user)):
     # Includes records where teacher has graded (recovery_completed) so student can see the outcome
     failed_subjects = await db.failed_subjects.find({
         "student_id": student_id,
-        "recovery_processed": {"$ne": True},
-        "recovery_rejected": {"$ne": True}
+        "recovery_processed": {"$ne": True}
     }, {"_id": 0}).to_list(100)
     
     # Load actual subject module info from DB to validate against stale/incorrect records
@@ -4814,6 +4853,15 @@ async def get_student_recoveries(user=Depends(get_current_user)):
         subject["recovery_closed"] = bool(recovery_close and recovery_close < today_str)
         # Ensure recovery_approved field is present (backward-compat with older records)
         subject.setdefault("recovery_approved", False)
+        teacher_status = subject.get("teacher_graded_status")
+        if subject.get("recovery_completed") and teacher_status == "rejected":
+            subject["status_label"] = "reprobado"
+        elif subject.get("recovery_completed") and teacher_status == "approved":
+            subject["status_label"] = "aprobado"
+        elif subject.get("recovery_approved"):
+            subject["status_label"] = "habilitada"
+        else:
+            subject["status_label"] = "pendiente_aprobacion"
     
     return {
         "recoveries": failed_subjects,
