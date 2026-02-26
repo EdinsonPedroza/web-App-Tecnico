@@ -740,9 +740,10 @@ export default function CoursesPage() {
                           : studentStatus === 'pendiente_recuperacion' ? 'En Recuperación'
                           : studentStatus === 'retirado' ? 'Retirado'
                           : 'Activo';
+                        const showModule = studentStatus === 'activo' || studentStatus === 'pendiente_recuperacion';
                         return (
                           <span className="text-muted-foreground">
-                            ({s.cedula}) - Módulo {studentModule} - {statusLabel}
+                            ({s.cedula}){showModule ? ` - Módulo ${studentModule}` : ''} - {statusLabel}
                           </span>
                         );
                       })()}</span>
