@@ -56,15 +56,19 @@ export default function StudentGrades() {
     return act ? `Act ${act.activity_number || '?'}: ${act.title}` : 'Nota General';
   };
 
-  const overallAvg = grades.length > 0 ? (grades.reduce((s, g) => s + g.value, 0) / grades.length).toFixed(1) : '-';
+  const regularActivityIds = new Set(activities.filter(a => !a.is_recovery).map(a => a.id));
+  const regularGrades = grades.filter(g => !g.activity_id || regularActivityIds.has(g.activity_id));
+  const overallAvg = regularGrades.length > 0 ? (regularGrades.reduce((s, g) => s + g.value, 0) / regularGrades.length).toFixed(1) : '-';
 
   // Group grades by course
   const gradesByCourse = courses.map(course => {
     const courseGrades = grades.filter(g => g.course_id === course.id);
     const courseActivities = activities.filter(a => a.course_id === course.id)
       .sort((a, b) => (a.activity_number || 0) - (b.activity_number || 0));
-    const avg = courseGrades.length > 0
-      ? (courseGrades.reduce((s, g) => s + g.value, 0) / courseGrades.length).toFixed(1)
+    const courseRegularActIds = new Set(courseActivities.filter(a => !a.is_recovery).map(a => a.id));
+    const courseRegularGrades = courseGrades.filter(g => !g.activity_id || courseRegularActIds.has(g.activity_id));
+    const avg = courseRegularGrades.length > 0
+      ? (courseRegularGrades.reduce((s, g) => s + g.value, 0) / courseRegularGrades.length).toFixed(1)
       : null;
     return { course, grades: courseGrades, activities: courseActivities, avg };
   });

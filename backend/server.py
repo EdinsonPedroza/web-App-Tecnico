@@ -1425,7 +1425,7 @@ class CourseCreate(BaseModel):
     subject_id: Optional[str] = None  # For backward compatibility - single subject
     subject_ids: Optional[List[str]] = []  # Multiple subjects per course/group
     teacher_id: Optional[str] = None  # Optional - courses are cohorts/promotions
-    year: int = 2025
+    year: int = datetime.now().year
     student_ids: Optional[List[str]] = []
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -2059,6 +2059,23 @@ async def get_subjects(program_id: Optional[str] = None, teacher_id: Optional[st
     subjects = await db.subjects.find(query, {"_id": 0}).to_list(500)
     return subjects
 
+@api_router.get("/subjects/teachers")
+async def get_subjects_teachers(user=Depends(get_current_user)):
+    """Return a map of subject_id -> comma-separated teacher names for all teachers.
+    Accessible by all authenticated users (including students) so the
+    StudentCourseSelector can display the teacher's name per subject
+    without requiring admin/profesor permissions.
+    If multiple teachers share the same subject, all their names are included."""
+    teachers = await db.users.find(
+        {"role": "profesor"},
+        {"_id": 0, "id": 1, "name": 1, "subject_ids": 1}
+    ).to_list(500)
+    names_by_subject: dict = {}
+    for t in teachers:
+        for sid in (t.get("subject_ids") or []):
+            names_by_subject.setdefault(sid, []).append(t["name"])
+    return {sid: ", ".join(names) for sid, names in names_by_subject.items()}
+
 @api_router.post("/subjects")
 async def create_subject(req: SubjectCreate, user=Depends(get_current_user)):
     if user["role"] != "admin":
@@ -2100,23 +2117,6 @@ async def delete_subject(subject_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Solo admin")
     await db.subjects.delete_one({"id": subject_id})
     return {"message": "Materia eliminada"}
-
-@api_router.get("/subjects/teachers")
-async def get_subjects_teachers(user=Depends(get_current_user)):
-    """Return a map of subject_id -> comma-separated teacher names for all teachers.
-    Accessible by all authenticated users (including students) so the
-    StudentCourseSelector can display the teacher's name per subject
-    without requiring admin/profesor permissions.
-    If multiple teachers share the same subject, all their names are included."""
-    teachers = await db.users.find(
-        {"role": "profesor"},
-        {"_id": 0, "id": 1, "name": 1, "subject_ids": 1}
-    ).to_list(500)
-    names_by_subject: dict = {}
-    for t in teachers:
-        for sid in (t.get("subject_ids") or []):
-            names_by_subject.setdefault(sid, []).append(t["name"])
-    return {sid: ", ".join(names) for sid, names in names_by_subject.items()}
 
 # --- Courses Routes ---
 @api_router.get("/courses")
