@@ -46,6 +46,16 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('educando_token');
         localStorage.removeItem('educando_user');
       }
+      // Sincronizar datos con el backend en segundo plano
+      api.get('/auth/me').then(res => {
+        localStorage.setItem('educando_user', JSON.stringify(res.data));
+        setUser(res.data);
+      }).catch(() => {
+        // Token inválido o expirado: hacer logout silencioso
+        localStorage.removeItem('educando_token');
+        localStorage.removeItem('educando_user');
+        setUser(null);
+      });
     }
     setLoading(false);
   }, []);

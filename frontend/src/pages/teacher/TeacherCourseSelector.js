@@ -43,7 +43,6 @@ export default function TeacherCourseSelector() {
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
 
   const teacherSubjects = subjects;
-  const teacherSubjectIds = subjects.map(s => s.id);
 
   // Filter subjects by search query
   const filteredSubjects = searchQuery.trim()

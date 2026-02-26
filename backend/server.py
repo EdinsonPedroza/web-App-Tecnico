@@ -4727,6 +4727,9 @@ async def reset_users(confirm_token: str = None):
 # --- Seed Data Route ---
 @api_router.post("/seed")
 async def seed_data():
+    # Block in production
+    if os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT'):
+        raise HTTPException(status_code=403, detail="Este endpoint está deshabilitado en producción")
     # Check if already seeded
     existing_admin = await db.users.find_one({"email": "admin@educando.com"})
     if existing_admin:
