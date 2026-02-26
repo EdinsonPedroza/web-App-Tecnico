@@ -732,7 +732,20 @@ export default function CoursesPage() {
                   return eligible.map((s) => (
                     <div key={s.id} className="flex items-center gap-2.5">
                       <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
-                      <span className="text-sm">{s.name || 'Sin nombre'} <span className="text-muted-foreground">({s.cedula}) - Módulo {s.module} - {getStudentStatusForProgram(s, form.program_id) === 'activo' ? 'Activo' : 'Egresado'}</span></span>
+                      <span className="text-sm">{s.name || 'Sin nombre'} {(() => {
+                        const studentStatus = getStudentStatusForProgram(s, form.program_id);
+                        const studentModule = (s.program_modules || {})[form.program_id] ?? s.module ?? 1;
+                        const statusLabel = studentStatus === 'activo' ? 'Activo'
+                          : studentStatus === 'egresado' ? 'Egresado'
+                          : studentStatus === 'pendiente_recuperacion' ? 'En Recuperación'
+                          : studentStatus === 'retirado' ? 'Retirado'
+                          : 'Activo';
+                        return (
+                          <span className="text-muted-foreground">
+                            ({s.cedula}) - Módulo {studentModule} - {statusLabel}
+                          </span>
+                        );
+                      })()}</span>
                     </div>
                   ));
                 })()}

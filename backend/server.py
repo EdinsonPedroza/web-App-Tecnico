@@ -3809,13 +3809,24 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             teacher_status = teacher_graded_index.get((student_id, record["course_id"], None))
 
         # Compute a human-readable status for the record
-        if record.get("recovery_processed"):
-            if record.get("recovery_approved") and record.get("teacher_graded_status") == "approved":
+        ts = record.get("teacher_graded_status") if record.get("teacher_graded_status") is not None else teacher_status
+        if recovery_close and recovery_close <= today_str:
+            if record.get("recovery_approved") and ts == "approved":
+                rec_status = "processed_passed"
+            elif ts == "rejected":
+                rec_status = "expired_teacher_rejected"
+            elif not record.get("recovery_approved"):
+                rec_status = "expired_no_admin_action"
+            elif record.get("recovery_approved") and ts != "approved":
+                rec_status = "expired_not_graded"
+            else:
+                rec_status = "expired_unknown"
+        elif record.get("recovery_processed"):
+            if record.get("recovery_approved") and ts == "approved":
                 rec_status = "processed_passed"
             else:
                 rec_status = "processed_failed"
         elif record.get("recovery_completed"):
-            ts = record.get("teacher_graded_status") or teacher_status
             rec_status = "teacher_approved" if ts == "approved" else "teacher_rejected"
         else:
             # Not yet graded by teacher (may or may not be admin-approved)
@@ -3832,6 +3843,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "average_grade": record["average_grade"],
             "recovery_approved": record["recovery_approved"],
             "recovery_completed": record["recovery_completed"],
+            "recovery_processed": record.get("recovery_processed", False),
+            "processed_at": record.get("processed_at"),
             "recovery_close": recovery_close,
             "next_module_start": next_module_start,
             "teacher_graded_status": teacher_status,
