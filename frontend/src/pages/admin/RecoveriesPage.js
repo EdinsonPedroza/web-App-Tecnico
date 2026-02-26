@@ -335,19 +335,19 @@ export default function RecoveriesPage() {
                             {subject.subject_name || subject.course_name}
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate" title={subject.course_name}>
-                            {subject.course_name}
+                            {subject.course_name || 'Sin nombre'}
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
-                            {subject.program_name}
+                            {subject.program_name || 'Desconocido'}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs">
-                              Módulo {subject.module_number}
+                              Módulo {subject.module_number ?? '-'}
                             </Badge>
                           </TableCell>
                           <TableCell>
                             <Badge variant="destructive" className="text-xs">
-                              {subject.average_grade.toFixed(2)}
+                              {(subject.average_grade ?? 0).toFixed(2)}
                             </Badge>
                           </TableCell>
                           <TableCell>

@@ -3840,7 +3840,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "program_id": record["program_id"],
             "program_name": program_map.get(record["program_id"], "Desconocido"),
             "module_number": record["module_number"],
-            "average_grade": record["average_grade"],
+            "average_grade": next((v for v in (record.get("average_grade"), record.get("avg"), 0.0) if v is not None), 0.0),
             "recovery_approved": record["recovery_approved"],
             "recovery_completed": record["recovery_completed"],
             "recovery_processed": record.get("recovery_processed", False),
