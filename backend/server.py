@@ -495,18 +495,27 @@ async def check_and_close_modules():
 
                     # Defensive rule: never promote at recovery_close when the student still
                     # has failing averages in this course/module, even if failed_subjects is
-                    # missing or incomplete.
+                    # missing or incomplete. Students with NO grades are skipped – they may be
+                    # newly enrolled in this group and have not been graded yet; removing them
+                    # would incorrectly mark them as reprobado.
                     if module_subject_ids:
+                        has_grades_for_module = False
                         has_failing = False
                         for sid in module_subject_ids:
                             values = grades_index.get((student_id, sid), [])
-                            avg = (sum(values) / len(values)) if values else 0.0
-                            if avg < 3.0:
-                                has_failing = True
-                                break
+                            if values:
+                                has_grades_for_module = True
+                                avg = sum(values) / len(values)
+                                if avg < 3.0:
+                                    has_failing = True
+                                    break
+                        if not has_grades_for_module:
+                            continue  # No grades for this module; skip (likely newly enrolled)
                     else:
                         values = [g.get("value") for g in course_grades if g.get("student_id") == student_id and g.get("value") is not None]
-                        avg = (sum(values) / len(values)) if values else 0.0
+                        if not values:
+                            continue  # No grades in this course; skip (likely newly enrolled)
+                        avg = sum(values) / len(values)
                         has_failing = avg < 3.0
 
                     if has_failing:
@@ -606,18 +615,27 @@ async def check_and_close_modules():
                     if prog_id and (stud.get("program_modules") or {}).get(prog_id) != int(module_key):
                         continue
 
-                    # Determine if student has failing performance in this course/module
+                    # Determine if student has failing performance in this course/module.
+                    # Students with NO grades are skipped – they may be newly enrolled
+                    # and have not been graded yet; removing them would be incorrect.
                     if module_subject_ids:
+                        has_grades_for_module = False
                         has_failing = False
                         for sid in module_subject_ids:
                             values = grades_index.get((student_id, sid), [])
-                            avg = (sum(values) / len(values)) if values else 0.0
-                            if avg < 3.0:
-                                has_failing = True
-                                break
+                            if values:
+                                has_grades_for_module = True
+                                avg = sum(values) / len(values)
+                                if avg < 3.0:
+                                    has_failing = True
+                                    break
+                        if not has_grades_for_module:
+                            continue  # No grades for this module; skip (likely newly enrolled)
                     else:
                         values = [g.get("value") for g in course_grades if g.get("student_id") == student_id and g.get("value") is not None]
-                        avg = (sum(values) / len(values)) if values else 0.0
+                        if not values:
+                            continue  # No grades in this course; skip (likely newly enrolled)
+                        avg = sum(values) / len(values)
                         has_failing = avg < 3.0
 
                     if not has_failing:
@@ -2623,21 +2641,32 @@ async def get_course(course_id: str, user=Depends(get_current_user)):
     return course
 
 @api_router.get("/courses/{course_id}/students")
-async def get_course_students(course_id: str, user=Depends(get_current_user)):
+async def get_course_students(course_id: str, include_removed: bool = False, user=Depends(get_current_user)):
     """Return students enrolled in a specific course. Much more efficient than
-    fetching all students and filtering client-side."""
+    fetching all students and filtering client-side.
+    When include_removed=True, also returns students who were removed from the group
+    (e.g., marked as reprobado by one teacher) so all teachers can see their status."""
     if user["role"] not in ["admin", "profesor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     course = await db.courses.find_one({"id": course_id}, {"_id": 0})
     if not course:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
     student_ids = course.get("student_ids") or []
-    if not student_ids:
+    removed_ids = course.get("removed_student_ids") or []
+
+    all_ids_to_fetch = list(set(student_ids + (removed_ids if include_removed else [])))
+    if not all_ids_to_fetch:
         return []
     students = await db.users.find(
-        {"id": {"$in": student_ids}, "role": "estudiante"},
+        {"id": {"$in": all_ids_to_fetch}, "role": "estudiante"},
         {"_id": 0, "password_hash": 0}
     ).to_list(5000)
+
+    if include_removed:
+        removed_set = set(removed_ids) - set(student_ids)
+        for s in students:
+            if s["id"] in removed_set:
+                s["_removed_from_group"] = True
     return students
 
 @api_router.post("/courses")
@@ -2702,13 +2731,15 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         if req.program_id:
             students_mod_info = await db.users.find(
                 {"id": {"$in": student_ids_to_add}, "role": "estudiante"},
-                {"_id": 0, "id": 1, "program_modules": 1}
+                {"_id": 0, "id": 1, "program_modules": 1, "module": 1}
             ).to_list(None)
             student_mod_map = {s["id"]: s for s in students_mod_info}
             for sid in student_ids_to_add:
                 s = student_mod_map.get(sid) or {}
                 prog_modules = s.get("program_modules") or {}
                 student_mod = prog_modules.get(req.program_id)
+                if student_mod is None:
+                    student_mod = s.get("module")  # Legacy fallback: use global module field
                 if student_mod is not None and student_mod != course_current_module:
                     raise HTTPException(
                         status_code=400,
@@ -2908,11 +2939,13 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
             if program_id and newly_added_ids:
                 students_mod_info = await db.users.find(
                     {"id": {"$in": newly_added_ids}, "role": "estudiante"},
-                    {"_id": 0, "id": 1, "program_modules": 1}
+                    {"_id": 0, "id": 1, "program_modules": 1, "module": 1}
                 ).to_list(None)
                 for s in students_mod_info:
                     prog_modules = s.get("program_modules") or {}
                     student_mod = prog_modules.get(program_id)
+                    if student_mod is None:
+                        student_mod = s.get("module")  # Legacy fallback: use global module field
                     if student_mod is not None and student_mod != course_current_module:
                         raise HTTPException(
                             status_code=400,
@@ -2993,7 +3026,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
     return updated
 
 @api_router.delete("/courses/{course_id}")
-async def delete_course(course_id: str, force: bool = False, user=Depends(get_current_user)):
+async def delete_course(course_id: str, force: bool = False, delete_students: bool = False, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
     
@@ -3019,16 +3052,43 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
                 status = s.get("estado", "activo")
             if status != "egresado":
                 blocking_students.append(s["id"])
-        if blocking_students and not force:
+        if blocking_students and not force and not delete_students:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"No se puede eliminar el grupo: contiene {len(blocking_students)} estudiante(s) "
-                    "que aún no han egresado. Use force=true para desmatricularlos y eliminar el grupo."
+                    "que aún no han egresado. Use force=true para desmatricularlos y eliminar el grupo, "
+                    "o delete_students=true para eliminar también las cuentas de estudiantes."
                 )
             )
-        # force=True or all students are egresados: unenroll non-egresado students (do not delete them)
-        if blocking_students:
+        if delete_students:
+            # Delete all student accounts in the group (and all their associated data).
+            # This is a destructive operation: student records, grades, submissions, etc.
+            # are permanently removed.
+            all_student_ids = student_ids_in_course
+            if all_student_ids:
+                await db.grades.delete_many({"student_id": {"$in": all_student_ids}})
+                await db.submissions.delete_many({"student_id": {"$in": all_student_ids}})
+                await db.failed_subjects.delete_many({"student_id": {"$in": all_student_ids}})
+                await db.recovery_enabled.delete_many({"student_id": {"$in": all_student_ids}})
+                deleted_students_result = await db.users.delete_many(
+                    {"id": {"$in": all_student_ids}, "role": "estudiante"}
+                )
+                # Remove deleted students from any other course they may have been in
+                await db.courses.update_many(
+                    {"student_ids": {"$in": all_student_ids}},
+                    {"$pullAll": {"student_ids": all_student_ids}}
+                )
+                logger.info(
+                    f"Deleted {deleted_students_result.deleted_count} student account(s) "
+                    f"along with course {course_id}"
+                )
+                await log_audit(
+                    "students_deleted_with_course", user["id"], user["role"],
+                    {"course_id": course_id, "student_count": deleted_students_result.deleted_count}
+                )
+        elif blocking_students:
+            # force=True: unenroll non-egresado students (do not delete their accounts)
             await db.users.update_many(
                 {"id": {"$in": blocking_students}},
                 {"$unset": {"grupo": ""}}
@@ -3050,7 +3110,7 @@ async def delete_course(course_id: str, force: bool = False, user=Depends(get_cu
     else:
         submissions_for_files = []
 
-    # Delete the course (students are never deleted)
+    # Delete the course
     await db.courses.delete_one({"id": course_id})
 
     # Delete all associated data
@@ -4761,7 +4821,30 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             subject_doc = await db.subjects.find_one({"id": subject_id}, {"_id": 0, "name": 1})
             new_record["subject_id"] = subject_id
             new_record["subject_name"] = subject_doc.get("name", "Desconocido") if subject_doc else "Desconocido"
-        await db.failed_subjects.insert_one(new_record)
+        # Deduplication: check if a matching unprocessed/unrejected record already exists
+        # (prevents duplicate records when admin clicks approve multiple times on the same entry)
+        dup_filter: dict = {
+            "student_id": student_id,
+            "course_id": course_id,
+            "module_number": module_number,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        }
+        if subject_id:
+            dup_filter["subject_id"] = subject_id
+        else:
+            dup_filter["subject_id"] = {"$exists": False}
+        existing_dup = await db.failed_subjects.find_one(dup_filter, {"_id": 0, "id": 1, "recovery_approved": 1})
+        if existing_dup:
+            # Record already exists; ensure it is marked as approved (idempotent)
+            if not existing_dup.get("recovery_approved"):
+                await db.failed_subjects.update_one(
+                    {"id": existing_dup["id"]},
+                    {"$set": {"recovery_approved": True, "approved_by": user["id"], "approved_at": now.isoformat()}}
+                )
+            new_record["id"] = existing_dup["id"]
+        else:
+            await db.failed_subjects.insert_one(new_record)
 
         # Enable recovery activities for this student/course
         existing = await db.recovery_enabled.find_one({"student_id": student_id, "course_id": course_id, "subject_id": subject_id})

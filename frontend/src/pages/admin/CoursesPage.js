@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, ClipboardList, Users, BookOpen, Search, Wand2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, ClipboardList, Users, BookOpen, Search, Wand2, UserMinus } from 'lucide-react';
 import api from '@/lib/api';
 import { getProgramColorClasses } from '@/utils/programColors';
 
@@ -258,16 +258,19 @@ export default function CoursesPage() {
       toast.success('Grupo eliminado');
       fetchData();
     } catch (err) {
-      if (err.response?.status === 400 && err.response?.data?.detail?.includes('force=true')) {
+      if (err.response?.status === 400 && err.response?.data?.detail?.includes('No se puede eliminar el grupo')) {
         const detail = err.response.data.detail;
-        if (window.confirm(
+        const choice = window.confirm(
           `⚠️ ADVERTENCIA: ${detail}\n\n` +
-          'Los estudiantes NO serán borrados, solo desmatriculados del grupo.\n\n' +
-          '¿Deseas continuar y eliminar el grupo de todas formas?'
-        )) {
+          'Opciones:\n' +
+          '• Aceptar → Eliminar SOLO el grupo (los estudiantes quedan en el sistema)\n' +
+          '• Cancelar → Cancelar la eliminación\n\n' +
+          '(Para eliminar también las cuentas de estudiantes, use la opción desde el menú de eliminación con estudiantes)'
+        );
+        if (choice) {
           try {
             await api.delete(`/courses/${id}`, { params: { force: true } });
-            toast.success('Grupo eliminado (estudiantes desmatriculados)');
+            toast.success('Grupo eliminado (estudiantes desmatriculados pero no borrados)');
             fetchData();
           } catch (err2) {
             toast.error(err2.response?.data?.detail || 'Error eliminando grupo');
@@ -276,6 +279,25 @@ export default function CoursesPage() {
       } else {
         toast.error(err.response?.data?.detail || 'Error eliminando grupo');
       }
+    }
+  };
+
+  const handleDeleteWithStudents = async (id) => {
+    if (!window.confirm(
+      '⚠️ ADVERTENCIA CRÍTICA ⚠️\n\n' +
+      '¿Eliminar este grupo Y TODAS LAS CUENTAS de los estudiantes incluidos?\n\n' +
+      'Esto eliminará permanentemente:\n' +
+      '• El grupo y todos sus datos\n' +
+      '• Las cuentas de todos los estudiantes del grupo\n' +
+      '• Todas las notas, entregas y recuperaciones de esos estudiantes\n\n' +
+      'Esta acción es IRREVERSIBLE. ¿Deseas continuar?'
+    )) return;
+    try {
+      await api.delete(`/courses/${id}`, { params: { force: true, delete_students: true } });
+      toast.success('Grupo y cuentas de estudiantes eliminados permanentemente');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error eliminando grupo con estudiantes');
     }
   };
 
@@ -338,7 +360,8 @@ export default function CoursesPage() {
                     <CardTitle className="text-base font-heading">{c.name}</CardTitle>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(c)}><Pencil className="h-3 w-3" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(c.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Eliminar grupo (conservar estudiantes)" onClick={() => handleDelete(c.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Eliminar grupo CON estudiantes (permanente)" onClick={() => handleDeleteWithStudents(c.id)}><UserMinus className="h-3 w-3 text-destructive" /></Button>
                     </div>
                   </div>
                 </CardHeader>

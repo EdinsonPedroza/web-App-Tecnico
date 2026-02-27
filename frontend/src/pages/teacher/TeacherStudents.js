@@ -27,7 +27,7 @@ export default function TeacherStudents() {
       if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
       const requests = [
         api.get(`/courses/${courseId}`),
-        api.get(`/courses/${courseId}/students`),
+        api.get(`/courses/${courseId}/students?include_removed=true`),
         api.get(gradesUrl)
       ];
       if (subjectId) requests.push(api.get(`/subjects/${subjectId}`));
@@ -56,6 +56,18 @@ export default function TeacherStudents() {
     return (sg.reduce((s, g) => s + g.value, 0) / sg.length).toFixed(1);
   };
 
+  const getStatusBadge = (student) => {
+    if (student._removed_from_group) return <Badge variant="destructive">Reprobado (retirado del grupo)</Badge>;
+    const progId = course?.program_id;
+    const progStatus = progId && student.program_statuses ? student.program_statuses[progId] : null;
+    const status = progStatus || student.estado || 'activo';
+    if (status === 'egresado') return <Badge variant="success">Egresado</Badge>;
+    if (status === 'reprobado') return <Badge variant="destructive">Reprobado</Badge>;
+    if (status === 'pendiente_recuperacion') return <Badge variant="warning">Pendiente recuperación</Badge>;
+    if (status === 'retirado') return <Badge variant="secondary">Retirado</Badge>;
+    return <Badge variant="success">Activo</Badge>;
+  };
+
   const handleDownloadReport = async () => {
     try {
       let url = `/reports/course-results?course_id=${courseId}&format=xlsx`;
@@ -78,6 +90,9 @@ export default function TeacherStudents() {
     }
   };
 
+  const activeStudents = students.filter(s => !s._removed_from_group);
+  const removedStudents = students.filter(s => s._removed_from_group);
+
   return (
     <DashboardLayout courseId={courseId}>
       <div className="space-y-6">
@@ -86,7 +101,7 @@ export default function TeacherStudents() {
             <h1 className="text-2xl font-bold font-heading">Estudiantes del Curso</h1>
             <p className="text-muted-foreground mt-1">{course?.name}</p>
           </div>
-          {students.length > 0 && (
+          {activeStudents.length > 0 && (
             <Button variant="outline" size="sm" onClick={handleDownloadReport}>
               <Download className="h-4 w-4 mr-2" />
               {subjectId && subjectName ? `Descargar Reporte de ${subjectName}` : 'Descargar Reporte'}
@@ -96,47 +111,72 @@ export default function TeacherStudents() {
 
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
-        ) : students.length === 0 ? (
+        ) : activeStudents.length === 0 && removedStudents.length === 0 ? (
           <Card className="shadow-card"><CardContent className="p-10 text-center">
             <GraduationCap className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">No hay estudiantes inscritos</p>
           </CardContent></Card>
         ) : (
-          <Card className="shadow-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Estudiante</TableHead>
-                    <TableHead>Cédula</TableHead>
-                    <TableHead>Teléfono</TableHead>
-                    <TableHead>Promedio</TableHead>
-                    <TableHead>Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {students.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8"><AvatarFallback className="bg-primary/10 text-primary text-xs">{initials(s.name)}</AvatarFallback></Avatar>
-                          <span className="font-medium text-sm">{s.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground">{s.cedula}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{s.phone || '-'}</TableCell>
-                      <TableCell>
-                        <Badge variant={getAvg(s.id) !== '-' && parseFloat(getAvg(s.id)) >= 3 ? 'success' : getAvg(s.id) !== '-' ? 'destructive' : 'secondary'}>
-                          {getAvg(s.id)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell><Badge variant="success">Activo</Badge></TableCell>
+          <>
+            <Card className="shadow-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Estudiante</TableHead>
+                      <TableHead>Cédula</TableHead>
+                      <TableHead>Teléfono</TableHead>
+                      <TableHead>Promedio</TableHead>
+                      <TableHead>Estado</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {activeStudents.map((s) => (
+                      <TableRow key={s.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8"><AvatarFallback className="bg-primary/10 text-primary text-xs">{initials(s.name)}</AvatarFallback></Avatar>
+                            <span className="font-medium text-sm">{s.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm text-muted-foreground">{s.cedula}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{s.phone || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant={getAvg(s.id) !== '-' && parseFloat(getAvg(s.id)) >= 3 ? 'success' : getAvg(s.id) !== '-' ? 'destructive' : 'secondary'}>
+                            {getAvg(s.id)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(s)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {removedStudents.map((s) => (
+                      <TableRow key={s.id} className="opacity-60 bg-muted/30">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8"><AvatarFallback className="bg-destructive/10 text-destructive text-xs">{initials(s.name)}</AvatarFallback></Avatar>
+                            <span className="font-medium text-sm line-through text-muted-foreground">{s.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm text-muted-foreground">{s.cedula}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{s.phone || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant={getAvg(s.id) !== '-' && parseFloat(getAvg(s.id)) >= 3 ? 'success' : getAvg(s.id) !== '-' ? 'destructive' : 'secondary'}>
+                            {getAvg(s.id)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(s)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+            {removedStudents.length > 0 && (
+              <p className="text-xs text-muted-foreground text-center">
+                Los estudiantes en gris fueron retirados del grupo (reprobados). Se muestran para referencia de todos los profesores.
+              </p>
+            )}
+          </>
         )}
       </div>
     </DashboardLayout>
