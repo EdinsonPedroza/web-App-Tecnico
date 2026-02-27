@@ -1219,6 +1219,23 @@ def can_enroll_in_module(module_dates: dict, module_number: int) -> bool:
     return True
 
 
+def get_open_enrollment_module(module_dates: dict) -> Optional[int]:
+    """Return the module currently accepting enrollments based on date windows.
+
+    Priority: first module whose enrollment window is currently open according to
+    ``can_enroll_in_module``. Returns None when no module has an open window.
+    """
+    if not module_dates:
+        return None
+    mod_numbers = sorted(
+        int(k) for k in module_dates.keys() if str(k).isdigit()
+    )
+    for mod_num in mod_numbers:
+        if can_enroll_in_module(module_dates, mod_num):
+            return mod_num
+    return None
+
+
 def validate_module_dates_order(module_dates: dict) -> Optional[str]:
     """Validate that module N+1 starts after module N's recovery_close (or end) date.
     
@@ -2637,7 +2654,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     student_ids_to_add = req.student_ids or []
     if student_ids_to_add:
         # Determine the current module for this course based on module_dates
-        course_current_module = get_current_module_from_dates(module_dates) or 1
+        course_current_module = get_open_enrollment_module(module_dates) or get_current_module_from_dates(module_dates) or 1
         if not can_enroll_in_module(module_dates, course_current_module):
             # Enrollment window closed – only allow reingreso for retirado students in the current module
             if req.program_id:
@@ -2797,7 +2814,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
             newly_added_ids = list(set(req.student_ids) - current_student_ids)
             # Use updated module_dates if provided (admin may be adjusting dates to allow enrollment)
             course_module_dates = (req.module_dates if req.module_dates is not None else current_course.get("module_dates")) or {}
-            course_current_module = get_current_module_from_dates(course_module_dates) or 1
+            course_current_module = get_open_enrollment_module(course_module_dates) or get_current_module_from_dates(course_module_dates) or 1
             if newly_added_ids and not can_enroll_in_module(course_module_dates, course_current_module):
                 # Enrollment window closed – only allow reingreso for retirado students in current module
                 prog_id = current_course.get("program_id")
