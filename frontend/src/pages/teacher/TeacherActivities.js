@@ -85,7 +85,7 @@ export default function TeacherActivities() {
       if (activity.is_recovery) {
         try {
           const rRes = await api.get(`/recovery/enabled?course_id=${courseId}`);
-          setRecoveryEnabled((rRes.data || []).map(r => r.student_id));
+          setRecoveryEnabled(rRes.data || []);
         } catch (err) {
           console.error('Error fetching recovery enabled status:', err);
           setRecoveryEnabled([]);
@@ -102,6 +102,16 @@ export default function TeacherActivities() {
     setGrades(prev => ({ ...prev, [studentId]: value }));
   };
 
+
+
+  const isRecoveryEnabledFor = (studentId) => {
+    if (!submissionsDialog) return false;
+    return recoveryEnabled.some((r) =>
+      r.student_id === studentId &&
+      r.course_id === courseId &&
+      (!submissionsDialog.subject_id || !r.subject_id || r.subject_id === submissionsDialog.subject_id)
+    );
+  };
   const saveGrade = async (studentId, recoveryStatus = null) => {
     const value = recoveryStatus ? null : parseFloat(grades[studentId]);
     if (!recoveryStatus && (isNaN(value) || value < 0 || value > 5)) {
@@ -501,7 +511,7 @@ export default function TeacherActivities() {
                               <Badge variant="destructive" className="text-sm px-3 py-1">
                                 <XCircle className="h-4 w-4 mr-1" /> RECHAZADO
                               </Badge>
-                            ) : !recoveryEnabled.includes(student.id) ? (
+                            ) : !isRecoveryEnabledFor(student.id) ? (
                               <Badge variant="outline" className="text-xs border-warning/50 text-warning bg-warning/10 gap-1">
                                 <Clock className="h-3 w-3" />
                                 En espera de aprobación del Admin
