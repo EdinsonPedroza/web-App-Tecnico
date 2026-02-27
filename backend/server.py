@@ -4379,6 +4379,16 @@ async def get_recovery_panel(user=Depends(get_current_user)):
 
     for course in all_courses:
         module_dates = course.get("module_dates") or {}
+        # Fallback for legacy/incomplete courses: synthesize minimal module_dates
+        # from program close dates so auto-detection still runs.
+        if not module_dates:
+            pid = course.get("program_id", "")
+            fallback_dates = {
+                str(mn): {"end": close_val, "recovery_close": close_val}
+                for (prog_id, mn), close_val in program_close_map.items()
+                if prog_id == pid
+            }
+            module_dates = fallback_dates
         for module_key, dates in module_dates.items():
             module_number = int(module_key) if str(module_key).isdigit() else None
             if not module_number:
