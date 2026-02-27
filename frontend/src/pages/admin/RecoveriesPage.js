@@ -313,9 +313,11 @@ export default function RecoveriesPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="destructive" className="text-sm">
-                        En Recuperación
-                      </Badge>
+                      {visibleSubjects.some(s => s.teacher_graded_status === 'rejected' || s.status === 'teacher_rejected') ? (
+                        <Badge variant="destructive" className="text-sm">Reprobado</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-sm">En Recuperación</Badge>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -364,7 +366,7 @@ export default function RecoveriesPage() {
                               </Badge>
                             ) : recoveryClosed && ts === 'rejected' ? (
                               <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
-                                ❌ Rechazado por profesor
+                                ❌ Reprobado por profesor
                               </Badge>
                             ) : recoveryClosed && !subject.recovery_approved ? (
                               <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
@@ -380,7 +382,7 @@ export default function RecoveriesPage() {
                               </Badge>
                             ) : !recoveryClosed && ts === 'rejected' ? (
                               <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700">
-                                ❌ Rechazado por profesor
+                                ❌ Reprobado por profesor
                               </Badge>
                             ) : !recoveryClosed && subject.recovery_approved === true && (ts === null || ts === undefined) ? (
                               <Badge variant="warning" className="text-xs bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700">
