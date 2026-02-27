@@ -1392,6 +1392,94 @@ class TestCanEnrollInModule:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests for get_open_enrollment_module (module enrollment window detection)
+# ---------------------------------------------------------------------------
+
+class TestGetOpenEnrollmentModule:
+    """Tests for the get_open_enrollment_module function in server.py."""
+
+    def _get_open_enrollment_module(self, module_dates, today_str):
+        """Mirror of get_open_enrollment_module from server.py with injectable today."""
+
+        def _can_enroll(md, module_number, today):
+            mod_key = str(module_number)
+            mod_dates = md.get(mod_key) or md.get(module_number) or {}
+            mod_start = mod_dates.get("start")
+            if module_number == 1:
+                if not mod_start:
+                    return True
+                return today < mod_start
+            prev_key = str(module_number - 1)
+            prev_dates = md.get(prev_key) or md.get(module_number - 1) or {}
+            prev_recovery_close = prev_dates.get("recovery_close") or prev_dates.get("end")
+            if not prev_recovery_close and not mod_start:
+                return True
+            if prev_recovery_close and today < prev_recovery_close:
+                return False
+            if mod_start and today >= mod_start:
+                return False
+            return True
+
+        if not module_dates:
+            return None
+        mod_numbers = sorted(
+            int(k) for k in module_dates.keys() if str(k).isdigit()
+        )
+        if not mod_numbers:
+            return None
+        mods_to_check = mod_numbers + [mod_numbers[-1] + 1]
+        for mod_num in mods_to_check:
+            if _can_enroll(module_dates, mod_num, today_str):
+                return mod_num
+        return None
+
+    def test_empty_returns_none(self):
+        assert self._get_open_enrollment_module({}, "2026-01-01") is None
+        assert self._get_open_enrollment_module(None, "2026-01-01") is None
+
+    def test_before_mod1_start_returns_1(self):
+        module_dates = {"1": {"start": "2026-06-01", "recovery_close": "2026-12-31"}}
+        assert self._get_open_enrollment_module(module_dates, "2026-05-31") == 1
+
+    def test_after_mod1_start_no_mod2_dates_returns_2(self):
+        """Key scenario: only module 1 dates defined, today in inter-module window.
+
+        Module 1 recovery has closed; module 2 hasn't started.  Even though module 2
+        dates are not yet configured in module_dates, get_open_enrollment_module must
+        return 2 so that enrollment is allowed.
+        """
+        module_dates = {
+            "1": {"start": "2025-07-01", "end": "2025-12-31", "recovery_close": "2026-01-15"},
+        }
+        # After mod1 recovery_close, before any mod2 start → module 2 window is open
+        assert self._get_open_enrollment_module(module_dates, "2026-02-27") == 2
+
+    def test_mod2_window_with_both_dates_returns_2(self):
+        """With both module dates defined, returns 2 during inter-module window."""
+        module_dates = {
+            "1": {"start": "2025-07-01", "end": "2025-12-31", "recovery_close": "2026-01-15"},
+            "2": {"start": "2026-03-01", "recovery_close": "2026-09-15"},
+        }
+        assert self._get_open_enrollment_module(module_dates, "2026-02-27") == 2
+
+    def test_after_mod2_start_returns_none(self):
+        """After module 2 has started, no enrollment window is open."""
+        module_dates = {
+            "1": {"start": "2025-07-01", "end": "2025-12-31", "recovery_close": "2026-01-15"},
+            "2": {"start": "2026-03-01", "recovery_close": "2026-09-15"},
+        }
+        assert self._get_open_enrollment_module(module_dates, "2026-03-01") is None
+
+    def test_before_mod1_recovery_close_returns_none(self):
+        """During module 1 active period (before recovery_close), no window is open."""
+        module_dates = {
+            "1": {"start": "2025-07-01", "end": "2025-12-31", "recovery_close": "2026-01-15"},
+        }
+        # Today is after mod1 start but before recovery_close → no enrollment window
+        assert self._get_open_enrollment_module(module_dates, "2025-09-01") is None
+
+
+# ---------------------------------------------------------------------------
 # Unit tests for recovery panel filter logic (in-process only)
 # ---------------------------------------------------------------------------
 

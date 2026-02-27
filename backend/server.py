@@ -1223,14 +1223,25 @@ def get_open_enrollment_module(module_dates: dict) -> Optional[int]:
     """Return the module currently accepting enrollments based on date windows.
 
     Priority: first module whose enrollment window is currently open according to
-    ``can_enroll_in_module``. Returns None when no module has an open window.
+    ``can_enroll_in_module``. Also checks the module immediately after the highest
+    defined one so that inter-module enrollment windows are detected even when the
+    next module's dates have not yet been added to the group (e.g. module 1 recovery
+    has closed but module 2 dates are not yet configured – enrollment for module 2
+    should still be allowed during that gap).
+    Returns None when no module has an open window.
     """
     if not module_dates:
         return None
     mod_numbers = sorted(
         int(k) for k in module_dates.keys() if str(k).isdigit()
     )
-    for mod_num in mod_numbers:
+    if not mod_numbers:
+        return None
+    # Also probe the next module beyond the highest defined so that the window
+    # between module N's recovery_close and module N+1's start is recognised even
+    # when module N+1 dates have not been added to the group yet.
+    mods_to_check = mod_numbers + [mod_numbers[-1] + 1]
+    for mod_num in mods_to_check:
         if can_enroll_in_module(module_dates, mod_num):
             return mod_num
     return None
