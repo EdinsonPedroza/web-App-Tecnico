@@ -4364,28 +4364,58 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     for record in failed_records:
         already_tracked.add((record["student_id"], record["course_id"], record.get("subject_id")))
     
+    # Program close-date fallback map used when a course module has no explicit end date.
+    # Key: (program_id, module_number) -> module_close_date
+    program_close_map = {}
+    for p in programs:
+        pid = p.get("id")
+        if not pid:
+            continue
+        max_mod = max(len(p.get("modules") or []), 2)
+        for mn in range(1, max_mod + 1):
+            close_val = p.get(f"module{mn}_close_date")
+            if close_val:
+                program_close_map[(pid, mn)] = close_val
+
     for course in all_courses:
         module_dates = course.get("module_dates") or {}
+        # Fallback for legacy/incomplete courses: synthesize minimal module_dates
+        # from program close dates so auto-detection still runs.
+        if not module_dates:
+            pid = course.get("program_id", "")
+            fallback_dates = {
+                str(mn): {"end": close_val, "recovery_close": close_val}
+                for (prog_id, mn), close_val in program_close_map.items()
+                if prog_id == pid
+            }
+            module_dates = fallback_dates
         for module_key, dates in module_dates.items():
-            close_date = dates.get("end") if dates else None
-            if not close_date or close_date > today_str:
-                continue  # Module not closed yet
-
-            recovery_close = dates.get("recovery_close") if dates else None
             module_number = int(module_key) if str(module_key).isdigit() else None
             if not module_number:
                 continue
-            
-            # Get students enrolled in this course
-            student_ids = course.get("student_ids") or []
-            if not student_ids:
-                continue
-            
-            # Get all grades for this course
+
+            close_date = (dates or {}).get("end")
+            if not close_date:
+                close_date = program_close_map.get((course.get("program_id", ""), module_number))
+            if not close_date or close_date > today_str:
+                continue  # Module not closed yet
+
+            recovery_close = (dates or {}).get("recovery_close")
+
+            # Get all grades for this course once
             all_grades = await db.grades.find(
                 {"course_id": course["id"]}, {"_id": 0}
             ).to_list(5000)
-            
+
+            # Candidate students: enrolled + anyone who already has grades in this course.
+            # This covers edge-cases in the last module where enrollments may already
+            # have changed but failing records were not persisted yet.
+            enrolled_ids = set(course.get("student_ids") or [])
+            graded_ids = {g.get("student_id") for g in all_grades if g.get("student_id")}
+            candidate_student_ids = list(enrolled_ids | graded_ids)
+            if not candidate_student_ids:
+                continue
+
             # Build a per-subject index for this course's grades
             course_grades_index = {}
             for g in all_grades:
@@ -4393,19 +4423,19 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 if g.get("value") is not None:
                     course_grades_index.setdefault(key, []).append(g["value"])
 
-            for student_id in student_ids:
+            for student_id in candidate_student_ids:
                 student_grades = [g for g in all_grades if g.get("student_id") == student_id]
                 grade_values = [g["value"] for g in student_grades if g.get("value") is not None]
-                
+
                 average = sum(grade_values) / len(grade_values) if grade_values else 0.0
                 if average >= 3.0:
                     continue  # Student passed
-                
+
                 # Student has failing grade – look them up and add to panel
                 student = await db.users.find_one({"id": student_id, "role": "estudiante"}, {"_id": 0})
                 if not student:
                     continue
-                
+
                 if student_id not in students_map:
                     students_map[student_id] = {
                         "student_id": student_id,
@@ -4413,7 +4443,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "student_cedula": student.get("cedula") or "",
                         "failed_subjects": []
                     }
-                
+
                 failing_subjects = get_failing_subjects_with_ids(student_id, course["id"], course, course_grades_index, module_number)
                 if failing_subjects:
                     for subj_id, subj_name, subj_avg in failing_subjects:
