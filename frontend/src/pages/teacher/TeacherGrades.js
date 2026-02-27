@@ -22,7 +22,7 @@ export default function TeacherGrades() {
   const [loading, setLoading] = useState(true);
   const [editedGrades, setEditedGrades] = useState({});
   const [savingGrades, setSavingGrades] = useState({});
-  const [recoveryEnabled, setRecoveryEnabled] = useState([]); // student IDs with admin-approved recovery
+  const [recoveryEnabled, setRecoveryEnabled] = useState([]); // entries with student/course/subject approved by admin
 
   const fetchData = useCallback(async () => {
     try {
@@ -47,7 +47,7 @@ export default function TeacherGrades() {
       setActivities(sorted);
       setGrades(gRes.data);
       setStudents(uRes.data);
-      setRecoveryEnabled((rRes.data || []).map(r => r.student_id));
+      setRecoveryEnabled(rRes.data || []);
     } catch (err) {
       toast.error('Error cargando datos');
     } finally {
@@ -171,6 +171,15 @@ export default function TeacherGrades() {
   // Separate regular and recovery activities
   const regularActivities = activities.filter(a => !a.is_recovery);
   const recoveryActivities = activities.filter(a => a.is_recovery);
+
+
+  const isRecoveryEnabledFor = (studentId, activity) => {
+    return recoveryEnabled.some((r) =>
+      r.student_id === studentId &&
+      r.course_id === courseId &&
+      (!activity?.subject_id || !r.subject_id || r.subject_id === activity.subject_id)
+    );
+  };
 
   const downloadXLSX = async () => {
     try {
@@ -329,7 +338,7 @@ export default function TeacherGrades() {
                             const key = `${student.id}-${act.id}`;
                             const status = getRecoveryStatus(student.id, act.id);
                             const isSaving = savingGrades[key];
-                            const adminApproved = recoveryEnabled.includes(student.id);
+                            const adminApproved = isRecoveryEnabledFor(student.id, act);
                             // Show disabled placeholder when admin hasn't approved recovery for this student
                             if (!adminApproved) {
                               return (
@@ -341,11 +350,15 @@ export default function TeacherGrades() {
                                 </td>
                               );
                             }
-                            // After teacher grades (approved or rejected), hide cell
+                            // After teacher grades, show explicit final status
                             if (status === 'approved' || status === 'rejected') {
                               return (
                                 <td key={act.id} className="text-center px-2 py-2 border-r bg-warning/5">
-                                  <span className="text-xs text-muted-foreground italic">Calificado</span>
+                                  {status === 'approved' ? (
+                                    <Badge variant="success" className="text-xs">Aprobada</Badge>
+                                  ) : (
+                                    <Badge variant="destructive" className="text-xs">Rechazada</Badge>
+                                  )}
                                 </td>
                               );
                             }
