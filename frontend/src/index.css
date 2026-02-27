@@ -27,9 +27,9 @@
     --popover: 0 0% 100%;
     --popover-foreground: 207 75% 10%;
     
-    /* Muted: Enhanced for better readability */
-    --muted: 210 40% 78%;
-    --muted-foreground: 207 40% 28%;
+    /* Muted: Enhanced for better readability and contrast */
+    --muted: 210 35% 72%;
+    --muted-foreground: 207 55% 18%;
     
     /* Accent: Modern teal accent - Enhanced vibrancy */
     --accent: 195 65% 85%;
@@ -51,9 +51,9 @@
     --info: 207 82% 42%;
     --info-foreground: 0 0% 100%;
     
-    /* Border & Input - Enhanced visibility */
-    --border: 210 35% 68%;
-    --input: 210 35% 72%;
+    /* Border & Input - Enhanced visibility for better element identification */
+    --border: 210 40% 52%;
+    --input: 210 40% 55%;
     --ring: 207 82% 42%;
     
     /* Radius - Slightly increased for modern look */
@@ -67,12 +67,12 @@
     --chart-5: 12 80% 62%;
     
     /* Custom tokens */
-    --primary-dark: 207 65% 32%;
+    --primary-dark: 207 65% 28%;
     --primary-light: 207 60% 68%;
     --primary-glow: 207 70% 78%;
     
     /* Gradients - Enhanced vibrancy */
-    --gradient-primary: linear-gradient(135deg, hsl(207 65% 32%), hsl(207 70% 52%));
+    --gradient-primary: linear-gradient(135deg, hsl(207 65% 28%), hsl(207 70% 52%));
     --gradient-subtle: linear-gradient(180deg, hsl(210 40% 98%), hsl(210 45% 95%));
     --gradient-card-hover: linear-gradient(135deg, hsl(210 45% 97%), hsl(210 40% 94%));
     
@@ -86,12 +86,12 @@
     --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     
-    /* Sidebar - Enhanced contrast */
+    /* Sidebar - Enhanced contrast for text legibility */
     --sidebar-width: 260px;
-    --sidebar-bg: 207 65% 32%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-accent: 207 60% 42%;
-    --sidebar-muted: 207 45% 52%;
+    --sidebar-bg: 207 65% 28%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-accent: 207 60% 40%;
+    --sidebar-muted: 207 50% 72%;
   }
 
   .dark {
@@ -106,7 +106,7 @@
     --popover: 207 35% 13%;
     --popover-foreground: 210 35% 96%;
     --muted: 207 28% 20%;
-    --muted-foreground: 210 18% 62%;
+    --muted-foreground: 210 22% 68%;
     --accent: 207 28% 20%;
     --accent-foreground: 210 35% 96%;
     --destructive: 0 68% 42%;

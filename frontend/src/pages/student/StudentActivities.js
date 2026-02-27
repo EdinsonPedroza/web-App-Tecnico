@@ -36,9 +36,11 @@ export default function StudentActivities() {
       if (courseId) params.push(`course_id=${courseId}`);
       if (subjectId) params.push(`subject_id=${subjectId}`);
       if (params.length > 0) url += '?' + params.join('&');
-      const aRes = await api.get(url);
+      const [aRes, sRes] = await Promise.all([
+        api.get(url),
+        api.get(`/submissions?student_id=${user.id}`)
+      ]);
       setActivities(aRes.data);
-      const sRes = await api.get(`/submissions?student_id=${user.id}`);
       setSubmissions(sRes.data);
     } catch (err) {
       console.error(err);

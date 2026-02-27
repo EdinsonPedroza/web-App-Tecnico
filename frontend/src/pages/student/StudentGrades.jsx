@@ -34,14 +34,15 @@ export default function StudentGrades() {
       const filteredCourses = courseId ? cRes.data.filter(c => c.id === courseId) : cRes.data;
       setCourses(filteredCourses);
 
-      const allActs = [];
-      for (const course of filteredCourses) {
-        let actUrl = `/activities?course_id=${course.id}`;
-        if (subjectId) actUrl += `&subject_id=${subjectId}`;
-        const aRes = await api.get(actUrl);
-        allActs.push(...aRes.data);
-      }
-      setActivities(allActs);
+      // Fetch activities for all courses in parallel
+      const actResponses = await Promise.all(
+        filteredCourses.map(course => {
+          let actUrl = `/activities?course_id=${course.id}`;
+          if (subjectId) actUrl += `&subject_id=${subjectId}`;
+          return api.get(actUrl);
+        })
+      );
+      setActivities(actResponses.flatMap(r => r.data));
     } catch (err) {
       console.error(err);
     } finally {
