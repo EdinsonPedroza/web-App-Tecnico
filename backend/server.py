@@ -4443,6 +4443,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
 
                 # Fallback: if no subject structure exists, use course-level average.
                 grade_values = [g["value"] for g in student_grades if g.get("value") is not None]
+
                 average = sum(grade_values) / len(grade_values) if grade_values else 0.0
                 if not failing_subjects and average >= 3.0:
                     continue  # Student passed
@@ -4460,6 +4461,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "failed_subjects": []
                     }
 
+                failing_subjects = get_failing_subjects_with_ids(student_id, course["id"], course, course_grades_index, module_number)
                 if failing_subjects:
                     for subj_id, subj_name, subj_avg in failing_subjects:
                         if (student_id, course["id"], subj_id) in already_tracked:
