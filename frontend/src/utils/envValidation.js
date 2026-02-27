@@ -22,7 +22,10 @@ export function isChunkError(error) {
   const message = error.message?.toLowerCase() || '';
   return message.includes('chunk') ||
          message.includes('loading css') ||
-         message.includes('loading js');
+         message.includes('loading js') ||
+         message.includes('failed to fetch dynamically imported module') ||
+         message.includes('dynamically imported module') ||
+         message.includes('importing a module script failed');
 }
 
 /**
