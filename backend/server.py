@@ -2784,6 +2784,22 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                     f"program_modules.{program_id}": module_number
                 }}
             )
+        # Reset program status to 'activo' for enrolled students who are 'reprobado'.
+        # This ensures an expelled student who is added to a new group appears as active.
+        if program_id:
+            enrolled_docs = await db.users.find(
+                {"id": {"$in": course["student_ids"]}, "role": "estudiante"},
+                {"_id": 0, "id": 1, "program_statuses": 1}
+            ).to_list(None)
+            for s in enrolled_docs:
+                ps = s.get("program_statuses") or {}
+                if ps.get(program_id) == "reprobado":
+                    ps[program_id] = "activo"
+                    new_estado = derive_estado_from_program_statuses(ps)
+                    await db.users.update_one(
+                        {"id": s["id"]},
+                        {"$set": {"program_statuses": ps, "estado": new_estado}}
+                    )
     
     await log_audit("course_created", user["id"], user["role"], {"course_id": course["id"], "course_name": course.get("name", "")})
     return course
@@ -2816,12 +2832,15 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
             update_data["subject_ids"] = [update_data["subject_id"]]
     
     # Validate: a student cannot be in 2+ groups of the same program
+    newly_added_ids = []
+    pre_update_student_ids: set = set()
     if req.student_ids is not None and user["role"] == "admin":
         # Get the current course to know its program, existing student list, and module_dates
-        current_course = await db.courses.find_one({"id": course_id}, {"_id": 0, "program_id": 1, "student_ids": 1, "module_dates": 1})
+        current_course = await db.courses.find_one({"id": course_id}, {"_id": 0, "program_id": 1, "student_ids": 1, "module_dates": 1, "removed_student_ids": 1})
         if current_course:
             # Check enrollment deadline per module
             current_student_ids = set(current_course.get("student_ids") or [])
+            pre_update_student_ids = current_student_ids
             newly_added_ids = list(set(req.student_ids) - current_student_ids)
             # Use updated module_dates if provided (admin may be adjusting dates to allow enrollment)
             course_module_dates = (req.module_dates if req.module_dates is not None else current_course.get("module_dates")) or {}
@@ -2933,6 +2952,36 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                         f"program_modules.{program_id}": module_number
                     }}
                 )
+
+    # When student_ids is explicitly updated, track manually removed students in
+    # removed_student_ids so they cannot appear in future recovery panels for this group.
+    if req.student_ids is not None and pre_update_student_ids:
+        program_id_for_removed = updated.get("program_id", "") if updated else ""
+        manually_removed = pre_update_student_ids - set(req.student_ids)
+        if manually_removed:
+            await db.courses.update_one(
+                {"id": course_id},
+                {"$addToSet": {"removed_student_ids": {"$each": list(manually_removed)}}}
+            )
+
+    # Reset program status to 'activo' for newly added students who are 'reprobado'.
+    # This ensures that a student who was expelled and joins a new group appears as active.
+    if newly_added_ids:
+        program_id_for_new = updated.get("program_id", "") if updated else ""
+        if program_id_for_new:
+            added_student_docs = await db.users.find(
+                {"id": {"$in": newly_added_ids}, "role": "estudiante"},
+                {"_id": 0, "id": 1, "program_statuses": 1}
+            ).to_list(None)
+            for s in added_student_docs:
+                ps = s.get("program_statuses") or {}
+                if ps.get(program_id_for_new) == "reprobado":
+                    ps[program_id_for_new] = "activo"
+                    new_estado = derive_estado_from_program_statuses(ps)
+                    await db.users.update_one(
+                        {"id": s["id"]},
+                        {"$set": {"program_statuses": ps, "estado": new_estado}}
+                    )
 
     # If module dates were adjusted, immediately execute the same automatic
     # closure/recovery-close logic used by the daily scheduler. This prevents
@@ -4347,7 +4396,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             if close_val:
                 program_close_map[(pid, mn)] = close_val
     
-    # Organize by student; include all non-processed records regardless of recovery_close date
+    # Organize by student; only include records whose recovery period is still open
     students_map = {}
     for record in failed_records:
         course_doc = course_map.get(record["course_id"]) or {}
@@ -4355,6 +4404,9 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         recovery_close = get_recovery_close(course_doc, module_num)
         if not recovery_close:
             recovery_close = program_close_map.get((record.get("program_id", ""), module_num))
+        # Skip records whose recovery period has already closed
+        if recovery_close and recovery_close <= today_str:
+            continue
         next_module_start = get_next_module_start(course_doc, module_num)
 
         student_id = record["student_id"]
@@ -4446,18 +4498,23 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 continue  # Module not closed yet
 
             recovery_close = (dates or {}).get("recovery_close")
+            # Skip auto-detected entries once the recovery period has closed
+            if recovery_close and recovery_close <= today_str:
+                continue
 
             # Get all grades for this course once
             all_grades = await db.grades.find(
                 {"course_id": course["id"]}, {"_id": 0}
             ).to_list(5000)
 
-            # Candidate students: enrolled + anyone who already has grades in this course.
+            # Candidate students: enrolled + anyone who already has grades in this course,
+            # minus students who were previously removed from the group.
             # This covers edge-cases in the last module where enrollments may already
             # have changed but failing records were not persisted yet.
             enrolled_ids = set(course.get("student_ids") or [])
+            removed_ids = set(course.get("removed_student_ids") or [])
             graded_ids = {g.get("student_id") for g in all_grades if g.get("student_id")}
-            candidate_student_ids = list(enrolled_ids | graded_ids)
+            candidate_student_ids = list((enrolled_ids | graded_ids) - removed_ids)
             if not candidate_student_ids:
                 continue
 
