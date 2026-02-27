@@ -5126,7 +5126,7 @@ async def get_recovery_results_report(format: Optional[str] = None, user=Depends
 
     # Fetch all unprocessed failed subjects
     all_failed = await db.failed_subjects.find(
-        {"recovery_processed": {"$ne": True}, "recovery_rejected": {"$ne": True}},
+        {"recovery_processed": {"$ne": True}},
         {"_id": 0}
     ).to_list(None)
 
