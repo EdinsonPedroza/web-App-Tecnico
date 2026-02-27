@@ -8,6 +8,7 @@ const API_BASE = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
+  timeout: 15000,
   headers: { 'Content-Type': 'application/json' }
 });
 
@@ -20,15 +21,32 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+
+
+const shouldRetry = (error) => {
+  const status = error?.response?.status;
+  if (!status && (error.code === 'ECONNABORTED' || error.message?.includes('Network Error'))) return true;
+  return status >= 500 && status < 600;
+};
+
 // Handle 401 responses
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const originalConfig = error.config || {};
+
     if (error.response?.status === 401) {
       localStorage.removeItem('educando_token');
       localStorage.removeItem('educando_user');
       window.location.href = '/';
+      return Promise.reject(error);
     }
+
+    if ((originalConfig.method || 'get').toLowerCase() === 'get' && !originalConfig.__retried && shouldRetry(error)) {
+      originalConfig.__retried = true;
+      return api(originalConfig);
+    }
+
     return Promise.reject(error);
   }
 );
