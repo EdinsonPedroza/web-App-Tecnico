@@ -279,21 +279,6 @@ export default function CoursesPage() {
     }
   };
 
-  const handlePurgeAll = async () => {
-    if (!window.confirm(
-      '⚠️ ADVERTENCIA: Esto eliminará TODOS los grupos y sus datos asociados ' +
-      '(actividades, calificaciones, entregas, videos, recuperaciones).\n\n' +
-      '¿Estás seguro de que deseas continuar? Esta acción no se puede deshacer.'
-    )) return;
-    try {
-      const res = await api.delete('/admin/purge-group-data');
-      toast.success(`Todos los grupos eliminados: ${res.data.courses_deleted} grupos, ${res.data.activities_deleted} actividades`);
-      fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error al purgar datos de grupos');
-    }
-  };
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -303,7 +288,6 @@ export default function CoursesPage() {
             <p className="text-muted-foreground mt-1 text-xl">Gestiona grupos por programa, materia y cohorte</p>
           </div>
           <Button onClick={openCreate} size="lg"><Plus className="h-5 w-5" /> Nuevo Grupo</Button>
-          <Button onClick={handlePurgeAll} variant="destructive" size="lg" className="ml-2" aria-label="Eliminar todos los grupos y datos asociados permanentemente"><Trash2 className="h-5 w-5" /> Purgar Todos</Button>
         </div>
 
         {/* List filters */}
@@ -640,8 +624,9 @@ export default function CoursesPage() {
                     if (editing && form.student_ids.includes(s.id)) return true;
                     // Exclude students previously removed from this course due to failed recovery
                     if (removedFromThisCourse.includes(s.id)) return false;
-                    // Only active students are eligible to enroll (check per-program status when available)
-                    if (getStudentStatusForProgram(s, form.program_id) !== 'activo') return false;
+                    // Eligible statuses in inscription windows: active and reprobado (re-inscription)
+                    const progStatus = getStudentStatusForProgram(s, form.program_id);
+                    if (!['activo', 'reprobado'].includes(progStatus)) return false;
                     if (!form.program_id) return true;
                     const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
                     if (programIds.length > 0 && !programIds.map(String).includes(String(form.program_id))) return false;
@@ -703,8 +688,9 @@ export default function CoursesPage() {
                     if (editing && form.student_ids.includes(s.id)) return true;
                     // Exclude students previously removed from this course due to failed recovery
                     if (removedFromThisCourse.includes(s.id)) return false;
-                    // Only active students are eligible to enroll (check per-program status when available)
-                    if (getStudentStatusForProgram(s, form.program_id) !== 'activo') return false;
+                    // Eligible statuses in inscription windows: active and reprobado (re-inscription)
+                    const progStatus = getStudentStatusForProgram(s, form.program_id);
+                    if (!['activo', 'reprobado'].includes(progStatus)) return false;
                     // Filter by program: show only students enrolled in this course's program
                     if (form.program_id) {
                       const programIds = s.program_ids || (s.program_id ? [s.program_id] : []);
@@ -728,7 +714,7 @@ export default function CoursesPage() {
                     return true;
                   });
                   if (students.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes</p>;
-                  if (eligible.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes elegibles (activos, compatibles con el programa{groupModule != null ? ` y Módulo ${groupModule}` : ''} seleccionado)</p>;
+                  if (eligible.length === 0) return <p className="text-sm text-muted-foreground">No hay estudiantes elegibles (activos/reprobados, compatibles con el programa{groupModule != null ? ` y Módulo ${groupModule}` : ''} seleccionado)</p>;
                   return eligible.map((s) => (
                     <div key={s.id} className="flex items-center gap-2.5">
                       <Checkbox checked={form.student_ids.includes(s.id)} onCheckedChange={() => toggleStudent(s.id)} />
