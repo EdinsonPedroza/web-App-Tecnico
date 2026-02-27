@@ -4342,13 +4342,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         course_doc = course_map.get(record["course_id"]) or {}
         module_num = record.get("module_number", 1)
         recovery_close = get_recovery_close(course_doc, module_num)
-        # Fallback order for visibility cutoff:
-        # 1) explicit recovery_close in course module dates
-        # 2) course module end date
-        # 3) program-level module close date
-        if not recovery_close:
-            course_mod_dates = (course_doc.get("module_dates") or {}).get(str(module_num)) or {}
-            recovery_close = course_mod_dates.get("end")
         if not recovery_close:
             recovery_close = program_close_map.get((record.get("program_id", ""), module_num))
         next_module_start = get_next_module_start(course_doc, module_num)
@@ -4368,10 +4361,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         teacher_status = teacher_graded_index.get((student_id, record["course_id"], subject_id_for_record))
         if not teacher_status:
             teacher_status = teacher_graded_index.get((student_id, record["course_id"], None))
-
-        # Do not show records after recovery window closes.
-        if recovery_close and recovery_close <= today_str:
-            continue
 
         # Compute a human-readable status for the record
         ts = record.get("teacher_graded_status") if record.get("teacher_graded_status") is not None else teacher_status
@@ -4409,6 +4398,19 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     for record in failed_records:
         already_tracked.add((record["student_id"], record["course_id"], record.get("subject_id")))
     
+    # Program close-date fallback map used when a course module has no explicit end date.
+    # Key: (program_id, module_number) -> module_close_date
+    program_close_map = {}
+    for p in programs:
+        pid = p.get("id")
+        if not pid:
+            continue
+        max_mod = max(len(p.get("modules") or []), 2)
+        for mn in range(1, max_mod + 1):
+            close_val = p.get(f"module{mn}_close_date")
+            if close_val:
+                program_close_map[(pid, mn)] = close_val
+
     for course in all_courses:
         module_dates = course.get("module_dates") or {}
         # Fallback for legacy/incomplete courses: synthesize minimal module_dates
@@ -4433,10 +4435,6 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                 continue  # Module not closed yet
 
             recovery_close = (dates or {}).get("recovery_close")
-            if not recovery_close:
-                recovery_close = (dates or {}).get("end") or program_close_map.get((course.get("program_id", ""), module_number))
-            if recovery_close and recovery_close <= today_str:
-                continue
 
             # Get all grades for this course once
             all_grades = await db.grades.find(
@@ -4474,6 +4472,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
 
                 # Fallback: if no subject structure exists, use course-level average.
                 grade_values = [g["value"] for g in student_grades if g.get("value") is not None]
+
                 average = sum(grade_values) / len(grade_values) if grade_values else 0.0
                 if not failing_subjects and average >= 3.0:
                     continue  # Student passed
@@ -4491,6 +4490,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "failed_subjects": []
                     }
 
+                failing_subjects = get_failing_subjects_with_ids(student_id, course["id"], course, course_grades_index, module_number)
                 if failing_subjects:
                     for subj_id, subj_name, subj_avg in failing_subjects:
                         if (student_id, course["id"], subj_id) in already_tracked:
