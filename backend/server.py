@@ -1481,12 +1481,17 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
         {"id": student_id, "role": "estudiante"},
         {"$set": {"estado": new_estado, "program_statuses": program_statuses}}
     )
-    # Mark all records for this student+course as processed
+    # Keep records visible in admin/student recovery panels until recovery-close,
+    # but mark them explicitly as rejected by teacher for status/reporting.
     now = datetime.now(timezone.utc)
     for record in approved_records:
         await db.failed_subjects.update_one(
             {"id": record["id"]},
-            {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
+            {"$set": {
+                "recovery_rejected": True,
+                "rejected_at": now.isoformat(),
+                "rejected_by": "teacher"
+            }}
         )
     logger.info(
         f"Student {student_id} marked reprobado and removed from group {course_id} "
@@ -4425,10 +4430,22 @@ async def get_recovery_panel(user=Depends(get_current_user)):
 
             for student_id in candidate_student_ids:
                 student_grades = [g for g in all_grades if g.get("student_id") == student_id]
+
+                # Prefer per-subject failure detection for the closed module.
+                # This avoids masking a failed subject with high grades from other subjects/modules.
+                failing_subjects = get_failing_subjects_with_ids(
+                    student_id,
+                    course["id"],
+                    course,
+                    course_grades_index,
+                    module_number
+                )
+
+                # Fallback: if no subject structure exists, use course-level average.
                 grade_values = [g["value"] for g in student_grades if g.get("value") is not None]
 
                 average = sum(grade_values) / len(grade_values) if grade_values else 0.0
-                if average >= 3.0:
+                if not failing_subjects and average >= 3.0:
                     continue  # Student passed
 
                 # Student has failing grade – look them up and add to panel
