@@ -57,6 +57,8 @@ async def create_indexes(db):
         # failed_subjects
         ("failed_subjects", [("student_id", 1)], {"name": "failed_subjects_student_id"}),
         ("failed_subjects", [("student_id", 1), ("course_id", 1)], {"name": "failed_subjects_student_course"}),
+        ("failed_subjects", [("course_id", 1), ("module_number", 1), ("recovery_processed", 1)], {"name": "failed_subjects_course_module_processed"}),
+        ("failed_subjects", [("recovery_approved", 1), ("recovery_completed", 1), ("recovery_processed", 1), ("recovery_rejected", 1)], {"name": "failed_subjects_recovery_state"}),
     ]
 
     created = 0

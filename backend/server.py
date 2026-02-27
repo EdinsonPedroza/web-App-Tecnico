@@ -4308,6 +4308,16 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     # Get all programs for reference
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     program_map = {p["id"]: p["name"] for p in programs}
+    program_close_map = {}
+    for p in programs:
+        pid = p.get("id")
+        if not pid:
+            continue
+        max_mod = max(len(p.get("modules") or []), 2)
+        for mn in range(1, max_mod + 1):
+            close_val = p.get(f"module{mn}_close_date")
+            if close_val:
+                program_close_map[(pid, mn)] = close_val
     
     # Organize by student; include all non-processed records regardless of recovery_close date
     students_map = {}
@@ -4315,6 +4325,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         course_doc = course_map.get(record["course_id"]) or {}
         module_num = record.get("module_number", 1)
         recovery_close = get_recovery_close(course_doc, module_num)
+        if not recovery_close:
+            recovery_close = program_close_map.get((record.get("program_id", ""), module_num))
         next_module_start = get_next_module_start(course_doc, module_num)
 
         student_id = record["student_id"]
