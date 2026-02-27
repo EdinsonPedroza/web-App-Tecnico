@@ -5791,23 +5791,24 @@ async def purge_all_group_data(user=Depends(get_current_user)):
 async def get_stats(user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
-    
-    students = await db.users.count_documents({"role": "estudiante", "active": True})
-    teachers = await db.users.count_documents({"role": "profesor", "active": True})
-    programs = await db.programs.count_documents({"active": True})
-    courses = await db.courses.count_documents({"active": True})
-    # Only count activities that belong to an existing course
-    existing_course_ids = [c["id"] for c in await db.courses.find({}, {"_id": 0, "id": 1}).to_list(5000)]
-    if existing_course_ids:
-        activities = await db.activities.count_documents({"course_id": {"$in": existing_course_ids}})
-    else:
-        activities = 0
-    
+
+    # Run most count queries in parallel for better performance
+    students, teachers, programs, courses_count, existing_courses = await asyncio.gather(
+        db.users.count_documents({"role": "estudiante", "active": True}),
+        db.users.count_documents({"role": "profesor", "active": True}),
+        db.programs.count_documents({"active": True}),
+        db.courses.count_documents({"active": True}),
+        db.courses.find({}, {"_id": 0, "id": 1}).to_list(5000),
+    )
+    # Count activities that belong to existing courses
+    existing_course_ids = [c["id"] for c in existing_courses]
+    activities = await db.activities.count_documents({"course_id": {"$in": existing_course_ids}}) if existing_course_ids else 0
+
     return {
         "students": students,
         "teachers": teachers,
         "programs": programs,
-        "courses": courses,
+        "courses": courses_count,
         "activities": activities
     }
 
