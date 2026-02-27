@@ -122,9 +122,38 @@ export default function StudentsPage() {
   // Get which courses a student is enrolled in
   const getStudentCourseIds = (studentId) => courses.filter(c => (c.student_ids || []).includes(studentId)).map(c => c.id);
 
+  // Return true if enrollment is currently open for this course based on module_dates.
+  // Mirrors the backend can_enroll_in_module / get_open_enrollment_module logic.
+  const isCourseEnrollmentOpen = (course) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const moduleDates = course.module_dates || {};
+    const modKeys = Object.keys(moduleDates).filter(k => !isNaN(parseInt(k, 10))).map(k => parseInt(k, 10)).sort((a, b) => a - b);
+    if (modKeys.length === 0) return true; // No dates configured – allow
+
+    // Check each defined module plus the one right after the highest (inter-module window)
+    const toCheck = [...modKeys, modKeys[modKeys.length - 1] + 1];
+    for (const modNum of toCheck) {
+      const modDates = moduleDates[String(modNum)] || moduleDates[modNum] || {};
+      const modStart = modDates.start;
+      if (modNum === 1) {
+        if (!modStart) return true;
+        if (today < modStart) return true;
+      } else {
+        const prevDates = moduleDates[String(modNum - 1)] || moduleDates[modNum - 1] || {};
+        const prevRecoveryClose = prevDates.recovery_close || prevDates.end;
+        if (!prevRecoveryClose && !modStart) return true;
+        if (prevRecoveryClose && today < prevRecoveryClose) continue; // not yet open
+        if (modStart && today >= modStart) continue; // already started, closed for enrollment
+        return true; // in the inter-module enrollment window
+      }
+    }
+    return false;
+  };
+
   // Determine if a group/course is compatible with a student's current module for a given program.
   // - If studentModule == 1: student can join groups where module 1 hasn't started yet (today < module_dates["1"].start)
-  // - If studentModule == 2: student can join groups where module 1 has already started (module_dates["1"].start <= today)
+  // - If studentModule >= 2: student can join groups where module 1 has already started OR
+  //   groups without module 1 dates (groups designed for module 2+ re-enrollment)
   const isCourseCompatibleWithModule = (course, studentModule) => {
     const today = new Date().toISOString().slice(0, 10);
     const moduleDates = course.module_dates || {};
@@ -135,8 +164,9 @@ export default function StudentsPage() {
       // Student is in module 1: only show groups where module 1 hasn't started yet
       return !mod1Start || mod1Start > today;
     } else if (studentModule >= 2) {
-      // Student is in module 2+: only show groups where module 1 has already started
-      return mod1Start && mod1Start <= today;
+      // Student is in module 2+: show groups where module 1 has already started OR
+      // groups that have no module 1 dates (designed for module 2+ re-enrollment)
+      return !mod1Start || mod1Start <= today;
     }
     return true;
   };
@@ -768,11 +798,10 @@ export default function StudentsPage() {
                   return filteredCourses.map((c) => {
                     const programName = getProgramShortName(c.program_id);
                     const studentModule = form.program_modules?.[c.program_id];
-                    const mod1Dates = c.module_dates?.['1'] || c.module_dates?.[1];
-                    const mod1Start = mod1Dates?.start;
-                    const moduleInfo = mod1Start
-                      ? (mod1Start <= today ? 'Inscripción cerrada' : 'Inscripción abierta')
-                      : 'Nuevo grupo';
+                    const hasAnyDates = Object.keys(c.module_dates || {}).some(k => !isNaN(parseInt(k, 10)));
+                    const moduleInfo = !hasAnyDates
+                      ? 'Nuevo grupo'
+                      : (isCourseEnrollmentOpen(c) ? 'Inscripción abierta' : 'Inscripción cerrada');
                     return (
                       <div key={c.id} className="flex items-center gap-2">
                         <Checkbox checked={(form.course_ids || []).includes(c.id)} onCheckedChange={() => toggleCourse(c.id)} />
