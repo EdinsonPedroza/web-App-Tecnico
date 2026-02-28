@@ -758,6 +758,24 @@ async def check_and_close_modules():
                 fallback_fs_bulk_ops: list = []
                 _fallback_unenroll_ids: list = []
 
+                # Pre-load ALL failed_subjects for all fallback students in ONE query
+                # instead of one query per student inside the loop (N queries → 1 query)
+                if _fallback_ids:
+                    _fallback_fs_docs = await db.failed_subjects.find({
+                        "student_id": {"$in": _fallback_ids},
+                        "course_id": course["id"],
+                        "module_number": int(module_key),
+                        "recovery_processed": {"$ne": True},
+                        "recovery_expired": {"$ne": True},
+                    }, {"_id": 0}).to_list(100000)
+                    _fallback_fs_by_student: dict = {}
+                    for _fsr in _fallback_fs_docs:
+                        _fsid = _fsr.get("student_id")
+                        if _fsid:
+                            _fallback_fs_by_student.setdefault(_fsid, []).append(_fsr)
+                else:
+                    _fallback_fs_by_student = {}
+
                 for student_id in _fallback_ids:
                     # Skip if already unenrolled in previous steps
                     if not current_course_doc or student_id not in (current_course_doc.get("student_ids") or []):
@@ -796,13 +814,7 @@ async def check_and_close_modules():
                     if not has_failing:
                         continue
 
-                    unresolved_records = await db.failed_subjects.find({
-                        "student_id": student_id,
-                        "course_id": course["id"],
-                        "module_number": int(module_key),
-                        "recovery_processed": {"$ne": True},
-                        "recovery_expired": {"$ne": True},
-                    }, {"_id": 0}).to_list(None)
+                    unresolved_records = _fallback_fs_by_student.get(student_id, [])
 
                     # If all unresolved records are fully approved+graded, let normal pass flow apply
                     if unresolved_records and all(
@@ -990,18 +1002,23 @@ async def startup_event():
             logger.warning(f"No se pudieron crear índices automáticamente: {e}")
         await create_initial_data()
         
-        # Start the automatic module closure scheduler
-        # Runs daily at 02:00 AM (server local timezone) – low traffic window
-        # Note: Uses server's local timezone by default. For production, consider explicitly setting timezone.
-        scheduler.add_job(
-            check_and_close_modules,
-            CronTrigger(hour=2, minute=0),  # Run at 02:00 AM daily (server local time)
-            id='auto_close_modules',
-            name='Automatic Module Closure',
-            replace_existing=True
-        )
-        scheduler.start()
-        logger.info("Automatic module closure scheduler started (runs daily at 02:00 AM server local time)")
+        # Start the automatic module closure scheduler.
+        # Only worker 0 (or single-worker deployments) starts the scheduler to prevent
+        # race conditions when multiple Gunicorn workers run the same APScheduler job.
+        worker_id = os.environ.get("WORKER_ID")
+        should_start_scheduler = worker_id is None or worker_id == "0"
+        if should_start_scheduler:
+            scheduler.add_job(
+                check_and_close_modules,
+                CronTrigger(hour=2, minute=0, timezone=BOGOTA_TZ),  # 02:00 AM hora Bogotá (UTC-5)
+                id='auto_close_modules',
+                name='Automatic Module Closure',
+                replace_existing=True
+            )
+            scheduler.start()
+            logger.info("Automatic module closure scheduler started (runs daily at 02:00 AM Bogotá time / UTC-5)")
+        else:
+            logger.info(f"Worker {worker_id}: skipping scheduler start (only worker 0 runs the scheduler)")
         
         # Verify S3 bucket accessibility at startup
         if USE_S3:
@@ -1305,31 +1322,38 @@ async def create_initial_data():
     # Purge orphaned group-related data: delete records whose course_id no longer exists
     logger.info("Checking for orphaned group/course data...")
     existing_course_ids = [c["id"] for c in await db.courses.find({}, {"_id": 0, "id": 1}).to_list(5000)]
-    if existing_course_ids:
-        orphan_filter = {"course_id": {"$nin": existing_course_ids}}
-    else:
-        orphan_filter = {"course_id": {"$exists": True}}
-    orphan_activities = await db.activities.delete_many(orphan_filter)
-    orphan_grades = await db.grades.delete_many(orphan_filter)
-    orphan_submissions = await db.submissions.delete_many(orphan_filter)
-    orphan_videos = await db.class_videos.delete_many(orphan_filter)
-    orphan_recovery = await db.recovery_enabled.delete_many(orphan_filter)
-    orphan_failed = await db.failed_subjects.delete_many(orphan_filter)
-    total_purged = (orphan_activities.deleted_count + orphan_grades.deleted_count +
-                    orphan_submissions.deleted_count + orphan_videos.deleted_count +
-                    orphan_recovery.deleted_count + orphan_failed.deleted_count)
-    if total_purged > 0:
-        logger.info(
-            f"Purged {total_purged} orphaned records: "
-            f"{orphan_activities.deleted_count} activities, "
-            f"{orphan_grades.deleted_count} grades, "
-            f"{orphan_submissions.deleted_count} submissions, "
-            f"{orphan_videos.deleted_count} videos, "
-            f"{orphan_recovery.deleted_count} recovery_enabled, "
-            f"{orphan_failed.deleted_count} failed_subjects"
+    if not existing_course_ids:
+        # SAFETY GUARD: if no courses found (e.g. first startup or temporary MongoDB failure),
+        # do NOT delete anything. An empty $nin:[] filter would delete ALL related records,
+        # which would be catastrophic with real student data.
+        logger.warning(
+            "Orphan purge skipped: no courses found in DB. "
+            "This is safe on first startup. If courses exist and this warning persists, "
+            "check MongoDB connectivity."
         )
     else:
-        logger.info("No orphaned group/course data found")
+        orphan_filter = {"course_id": {"$nin": existing_course_ids}}
+        orphan_activities = await db.activities.delete_many(orphan_filter)
+        orphan_grades = await db.grades.delete_many(orphan_filter)
+        orphan_submissions = await db.submissions.delete_many(orphan_filter)
+        orphan_videos = await db.class_videos.delete_many(orphan_filter)
+        orphan_recovery = await db.recovery_enabled.delete_many(orphan_filter)
+        orphan_failed = await db.failed_subjects.delete_many(orphan_filter)
+        total_purged = (orphan_activities.deleted_count + orphan_grades.deleted_count +
+                        orphan_submissions.deleted_count + orphan_videos.deleted_count +
+                        orphan_recovery.deleted_count + orphan_failed.deleted_count)
+        if total_purged > 0:
+            logger.info(
+                f"Purged {total_purged} orphaned records: "
+                f"{orphan_activities.deleted_count} activities, "
+                f"{orphan_grades.deleted_count} grades, "
+                f"{orphan_submissions.deleted_count} submissions, "
+                f"{orphan_videos.deleted_count} videos, "
+                f"{orphan_recovery.deleted_count} recovery_enabled, "
+                f"{orphan_failed.deleted_count} failed_subjects"
+            )
+        else:
+            logger.info("No orphaned group/course data found")
 
     logger.info("Datos iniciales verificados/creados exitosamente")
     logger.info("5 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
@@ -4301,7 +4325,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     all_course_ids = [c["id"] for c in courses]
     all_grades_bulk = await db.grades.find(
         {"course_id": {"$in": all_course_ids}}, {"_id": 0}
-    ).to_list(None)
+    ).to_list(100000)
     # Indexar por student_id para acceso O(1) en el loop
     grades_by_student = {}
     for g in all_grades_bulk:
