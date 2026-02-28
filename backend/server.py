@@ -31,6 +31,13 @@ from apscheduler.triggers.cron import CronTrigger
 
 BOGOTA_TZ = ZoneInfo("America/Bogota")
 
+# Error messages for enrollment prerequisite validation (used in create_course and update_course)
+_ERR_ENROLL_EGRESADO = "No se puede inscribir a un estudiante que ya egresó del programa."
+_ERR_ENROLL_PENDIENTE = (
+    "No se puede inscribir a un estudiante que tiene recuperaciones pendientes. "
+    "Debe resolver su proceso de recuperación antes de matricularse en un nuevo grupo."
+)
+
 ROOT_DIR = Path(__file__).parent
 # Load .env.local first (for local development with real credentials)
 # Then load .env (for default/example values)
@@ -585,25 +592,33 @@ async def check_and_close_modules():
                         continue
 
                     direct_prog_statuses = direct_student.get("program_statuses") or {}
-                    # A student can be reprobado here when they were removed from a different
-                    # course in the same program/module (either earlier in this scheduler run
-                    # or by _check_and_update_recovery_rejection) but their student_id was not
-                    # yet pulled from THIS course's student_ids.  Remove them instead of
-                    # promoting them.
-                    if direct_prog_statuses.get(prog_id) == "reprobado":
-                        # Student is already reprobado (failed in another course or by a prior
-                        # scheduler run) but their id was not yet removed from this course's
-                        # student_ids.  Remove them now so they are not left as ghosts.
+                    # A student can be reprobado or still pendiente_recuperacion here when they
+                    # were not processed by the students_records loop (either removed from a
+                    # different course earlier in this scheduler run, or their failed_subjects
+                    # records are missing/stale). Remove them instead of promoting them.
+                    # pendiente_recuperacion at recovery_close without resolved records means
+                    # admin/teacher never confirmed the habilitación – treat as reprobado.
+                    if direct_prog_statuses.get(prog_id) in ("reprobado", "pendiente_recuperacion"):
                         logger.info(
-                            f"Recovery close: student {student_id} is already reprobado for "
-                            f"program {prog_id} – removing from course {course['id']} (CASO 5)"
+                            f"Recovery close: student {student_id} has status "
+                            f"'{direct_prog_statuses.get(prog_id)}' for program {prog_id} "
+                            f"– removing from course {course['id']} (no confirmed recovery)"
                         )
                         await _unenroll_student_from_course(student_id, course["id"])
+                        _upd: dict = {"estado": "reprobado"}
+                        if prog_id:
+                            direct_prog_statuses[prog_id] = "reprobado"
+                            _upd["estado"] = derive_estado_from_program_statuses(direct_prog_statuses)
+                            _upd["program_statuses"] = direct_prog_statuses
+                            _upd[f"program_modules.{prog_id}"] = int(module_key)
+                        await db.users.update_one(
+                            {"id": student_id, "role": "estudiante"}, {"$set": _upd}
+                        )
                         removed_count += 1
                         await log_audit(
                             "student_removed_from_group", "system", "system",
                             {"student_id": student_id, "course_id": course["id"],
-                             "program_id": prog_id, "trigger": "recovery_close_already_reprobado"}
+                             "program_id": prog_id, "trigger": "recovery_close_unconfirmed_recovery"}
                         )
                         continue
                     program = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
@@ -2765,10 +2780,11 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                 )
         
         # Issue 5 (2026-02-25): validate that each student's program module matches the group's module.
+        # Also validate that students meet program prerequisites (not already egresado or in recovery).
         if req.program_id:
             students_mod_info = await db.users.find(
                 {"id": {"$in": student_ids_to_add}, "role": "estudiante"},
-                {"_id": 0, "id": 1, "program_modules": 1, "module": 1}
+                {"_id": 0, "id": 1, "program_modules": 1, "module": 1, "program_statuses": 1}
             ).to_list(None)
             student_mod_map = {s["id"]: s for s in students_mod_info}
             for sid in student_ids_to_add:
@@ -2786,6 +2802,13 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                             "grupos del módulo en que se encuentra."
                         )
                     )
+                # Validate prerequisites: student must not be egresado or pendiente_recuperacion
+                prog_statuses = s.get("program_statuses") or {}
+                student_prog_status = prog_statuses.get(req.program_id)
+                if student_prog_status == "egresado":
+                    raise HTTPException(status_code=400, detail=_ERR_ENROLL_EGRESADO)
+                if student_prog_status == "pendiente_recuperacion":
+                    raise HTTPException(status_code=400, detail=_ERR_ENROLL_PENDIENTE)
 
     # Validate: a student cannot be in 2+ groups of the same program
     if student_ids_to_add and req.program_id:
@@ -2985,10 +3008,11 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                     )
             
             # Issue 5 (2026-02-25): validate module match for newly added students.
+            # Also validate prerequisites: students must not be egresado or pendiente_recuperacion.
             if program_id and newly_added_ids:
                 students_mod_info = await db.users.find(
                     {"id": {"$in": newly_added_ids}, "role": "estudiante"},
-                    {"_id": 0, "id": 1, "program_modules": 1, "module": 1}
+                    {"_id": 0, "id": 1, "program_modules": 1, "module": 1, "program_statuses": 1}
                 ).to_list(None)
                 for s in students_mod_info:
                     prog_modules = s.get("program_modules") or {}
@@ -3004,6 +3028,12 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                                 "grupos del módulo en que se encuentra."
                             )
                         )
+                    prog_statuses = s.get("program_statuses") or {}
+                    student_prog_status = prog_statuses.get(program_id)
+                    if student_prog_status == "egresado":
+                        raise HTTPException(status_code=400, detail=_ERR_ENROLL_EGRESADO)
+                    if student_prog_status == "pendiente_recuperacion":
+                        raise HTTPException(status_code=400, detail=_ERR_ENROLL_PENDIENTE)
     
     result = await db.courses.update_one({"id": course_id}, {"$set": update_data})
     if result.matched_count == 0:

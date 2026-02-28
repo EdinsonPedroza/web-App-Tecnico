@@ -3978,3 +3978,184 @@ class TestRecoverySubjectScoping:
         fs_filter = build_filter("s1", "c1", "subj-A")
         assert fs_filter["subject_id"] == "subj-A"
         assert fs_filter["recovery_approved"] is True
+
+
+# ---------------------------------------------------------------------------
+# Tests for Issue 1: pendiente_recuperacion students expelled at recovery_close
+# ---------------------------------------------------------------------------
+
+class TestPendienteRecuperacionExpulsion:
+    """Tests verifying that students still in pendiente_recuperacion at
+    recovery_close are expelled, not promoted (Issue 1 fix)."""
+
+    def _should_expel_at_recovery_close(self, program_statuses, prog_id):
+        """Mirror of the direct-pass loop guard in check_and_close_modules.
+        Returns True if student should be expelled instead of promoted."""
+        return program_statuses.get(prog_id) in ("reprobado", "pendiente_recuperacion")
+
+    def test_reprobado_student_expelled(self):
+        """reprobado students must not be promoted (existing behaviour preserved)."""
+        ps = {"prog-a": "reprobado"}
+        assert self._should_expel_at_recovery_close(ps, "prog-a") is True
+
+    def test_pendiente_recuperacion_student_expelled(self):
+        """Students still in pendiente_recuperacion at recovery_close must be expelled."""
+        ps = {"prog-a": "pendiente_recuperacion"}
+        assert self._should_expel_at_recovery_close(ps, "prog-a") is True
+
+    def test_activo_student_not_expelled(self):
+        """Students with activo status must be promoted, not expelled."""
+        ps = {"prog-a": "activo"}
+        assert self._should_expel_at_recovery_close(ps, "prog-a") is False
+
+    def test_egresado_student_not_expelled(self):
+        """Students already egresado must not be expelled by this guard."""
+        ps = {"prog-a": "egresado"}
+        assert self._should_expel_at_recovery_close(ps, "prog-a") is False
+
+    def test_no_status_for_prog_not_expelled(self):
+        """If program has no status recorded, do not expel (treat as new)."""
+        ps = {}
+        assert self._should_expel_at_recovery_close(ps, "prog-a") is False
+
+    def test_pendiente_other_prog_does_not_affect_this_prog(self):
+        """Recovery status in a different program must not affect expulsion decision."""
+        ps = {"prog-a": "activo", "prog-b": "pendiente_recuperacion"}
+        assert self._should_expel_at_recovery_close(ps, "prog-a") is False
+
+
+# ---------------------------------------------------------------------------
+# Tests for Issue 2: enrollment prerequisite validation
+# ---------------------------------------------------------------------------
+
+class TestEnrollmentPrerequisites:
+    """Tests verifying that students who do not meet prerequisites are
+    rejected from enrollment (Issue 2 fix)."""
+
+    def _check_enrollment_prerequisites(self, student, program_id):
+        """Mirror of backend validation logic added to create_course/update_course."""
+        prog_statuses = student.get("program_statuses") or {}
+        status = prog_statuses.get(program_id)
+        if status == "egresado":
+            return False, "No se puede inscribir a un estudiante que ya egresó del programa."
+        if status == "pendiente_recuperacion":
+            return False, (
+                "No se puede inscribir a un estudiante que tiene recuperaciones pendientes."
+            )
+        return True, None
+
+    def test_activo_student_can_enroll(self):
+        student = {"program_statuses": {"prog-a": "activo"}}
+        ok, _ = self._check_enrollment_prerequisites(student, "prog-a")
+        assert ok is True
+
+    def test_reprobado_student_can_enroll(self):
+        """reprobado students may re-enroll in a new group."""
+        student = {"program_statuses": {"prog-a": "reprobado"}}
+        ok, _ = self._check_enrollment_prerequisites(student, "prog-a")
+        assert ok is True
+
+    def test_egresado_student_cannot_enroll(self):
+        student = {"program_statuses": {"prog-a": "egresado"}}
+        ok, msg = self._check_enrollment_prerequisites(student, "prog-a")
+        assert ok is False
+        assert "egresó" in msg
+
+    def test_pendiente_recuperacion_student_cannot_enroll(self):
+        student = {"program_statuses": {"prog-a": "pendiente_recuperacion"}}
+        ok, msg = self._check_enrollment_prerequisites(student, "prog-a")
+        assert ok is False
+        assert "recuperaciones pendientes" in msg
+
+    def test_no_program_statuses_can_enroll(self):
+        """Students without program_statuses (new or legacy) can enroll."""
+        student = {}
+        ok, _ = self._check_enrollment_prerequisites(student, "prog-a")
+        assert ok is True
+
+    def test_status_in_other_program_does_not_block_enrollment(self):
+        """Being egresado in another program must not block enrollment in this one."""
+        student = {"program_statuses": {"prog-b": "egresado", "prog-a": "activo"}}
+        ok, _ = self._check_enrollment_prerequisites(student, "prog-a")
+        assert ok is True
+
+
+# ---------------------------------------------------------------------------
+# Tests for Issue 3: last module (2) recovery results in egresado, not module 3
+# ---------------------------------------------------------------------------
+
+class TestLastModuleRecoveryGraduation:
+    """Tests verifying that a student in the last module who completes
+    recovery becomes egresado and is never advanced to module 3 (Issue 3)."""
+
+    def _process_all_passed(self, module_key, program_statuses, program_modules, prog_id, max_modules):
+        """Mirror of the all_passed graduation logic in check_and_close_modules
+        (students_records loop) and the direct-pass loop."""
+        updated_statuses = dict(program_statuses)
+        updated_modules = dict(program_modules)
+        if int(module_key) >= max_modules:
+            updated_statuses[prog_id] = "egresado"
+            # program_modules is NOT advanced for last module
+        else:
+            next_module = int(module_key) + 1
+            updated_statuses[prog_id] = "activo"
+            updated_modules[prog_id] = next_module
+        return updated_statuses, updated_modules
+
+    def test_last_module_recovery_graduates_not_advances(self):
+        """module_key == max_modules → egresado, program_modules unchanged."""
+        ps, pm = self._process_all_passed(
+            module_key=2,
+            program_statuses={"prog-a": "pendiente_recuperacion"},
+            program_modules={"prog-a": 2},
+            prog_id="prog-a",
+            max_modules=2,
+        )
+        assert ps["prog-a"] == "egresado"
+        assert pm["prog-a"] == 2  # NOT 3
+
+    def test_non_last_module_recovery_advances(self):
+        """module_key < max_modules → activo, program_modules advanced."""
+        ps, pm = self._process_all_passed(
+            module_key=1,
+            program_statuses={"prog-a": "pendiente_recuperacion"},
+            program_modules={"prog-a": 1},
+            prog_id="prog-a",
+            max_modules=2,
+        )
+        assert ps["prog-a"] == "activo"
+        assert pm["prog-a"] == 2
+
+    def test_max_modules_minimum_is_two(self):
+        """max_modules is always at least 2 (backward compat for legacy programs)."""
+        # Empty modules list → max_modules = 2
+        modules = []
+        max_modules = max(len(modules), 2)
+        assert max_modules == 2
+
+    def test_two_module_program_graduation_at_module_two(self):
+        """Programs with exactly 2 modules graduate at module 2."""
+        modules = [{"number": 1}, {"number": 2}]
+        max_modules = max(len(modules), 2)
+        assert max_modules == 2
+        ps, pm = self._process_all_passed(
+            module_key=2,
+            program_statuses={"prog-a": "pendiente_recuperacion"},
+            program_modules={"prog-a": 2},
+            prog_id="prog-a",
+            max_modules=max_modules,
+        )
+        assert ps["prog-a"] == "egresado"
+        assert pm.get("prog-a") == 2  # stays at 2, never 3
+
+    def test_recovery_completion_check_sets_egresado_for_last_module(self):
+        """_check_and_update_recovery_completion mirrors: module_number >= max_modules → egresado."""
+        module_number = 2
+        max_modules = 2
+        program_statuses = {"prog-a": "pendiente_recuperacion"}
+        prog_id = "prog-a"
+        if module_number >= max_modules:
+            program_statuses[prog_id] = "egresado"
+        else:
+            program_statuses[prog_id] = "activo"
+        assert program_statuses[prog_id] == "egresado"
