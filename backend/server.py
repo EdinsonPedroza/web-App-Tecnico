@@ -336,6 +336,26 @@ async def check_and_close_modules():
                 # direct-pass students whose promotion was deferred to recovery_close.
                 if not all_records and not course.get("student_ids"):
                     continue
+
+                # Precompute course/module grades for recovery validation, direct-pass validation
+                # and strict fallback. Must be available before the students_records loop so that
+                # the unrecorded-failing-subjects guard (Bug-2 fix) can use it.
+                # Bug-2: admin may approve recovery for only *some* failing subjects; the
+                # unenabled ones never get failed_subjects records so the scheduler would not see
+                # them.  By precomputing the actual grades we can detect those unrecorded subjects.
+                subject_ids = course.get("subject_ids") or []
+                if not subject_ids and course.get("subject_id"):
+                    subject_ids = [course["subject_id"]]
+                module_subject_ids = [sid for sid in subject_ids if subject_module_map.get(sid, 1) == int(module_key)]
+                course_grades = await db.grades.find(
+                    {"course_id": course["id"]},
+                    {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
+                ).to_list(None)
+                grades_index = {}
+                for g in course_grades:
+                    if g.get("value") is None:
+                        continue
+                    grades_index.setdefault((g.get("student_id"), g.get("subject_id")), []).append(g["value"])
                 
                 for student_id, records in students_records.items():
                     # Business rule: at recovery_close, any habilitación left without admin or
@@ -362,6 +382,11 @@ async def check_and_close_modules():
                         _upd: dict = {"estado": _new_estado}
                         if prog_id:
                             _upd["program_statuses"] = _ps
+                            # Bug-1 fix: a previous erroneous advancement (e.g. only partial
+                            # records were found when all_passed was evaluated) could have set
+                            # program_modules to module_key+1.  Pinning it back to module_key
+                            # here ensures the student stays at the module they failed.
+                            _upd[f"program_modules.{prog_id}"] = int(module_key)
                         await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": _upd})
                         logger.info(
                             f"Student {student_id} marked reprobado for program {prog_id} "
@@ -387,6 +412,31 @@ async def check_and_close_modules():
                         r.get("teacher_graded_status") == "approved"
                         for r in records
                     )
+
+                    # Bug-2 fix: even when all *existing* records show "passed", also verify that
+                    # every failing subject in this course/module has a corresponding record.
+                    # When admin only enables *some* subjects via the recovery panel (leaving others
+                    # "en espera"), those unenabled subjects never get failed_subjects records.
+                    # Without this guard the scheduler would only see the admin-enabled records and
+                    # could incorrectly promote the student even though other subjects were never
+                    # addressed.  Any subject with a failing average (<3.0) and no record is treated
+                    # as not-approved, overriding all_passed to False.
+                    if all_passed and module_subject_ids:
+                        tracked_subject_ids = {r.get("subject_id") for r in records if r.get("subject_id")}
+                        for sid in module_subject_ids:
+                            if sid in tracked_subject_ids:
+                                continue  # This subject has a record – already considered above
+                            values = grades_index.get((student_id, sid), [])
+                            if values:  # Only flag if grades exist (skip ungraded subjects)
+                                avg = sum(values) / len(values)
+                                if avg < 3.0:
+                                    all_passed = False
+                                    logger.info(
+                                        f"Recovery close: student {student_id} has unrecorded failing "
+                                        f"subject {sid} (avg {avg:.2f}) in course {course['id']} "
+                                        f"module {module_key} – overriding all_passed to False"
+                                    )
+                                    break
                     
                     if all_passed:
                         # Promote to next module or graduate
@@ -444,6 +494,10 @@ async def check_and_close_modules():
                         update_fields = {"estado": new_estado}
                         if prog_id:
                             update_fields["program_statuses"] = student_program_statuses
+                            # Bug-1 fix (same guard as in the no_admin_action path above):
+                            # pin program_modules to the module being closed so the student
+                            # does not appear at an incorrectly advanced module number.
+                            update_fields[f"program_modules.{prog_id}"] = int(module_key)
                         await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": update_fields})
                         logger.info(f"Student {student_id} marked as reprobado for program {prog_id} (recovery closed, did not pass)")
                         await log_audit("student_removed_from_group", "system", "system", {"student_id": student_id, "course_id": course["id"], "program_id": prog_id, "trigger": "recovery_close_failed"})
@@ -456,21 +510,6 @@ async def check_and_close_modules():
                             {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
                         )
                 
-                # Precompute course/module grades for direct-pass validation and strict fallback.
-                subject_ids = course.get("subject_ids") or []
-                if not subject_ids and course.get("subject_id"):
-                    subject_ids = [course["subject_id"]]
-                module_subject_ids = [sid for sid in subject_ids if subject_module_map.get(sid, 1) == int(module_key)]
-                course_grades = await db.grades.find(
-                    {"course_id": course["id"]},
-                    {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
-                ).to_list(None)
-                grades_index = {}
-                for g in course_grades:
-                    if g.get("value") is None:
-                        continue
-                    grades_index.setdefault((g.get("student_id"), g.get("subject_id")), []).append(g["value"])
-
                 # Also promote students who passed the module directly (no failed subjects),
                 # whose promotion was deferred to recovery_close by close_module_internal.
                 for student_id in course.get("student_ids", []):
