@@ -3058,7 +3058,7 @@ class TestCheckAndUpdateRecoveryCompletion:
 
     def _should_reject(self, approved_records, program_status):
         """Return 'reject_needed' if at least one admin-approved record has been
-        teacher-rejected. Acts immediately without waiting for all subjects to be graded.
+        teacher-rejected. Marks records for deferred expulsion at recovery_close.
         Mirrors _check_and_update_recovery_rejection."""
         if program_status != "pendiente_recuperacion":
             return None
@@ -3132,7 +3132,7 @@ class TestCheckAndUpdateRecoveryCompletion:
         assert self._should_reject(records, "pendiente_recuperacion") is None
 
     def test_partial_grading_with_rejection_triggers_rejection(self):
-        """Even if not all subjects are graded, a single rejection immediately triggers reprobado."""
+        """Even if not all subjects are graded, a single rejection triggers deferred expulsion at recovery_close."""
         records = [
             {"recovery_completed": True, "teacher_graded_status": "rejected"},
             {"recovery_completed": False, "teacher_graded_status": None},
@@ -3623,10 +3623,9 @@ class TestAdminRecoveryRejection:
 
     When an admin rejects a recovery:
     - The failed_subject record must be marked recovery_approved=False,
-      recovery_rejected=True, recovery_processed=True.
-    - The student must be marked 'reprobado' for the program.
-    - The student must be removed from all program courses.
-    This mirrors the logic added to approve_recovery_for_subject for approve=False.
+      recovery_rejected=True, recovery_processed=False (so the scheduler finds it).
+    - Expulsion from the group and marking 'reprobado' are deferred to recovery_close.
+    This mirrors the logic in approve_recovery_for_subject for approve=False.
     """
 
     def _derive(self, program_statuses):
@@ -3654,15 +3653,15 @@ class TestAdminRecoveryRejection:
         return updated
 
     def test_admin_rejection_marks_record_rejected(self):
-        """After admin rejection, record fields must reflect rejection."""
+        """After admin rejection, record must be rejected and left unprocessed for the scheduler."""
         record = {
             "recovery_approved": False,
             "recovery_rejected": True,
-            "recovery_processed": True,
+            "recovery_processed": False,
         }
         assert record["recovery_approved"] is False
         assert record["recovery_rejected"] is True
-        assert record["recovery_processed"] is True
+        assert record["recovery_processed"] is False
 
     def test_admin_rejection_sets_reprobado(self):
         """Rejecting marks the student as reprobado for that program."""
@@ -3689,14 +3688,14 @@ class TestAdminRecoveryRejection:
         assert self._derive(updated) == "activo"
 
     def test_admin_rejection_immediate_expulsion(self):
-        """Admin rejection is immediate, not deferred to recovery_close."""
+        """Admin rejection is deferred to recovery_close, not immediate."""
         # Simulate: admin sets approve=False before recovery_close date.
-        # The student must be immediately marked reprobado.
+        # The student must NOT be immediately marked reprobado; expulsion is deferred.
         recovery_close = "2099-12-31"  # far future, not yet passed
         ps = {"prog-a": "pendiente_recuperacion"}
-        # Even though recovery_close has not passed, admin rejection takes effect.
-        updated = self._admin_reject(ps, "prog-a")
-        assert updated["prog-a"] == "reprobado"
+        # Admin rejection only marks the record; program_statuses unchanged until close.
+        assert ps["prog-a"] == "pendiente_recuperacion"
+        assert recovery_close > "2026-01-01"  # close has not passed
 
     def test_admin_rejection_no_prog_id_does_not_crash(self):
         """When prog_id is empty, rejection should not crash the logic."""
@@ -3706,21 +3705,21 @@ class TestAdminRecoveryRejection:
         assert updated == ps
 
     def test_admin_rejection_single_subject_results_in_expulsion(self):
-        """Even a single rejected subject causes full expulsion (no second chance)."""
+        """A single rejected subject causes expulsion at recovery_close (deferred)."""
         records = [
-            {"recovery_approved": False, "recovery_rejected": True, "recovery_processed": True}
+            {"recovery_approved": False, "recovery_rejected": True, "recovery_processed": False}
         ]
         any_rejected = any(r.get("recovery_rejected") is True for r in records)
         assert any_rejected is True
 
     def test_admin_rejection_all_records_marked_processed(self):
-        """All unprocessed records for the same student/course must be processed."""
+        """Rejected records must remain unprocessed (recovery_processed=False) so the scheduler finds them."""
         records = [
-            {"id": "r1", "recovery_processed": True},
-            {"id": "r2", "recovery_processed": True},
+            {"id": "r1", "recovery_rejected": True, "recovery_processed": False},
+            {"id": "r2", "recovery_rejected": True, "recovery_processed": False},
         ]
-        all_processed = all(r.get("recovery_processed") is True for r in records)
-        assert all_processed is True
+        all_unprocessed = all(r.get("recovery_processed") is False for r in records)
+        assert all_unprocessed is True
 
     def test_recovery_approved_false_triggers_expulsion_in_scheduler(self):
         """Scheduler: recovery_approved=False means student cannot pass → remove_failed."""

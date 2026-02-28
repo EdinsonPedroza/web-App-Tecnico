@@ -1524,18 +1524,16 @@ async def _check_and_update_recovery_completion(student_id: str, course_id: str)
 
 
 async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
-    """Check if a teacher rejection means the student definitively cannot pass recovery.
+    """Mark recovery records as rejected when a teacher rejects a recovery subject.
 
     Called after a teacher rejects a recovery subject. Only checks admin-approved records
     (recovery_approved=True) because non-approved subjects can't be teacher-graded.
-    If ALL admin-approved records have been teacher-graded and at least one is rejected,
-    the student cannot pass all subjects. In that case, immediately remove the student
-    from the group and mark them as 'reprobado'.
+    If at least one admin-approved record has been teacher-rejected, marks all unprocessed
+    records as recovery_rejected=True so the scheduler can handle expulsion at recovery_close.
 
-    Note: this only checks admin-approved records (unlike _check_and_update_recovery_completion
-    which checks ALL records) because we're determining if the student can still pass the
-    subjects that were approved for recovery — unapproved subjects are already considered
-    failed and will be handled at recovery_close by the scheduler.
+    Note: expulsion from the group happens at recovery_close via check_and_close_modules,
+    not immediately. This only checks admin-approved records (unlike
+    _check_and_update_recovery_completion which checks ALL records).
     """
     course = await db.courses.find_one({"id": course_id}, {"_id": 0})
     if not course:
@@ -1557,30 +1555,12 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
     if not approved_records:
         return
 
-    # Check if at least one is rejected — act immediately without waiting for other subjects
+    # Check if at least one is rejected — mark records for deferred expulsion at recovery_close
     any_rejected = any(r.get("teacher_graded_status") == "rejected" for r in approved_records)
     if not any_rejected:
         return  # No rejections yet — handled by _check_and_update_recovery_completion
 
-    # Student definitively cannot pass: remove from group and mark reprobado
-    student_doc = await db.users.find_one({"id": student_id}, {"_id": 0})
-    if not student_doc:
-        return
-    program_statuses = student_doc.get("program_statuses") or {}
-    if program_statuses.get(prog_id) != "pendiente_recuperacion":
-        return
-
-    # Remove only from the course where teacher rejection occurred.
-    await _unenroll_student_from_course(student_id, course_id)
-    # Mark reprobado
-    program_statuses[prog_id] = "reprobado"
-    new_estado = derive_estado_from_program_statuses(program_statuses)
-    await db.users.update_one(
-        {"id": student_id, "role": "estudiante"},
-        {"$set": {"estado": new_estado, "program_statuses": program_statuses}}
-    )
-    # Keep records visible in admin/student recovery panels until recovery-close,
-    # but mark them explicitly as rejected by teacher for status/reporting.
+    # Mark records as rejected so the scheduler handles expulsion at recovery_close
     now = datetime.now(timezone.utc)
     for record in approved_records:
         await db.failed_subjects.update_one(
@@ -1592,11 +1572,11 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
             }}
         )
     logger.info(
-        f"Student {student_id} marked reprobado and removed from group {course_id} "
-        f"(teacher rejected recovery subject, remaining subjects invalidated)"
+        f"Student {student_id} marked for deferred expulsion from group {course_id} "
+        f"(teacher rejected recovery subject; scheduler will process at recovery_close)"
     )
     await log_audit(
-        "student_removed_from_group", "system", "system",
+        "recovery_rejected_by_teacher_deferred", "system", "system",
         {"student_id": student_id, "course_id": course_id,
          "program_id": prog_id, "trigger": "teacher_rejected_recovery"}
     )
@@ -4834,8 +4814,8 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             average = sum(grade_values) / len(grade_values) if grade_values else 0.0
 
         if not approve:
-            # Admin explicitly rejects this auto-detected recovery: create a rejection record,
-            # remove student from the affected course and mark as reprobado.
+            # Admin explicitly rejects this auto-detected recovery: create a rejection record
+            # marked for deferred expulsion at recovery_close.
             rejection_record = {
                 "id": str(uuid.uuid4()),
                 "student_id": student_id,
@@ -4848,10 +4828,9 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 "recovery_approved": False,
                 "recovery_rejected": True,
                 "recovery_completed": False,
-                "recovery_processed": True,
+                "recovery_processed": False,
                 "rejected_by": user["id"],
                 "rejected_at": now.isoformat(),
-                "processed_at": now.isoformat(),
                 "created_at": now.isoformat()
             }
             if subject_id:
@@ -4859,28 +4838,16 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 rejection_record["subject_id"] = subject_id
                 rejection_record["subject_name"] = subject_doc.get("name", "Desconocido") if subject_doc else "Desconocido"
             await db.failed_subjects.insert_one(rejection_record)
-            # Remove student only from this course (auto-detected rejection path)
-            await _unenroll_student_from_course(student_id, course_id)
-            # Mark student as reprobado
-            student_doc = await db.users.find_one({"id": student_id}, {"_id": 0, "program_statuses": 1})
-            student_program_statuses = (student_doc or {}).get("program_statuses") or {}
-            if prog_id:
-                student_program_statuses[prog_id] = "reprobado"
-            new_estado = derive_estado_from_program_statuses(student_program_statuses)
-            update_fields: dict = {"estado": new_estado}
-            if prog_id:
-                update_fields["program_statuses"] = student_program_statuses
-            await db.users.update_one({"id": student_id, "role": "estudiante"}, {"$set": update_fields})
             logger.info(
                 f"Admin {user['id']} rejected recovery for student {student_id} "
-                f"in course {course_id} (auto-detected entry)"
+                f"in course {course_id} (auto-detected entry); deferred to recovery_close"
             )
             await log_audit(
-                "recovery_rejected_by_admin", user["id"], user["role"],
+                "recovery_rejected_by_admin_deferred", user["id"], user["role"],
                 {"student_id": student_id, "course_id": course_id, "program_id": prog_id,
                  "module_number": module_number}
             )
-            return {"message": "Recuperación rechazada. El estudiante ha sido retirado del grupo correspondiente."}
+            return {"message": "Recuperación rechazada. El estudiante será retirado del grupo al cierre del período de recuperaciones."}
 
         # Module alignment: recovery can only be approved for the student's current module
         if student_module is not None and student_module != module_number:
@@ -4975,54 +4942,32 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
 
     if not approve:
         # Admin explicitly rejects this persisted recovery record.
-        # Remove student only from this course and mark as reprobado for that program.
+        # Mark the record as rejected but leave recovery_processed=False so the
+        # scheduler can handle expulsion at recovery_close.
         rej_student_id = failed_record["student_id"]
         rej_course_id = failed_record["course_id"]
         rej_prog_id = failed_record.get("program_id", "")
-        # Mark this record as rejected/processed
+        # Mark this record as rejected, keeping it unprocessed for the scheduler
         await db.failed_subjects.update_one(
             {"id": failed_subject_id},
             {"$set": {
                 "recovery_approved": False,
                 "recovery_rejected": True,
-                "recovery_processed": True,
+                "recovery_processed": False,
                 "rejected_by": user["id"],
                 "rejected_at": now.isoformat(),
-                "processed_at": now.isoformat()
             }}
         )
-        # Also mark all other unprocessed records for this student/course as processed
-        await db.failed_subjects.update_many(
-            {
-                "student_id": rej_student_id,
-                "course_id": rej_course_id,
-                "id": {"$ne": failed_subject_id},
-                "recovery_processed": {"$ne": True}
-            },
-            {"$set": {"recovery_processed": True, "processed_at": now.isoformat()}}
-        )
-        # Remove student only from this course (auto-detected rejection path)
-        await _unenroll_student_from_course(rej_student_id, rej_course_id)
-        # Mark student as reprobado
-        rej_student_doc = await db.users.find_one({"id": rej_student_id}, {"_id": 0, "program_statuses": 1})
-        rej_program_statuses = (rej_student_doc or {}).get("program_statuses") or {}
-        if rej_prog_id:
-            rej_program_statuses[rej_prog_id] = "reprobado"
-        rej_new_estado = derive_estado_from_program_statuses(rej_program_statuses)
-        rej_update: dict = {"estado": rej_new_estado}
-        if rej_prog_id:
-            rej_update["program_statuses"] = rej_program_statuses
-        await db.users.update_one({"id": rej_student_id, "role": "estudiante"}, {"$set": rej_update})
         logger.info(
             f"Admin {user['id']} rejected recovery for student {rej_student_id} "
-            f"in course {rej_course_id} (record {failed_subject_id})"
+            f"in course {rej_course_id} (record {failed_subject_id}); deferred to recovery_close"
         )
         await log_audit(
-            "recovery_rejected_by_admin", user["id"], user["role"],
+            "recovery_rejected_by_admin_deferred", user["id"], user["role"],
             {"student_id": rej_student_id, "failed_subject_id": failed_subject_id,
              "course_id": rej_course_id, "program_id": rej_prog_id}
         )
-        return {"message": "Recuperación rechazada. El estudiante ha sido retirado del grupo correspondiente."}
+        return {"message": "Recuperación rechazada. El estudiante será retirado del grupo al cierre del período de recuperaciones."}
 
     # Module alignment: reject approval if subject module doesn't match student's current module
     record_module = failed_record.get("module_number")
