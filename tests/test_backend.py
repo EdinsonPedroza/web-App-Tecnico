@@ -2882,14 +2882,12 @@ class TestCheckAndUpdateRecoveryCompletion:
         return "update_needed" if all_passed else None
 
     def _should_reject(self, approved_records, program_status):
-        """Return 'reject_needed' if all admin-approved records have been teacher-graded
-        and at least one is rejected. Mirrors _check_and_update_recovery_rejection."""
+        """Return 'reject_needed' if at least one admin-approved record has been
+        teacher-rejected. Acts immediately without waiting for all subjects to be graded.
+        Mirrors _check_and_update_recovery_rejection."""
         if program_status != "pendiente_recuperacion":
             return None
         if not approved_records:
-            return None
-        all_graded = all(r.get("recovery_completed") is True for r in approved_records)
-        if not all_graded:
             return None
         any_rejected = any(r.get("teacher_graded_status") == "rejected" for r in approved_records)
         return "reject_needed" if any_rejected else None
@@ -2958,12 +2956,13 @@ class TestCheckAndUpdateRecoveryCompletion:
         ]
         assert self._should_reject(records, "pendiente_recuperacion") is None
 
-    def test_partial_grading_does_not_trigger_rejection(self):
+    def test_partial_grading_with_rejection_triggers_rejection(self):
+        """Even if not all subjects are graded, a single rejection immediately triggers reprobado."""
         records = [
             {"recovery_completed": True, "teacher_graded_status": "rejected"},
             {"recovery_completed": False, "teacher_graded_status": None},
         ]
-        assert self._should_reject(records, "pendiente_recuperacion") is None
+        assert self._should_reject(records, "pendiente_recuperacion") == "reject_needed"
 
     def test_not_in_pendiente_does_not_trigger_rejection(self):
         records = [{"recovery_completed": True, "teacher_graded_status": "rejected"}]

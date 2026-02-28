@@ -34,7 +34,7 @@ export default function TeacherGrades() {
         api.get(`/courses/${courseId}`),
         api.get(activitiesUrl),
         api.get(gradesUrl),
-        api.get(`/courses/${courseId}/students`),
+        api.get(`/courses/${courseId}/students?include_removed=true`),
         api.get(`/recovery/enabled?course_id=${courseId}`)
       ]);
       setCourse(cRes.data);
@@ -339,6 +339,14 @@ export default function TeacherGrades() {
                             const status = getRecoveryStatus(student.id, act.id);
                             const isSaving = savingGrades[key];
                             const adminApproved = isRecoveryEnabledFor(student.id, act);
+                            // Student was removed (failed by another teacher's rejection)
+                            if (student._removed_from_group) {
+                              return (
+                                <td key={act.id} className="text-center px-2 py-2 border-r bg-destructive/5">
+                                  <Badge variant="destructive" className="text-xs">Reprobado</Badge>
+                                </td>
+                              );
+                            }
                             // Show disabled placeholder when admin hasn't approved recovery for this student
                             if (!adminApproved) {
                               return (
