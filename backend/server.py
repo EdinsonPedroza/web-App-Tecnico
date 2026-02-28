@@ -338,9 +338,11 @@ async def check_and_close_modules():
                     continue
                 
                 for student_id, records in students_records.items():
-                    # Business rule (2026-02-25): if recovery_close has passed and no admin action
-                    # has been taken, treat the student as failed: remove from group and mark activo
-                    # for re-enrollment so they are never left in limbo indefinitely.
+                    # Business rule: at recovery_close, any habilitación left without admin or
+                    # teacher confirmation is treated as reprobado. If the admin took no action
+                    # on any recovery record, remove the student from the group and mark reprobado.
+                    # If admin approved at least one but another was left "en espera" (unapproved),
+                    # the all_passed check below handles it: partial approval ≠ full pass.
                     has_admin_action = any(
                         r.get("recovery_approved") is True or r.get("recovery_completed") is True
                         for r in records
@@ -429,7 +431,8 @@ async def check_and_close_modules():
                                 await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close"})
                             promoted_recovery_count += 1
                     else:
-                        # At least one subject not passed: remove from group, mark activo for re-enrollment
+                        # Not all subjects passed: admin left some habilitaciones "en espera"
+                        # (unapproved) or teacher did not grade them. Treat as reprobado.
                         logger.info(f"Recovery close: student {student_id} did not pass all subjects in course {course['id']} – removing from group")
                         # Remove student only from the course where recovery was not passed.
                         await _unenroll_student_from_course(student_id, course["id"])
@@ -2792,8 +2795,10 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
     # Assign module to enrolled students based on module_dates (current date) or subject module_number
     if course["student_ids"]:
         program_id = course["program_id"]
-        # Prefer date-based module determination
-        module_number = get_current_module_from_dates(course["module_dates"])
+        # Prefer open-enrollment-window detection so that students enrolling during
+        # the inter-module period (between M(N) recovery_close and M(N+1) start) are
+        # placed in the correct upcoming module instead of the last-started module.
+        module_number = get_open_enrollment_module(course["module_dates"]) or get_current_module_from_dates(course["module_dates"])
         if module_number is None and course["subject_ids"]:
             # Fall back to minimum module number from subjects
             subject_docs = await db.subjects.find(
@@ -2803,8 +2808,18 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
             if valid_modules:
                 module_number = min(valid_modules)
         if module_number is not None:
+            # Never downgrade a student's module: only set if no module is recorded yet
+            # or the student's current module is lower than or equal to the target.
             await db.users.update_many(
-                {"id": {"$in": course["student_ids"]}, "role": "estudiante"},
+                {
+                    "id": {"$in": course["student_ids"]},
+                    "role": "estudiante",
+                    "$or": [
+                        {f"program_modules.{program_id}": {"$exists": False}},
+                        {f"program_modules.{program_id}": None},
+                        {f"program_modules.{program_id}": {"$lte": module_number}},
+                    ],
+                },
                 {"$set": {
                     "module": module_number,
                     f"program_modules.{program_id}": module_number
@@ -2961,8 +2976,10 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
         program_id = updated.get("program_id", "")
         student_ids = updated.get("student_ids") or []
         if student_ids:
-            # Prefer date-based module determination
-            module_number = get_current_module_from_dates(updated.get("module_dates") or {})
+            # Prefer open-enrollment-window detection so that students enrolling during
+            # the inter-module period (between M(N) recovery_close and M(N+1) start) are
+            # placed in the correct upcoming module instead of the last-started module.
+            module_number = get_open_enrollment_module(updated.get("module_dates") or {}) or get_current_module_from_dates(updated.get("module_dates") or {})
             if module_number is None:
                 subject_ids_for_module = updated.get("subject_ids") or []
                 if subject_ids_for_module:
@@ -2973,8 +2990,18 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                     if valid_modules:
                         module_number = min(valid_modules)
             if module_number is not None:
+                # Never downgrade a student's module: only set if no module is recorded yet
+                # or the student's current module is lower than or equal to the target.
                 await db.users.update_many(
-                    {"id": {"$in": student_ids}, "role": "estudiante"},
+                    {
+                        "id": {"$in": student_ids},
+                        "role": "estudiante",
+                        "$or": [
+                            {f"program_modules.{program_id}": {"$exists": False}},
+                            {f"program_modules.{program_id}": None},
+                            {f"program_modules.{program_id}": {"$lte": module_number}},
+                        ],
+                    },
                     {"$set": {
                         "module": module_number,
                         f"program_modules.{program_id}": module_number
