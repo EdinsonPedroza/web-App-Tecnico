@@ -3266,6 +3266,152 @@ class TestRecoveryClosureDecisionLogic:
         ]
         assert self._decide(records) == "remove_no_action"
 
+
+# ---------------------------------------------------------------------------
+# Unit tests for Bug-1 and Bug-2 fixes
+# ---------------------------------------------------------------------------
+
+class TestRecoveryClosureModuleReset:
+    """Bug-1 fix: when a student is marked reprobado at recovery_close, their
+    program_modules entry must be set to the module being closed (not left at a
+    possibly-incorrect higher value caused by a previous erroneous advancement,
+    e.g. partial records making all_passed=True and promoting to module_key+1).
+    Without this fix a student in the last module (2) could show 'Módulo 3'.
+    """
+
+    def _reprobado_update(self, prog_id, module_key):
+        """Mirror of the update dict built in the all_passed=False and no_admin_action
+        reprobado paths after the Bug-1 fix."""
+        program_statuses = {prog_id: "reprobado"}
+        update_fields = {"estado": "reprobado"}
+        if prog_id:
+            update_fields["program_statuses"] = program_statuses
+            update_fields[f"program_modules.{prog_id}"] = int(module_key)
+        return update_fields
+
+    def test_reprobado_sets_module_to_module_key(self):
+        """program_modules must be pinned to the closed module, not advance."""
+        upd = self._reprobado_update("prog-a", "2")
+        assert upd["program_modules.prog-a"] == 2
+
+    def test_reprobado_module_key_1_sets_module_1(self):
+        upd = self._reprobado_update("prog-a", "1")
+        assert upd["program_modules.prog-a"] == 1
+
+    def test_reprobado_module_key_string_converted_to_int(self):
+        """module_key is always a string from the dict key – must be cast to int."""
+        upd = self._reprobado_update("prog-a", "2")
+        assert isinstance(upd["program_modules.prog-a"], int)
+
+    def test_reprobado_last_module_does_not_advance_to_3(self):
+        """Student in module 2 of a 2-module program must stay at 2, not advance to 3."""
+        upd = self._reprobado_update("prog-a", "2")
+        assert upd["program_modules.prog-a"] == 2
+        # Explicitly confirm it is NOT the value that caused Bug-1
+        assert upd["program_modules.prog-a"] != 3
+
+    def test_reprobado_with_empty_prog_id_does_not_add_module_key(self):
+        """No program_modules key must be added when prog_id is empty."""
+        upd = self._reprobado_update("", "2")
+        assert "program_modules." not in str(upd)
+
+
+class TestUnrecordedFailingSubjectsGuard:
+    """Bug-2 fix: at recovery_close, if a student's existing recovery records all pass
+    (all_passed=True) but there are failing subjects in the course/module WITHOUT
+    corresponding failed_subjects records, all_passed must be overridden to False.
+
+    Bug-2 scenario: admin only enables recovery for *some* failing subjects (leaving
+    others "en espera" / unenabled).  Those unenabled subjects never get failed_subjects
+    records.  Without this guard the scheduler would only see the admin-enabled records
+    and could incorrectly promote the student even though other subjects were never
+    addressed — any unanswered/pending subject must be treated as reprobation.
+    """
+
+    def _check_unrecorded_failing(self, records, module_subject_ids, grades_index, student_id):
+        """Mirror of the Bug-2 guard added inside the students_records loop.
+
+        Returns True when an unrecorded failing subject is detected (all_passed → False).
+        """
+        tracked_subject_ids = {r.get("subject_id") for r in records if r.get("subject_id")}
+        for sid in module_subject_ids:
+            if sid in tracked_subject_ids:
+                continue
+            values = grades_index.get((student_id, sid), [])
+            if values:
+                avg = sum(values) / len(values)
+                if avg < 3.0:
+                    return True
+        return False
+
+    def test_all_subjects_have_records_no_unrecorded(self):
+        """When every module subject has a record, no unrecorded failing subject exists."""
+        records = [{"subject_id": "s1"}, {"subject_id": "s2"}]
+        module_subject_ids = ["s1", "s2"]
+        grades_index = {("stu-1", "s1"): [2.0], ("stu-1", "s2"): [2.0]}
+        assert self._check_unrecorded_failing(records, module_subject_ids, grades_index, "stu-1") is False
+
+    def test_missing_record_with_failing_grade_detected(self):
+        """Admin only enabled s1; s2 has a failing grade but no record → detected."""
+        records = [{"subject_id": "s1"}]
+        module_subject_ids = ["s1", "s2"]
+        grades_index = {("stu-1", "s1"): [4.0], ("stu-1", "s2"): [1.5]}
+        assert self._check_unrecorded_failing(records, module_subject_ids, grades_index, "stu-1") is True
+
+    def test_missing_record_with_passing_grade_not_detected(self):
+        """s2 has no record but its grade is passing – no override needed."""
+        records = [{"subject_id": "s1"}]
+        module_subject_ids = ["s1", "s2"]
+        grades_index = {("stu-1", "s1"): [4.0], ("stu-1", "s2"): [3.5]}
+        assert self._check_unrecorded_failing(records, module_subject_ids, grades_index, "stu-1") is False
+
+    def test_missing_record_no_grades_skipped(self):
+        """s2 has no record AND no grades (ungraded) → not treated as failing."""
+        records = [{"subject_id": "s1"}]
+        module_subject_ids = ["s1", "s2"]
+        grades_index = {("stu-1", "s1"): [4.0]}  # s2 not in index
+        assert self._check_unrecorded_failing(records, module_subject_ids, grades_index, "stu-1") is False
+
+    def test_two_missing_records_with_one_failing_detected(self):
+        """Admin enabled s1 only; s2 and s3 are missing records; s2 is failing."""
+        records = [{"subject_id": "s1"}]
+        module_subject_ids = ["s1", "s2", "s3"]
+        grades_index = {
+            ("stu-1", "s1"): [5.0],
+            ("stu-1", "s2"): [1.0],  # failing, no record
+            ("stu-1", "s3"): [3.5],  # passing, no record
+        }
+        assert self._check_unrecorded_failing(records, module_subject_ids, grades_index, "stu-1") is True
+
+    def test_empty_module_subject_ids_no_check(self):
+        """When module_subject_ids is empty, guard is a no-op (returns False)."""
+        records = [{"subject_id": "s1"}]
+        grades_index = {("stu-1", "s1"): [4.0]}
+        assert self._check_unrecorded_failing(records, [], grades_index, "stu-1") is False
+
+    def test_admin_enabled_both_subjects_no_unrecorded(self):
+        """When admin enabled ALL subjects (all have records), guard is not triggered."""
+        records = [
+            {"subject_id": "s1", "recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"subject_id": "s2", "recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        module_subject_ids = ["s1", "s2"]
+        grades_index = {("stu-1", "s1"): [2.0], ("stu-1", "s2"): [2.0]}
+        assert self._check_unrecorded_failing(records, module_subject_ids, grades_index, "stu-1") is False
+
+    def test_partial_admin_approval_one_failing_unrecorded(self):
+        """Bug-2 scenario: admin enables s1 (record created), leaves s2 en espera (no record).
+        Teacher approves s1 → all_passed=True for existing records.
+        Guard must detect s2's failing grade and set all_passed=False."""
+        records = [
+            {"subject_id": "s1", "recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        module_subject_ids = ["s1", "s2"]
+        grades_index = {("stu-1", "s1"): [4.0], ("stu-1", "s2"): [1.8]}
+        # Confirm guard triggers
+        assert self._check_unrecorded_failing(records, module_subject_ids, grades_index, "stu-1") is True
+
+
 class TestPromoteStudentLogic:
     """Tests for the promote_student endpoint decision logic.
 
