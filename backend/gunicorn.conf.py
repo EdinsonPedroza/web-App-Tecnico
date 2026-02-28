@@ -1,9 +1,9 @@
 import os
 
-# Número de workers: 1 es suficiente para FastAPI async (asyncio maneja concurrencia).
-# Múltiples workers causan race conditions en el APScheduler (el scheduler corre N veces).
-# Para escalar horizontalmente, use múltiples contenedores/instancias, no múltiples workers.
-workers = int(os.environ.get("WORKERS", 1))
+# Número de workers para manejar carga concurrente.
+# Fórmula recomendada: (2 × CPU cores) + 1
+# Solo el worker 0 ejecuta el APScheduler para evitar race conditions.
+workers = int(os.environ.get("WORKERS", 4))
 
 # Clase de worker: uvicorn para FastAPI async
 worker_class = "uvicorn.workers.UvicornWorker"
