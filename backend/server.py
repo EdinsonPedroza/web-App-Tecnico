@@ -1500,15 +1500,10 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
     if not approved_records:
         return
 
-    # Check if ALL admin-approved records have been teacher-graded (completed)
-    all_graded = all(r.get("recovery_completed") is True for r in approved_records)
-    if not all_graded:
-        return  # Some subjects still pending teacher grading
-
-    # Check if at least one is rejected
+    # Check if at least one is rejected — act immediately without waiting for other subjects
     any_rejected = any(r.get("teacher_graded_status") == "rejected" for r in approved_records)
     if not any_rejected:
-        return  # All approved — handled by _check_and_update_recovery_completion
+        return  # No rejections yet — handled by _check_and_update_recovery_completion
 
     # Student definitively cannot pass: remove from group and mark reprobado
     student_doc = await db.users.find_one({"id": student_id}, {"_id": 0})
@@ -1541,7 +1536,7 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
         )
     logger.info(
         f"Student {student_id} marked reprobado and removed from group {course_id} "
-        f"(teacher rejected recovery subject, all subjects resolved)"
+        f"(teacher rejected recovery subject, remaining subjects invalidated)"
     )
     await log_audit(
         "student_removed_from_group", "system", "system",
