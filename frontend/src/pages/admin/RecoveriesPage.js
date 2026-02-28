@@ -8,8 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, AlertCircle, Download } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, AlertCircle, Download, FlaskConical } from 'lucide-react';
 import api from '@/lib/api';
+import { useNavigate } from 'react-router-dom';
 
 export default function RecoveriesPage() {
   const [recoveryData, setRecoveryData] = useState(null);
@@ -17,6 +18,7 @@ export default function RecoveriesPage() {
   const [processingId, setProcessingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const navigate = useNavigate();
 
   const fetchRecoveryPanel = useCallback(async () => {
     try {
@@ -102,6 +104,9 @@ export default function RecoveriesPage() {
             </Button>
             <Button onClick={handleDownloadRecoveryReport} variant="outline">
               <Download className="h-4 w-4" /> Descargar Reporte
+            </Button>
+            <Button onClick={() => navigate('/admin/recovery-simulator')} variant="outline">
+              <FlaskConical className="h-4 w-4" /> Tabla de Simulación
             </Button>
           </div>
         </div>
