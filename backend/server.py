@@ -270,6 +270,21 @@ async def check_and_close_modules():
                     )
                     continue
 
+            # Pre-load course grades once per course (not once per module_key).
+            # grades_index and course_grades are shared across all module_key iterations.
+            subject_ids = course.get("subject_ids") or []
+            if not subject_ids and course.get("subject_id"):
+                subject_ids = [course["subject_id"]]
+            course_grades = await db.grades.find(
+                {"course_id": course["id"]},
+                {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
+            ).to_list(None)
+            grades_index = {}
+            for _g in course_grades:
+                if _g.get("value") is None:
+                    continue
+                grades_index.setdefault((_g.get("student_id"), _g.get("subject_id")), []).append(_g["value"])
+
             for module_key, dates in module_dates.items():
                 recovery_close = dates.get("recovery_close") if dates else None
                 if not recovery_close or recovery_close > today_str:
@@ -345,25 +360,9 @@ async def check_and_close_modules():
                 if not all_records and not course.get("student_ids"):
                     continue
 
-                # Precompute course/module grades for recovery validation, direct-pass validation
-                # and strict fallback. Must be available before the students_records loop so that
-                # the unrecorded-failing-subjects guard (Bug-2 fix) can use it.
-                # Bug-2: admin may approve recovery for only *some* failing subjects; the
-                # unenabled ones never get failed_subjects records so the scheduler would not see
-                # them.  By precomputing the actual grades we can detect those unrecorded subjects.
-                subject_ids = course.get("subject_ids") or []
-                if not subject_ids and course.get("subject_id"):
-                    subject_ids = [course["subject_id"]]
+                # Filter course subjects to those belonging to this module_key.
+                # course_grades and grades_index are pre-loaded once per course above.
                 module_subject_ids = [sid for sid in subject_ids if subject_module_map.get(sid, 1) == int(module_key)]
-                course_grades = await db.grades.find(
-                    {"course_id": course["id"]},
-                    {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
-                ).to_list(None)
-                grades_index = {}
-                for g in course_grades:
-                    if g.get("value") is None:
-                        continue
-                    grades_index.setdefault((g.get("student_id"), g.get("subject_id")), []).append(g["value"])
                 
                 # Pre-load all student docs and the program in bulk before the loop
                 _rec_student_ids = list(students_records.keys())
@@ -378,6 +377,7 @@ async def check_and_close_modules():
                 prog_doc = await db.programs.find_one({"id": prog_id}, {"_id": 0}) if prog_id else None
                 user_bulk_ops: list = []
                 fs_bulk_ops: list = []
+                _records_unenroll_ids: list = []
 
                 for student_id, records in students_records.items():
                     # Business rule: at recovery_close, any habilitación left without admin or
@@ -395,7 +395,7 @@ async def check_and_close_modules():
                             f"{course['id']} – applying fail flow (removing from group, marking reprobado)"
                         )
                         # Remove student only from the course where recovery was not passed.
-                        await _unenroll_student_from_course(student_id, course["id"])
+                        _records_unenroll_ids.append(student_id)
                         student_doc = students_map.get(student_id)
                         _ps = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
@@ -507,7 +507,7 @@ async def check_and_close_modules():
                         # (unapproved) or teacher did not grade them. Treat as reprobado.
                         logger.info(f"Recovery close: student {student_id} did not pass all subjects in course {course['id']} – removing from group")
                         # Remove student only from the course where recovery was not passed.
-                        await _unenroll_student_from_course(student_id, course["id"])
+                        _records_unenroll_ids.append(student_id)
                         student_doc = students_map.get(student_id)
                         student_program_statuses = (student_doc or {}).get("program_statuses") or {}
                         if prog_id:
@@ -536,6 +536,28 @@ async def check_and_close_modules():
                     await db.users.bulk_write(user_bulk_ops, ordered=False)
                 if fs_bulk_ops:
                     await db.failed_subjects.bulk_write(fs_bulk_ops, ordered=False)
+                # Batch unenroll for students_records loop: one course update instead of N
+                if _records_unenroll_ids:
+                    await db.courses.update_one(
+                        {"id": course["id"]},
+                        {
+                            "$pull": {"student_ids": {"$in": _records_unenroll_ids}},
+                            "$addToSet": {"removed_student_ids": {"$each": _records_unenroll_ids}}
+                        }
+                    )
+                    _still_enrolled_docs = await db.courses.find(
+                        {"student_ids": {"$in": _records_unenroll_ids}},
+                        {"_id": 0, "student_ids": 1}
+                    ).to_list(None)
+                    _still_enrolled_set: set = set()
+                    for _c in _still_enrolled_docs:
+                        _still_enrolled_set.update(_c.get("student_ids") or [])
+                    for _sid in _records_unenroll_ids:
+                        if _sid not in _still_enrolled_set:
+                            await db.users.update_one(
+                                {"id": _sid, "role": "estudiante"},
+                                {"$unset": {"grupo": ""}}
+                            )
                 
                 # Also promote students who passed the module directly (no failed subjects),
                 # whose promotion was deferred to recovery_close by close_module_internal.
@@ -547,9 +569,20 @@ async def check_and_close_modules():
                         {"_id": 0, "id": 1, "program_modules": 1, "program_statuses": 1}
                     ).to_list(None)
                     direct_students_map = {s["id"]: s for s in _direct_docs}
+                    # Pre-fetch all pending failed_subjects for direct-pass students in one query
+                    _direct_pending_list = await db.failed_subjects.find({
+                        "student_id": {"$in": _direct_ids},
+                        "program_id": prog_id,
+                        "module_number": int(module_key),
+                        "recovery_processed": {"$ne": True},
+                        "recovery_expired": {"$ne": True},
+                    }, {"_id": 0, "student_id": 1}).to_list(None)
+                    _direct_pending_set = {rec["student_id"] for rec in _direct_pending_list}
                 else:
                     direct_students_map = {}
+                    _direct_pending_set = set()
                 direct_user_bulk_ops: list = []
+                _direct_unenroll_ids: list = []
 
                 for student_id in course.get("student_ids", []):
                     if student_id in students_records:
@@ -564,14 +597,8 @@ async def check_and_close_modules():
                     # Check if student has unresolved failed_subjects in OTHER courses
                     # for the same program and module. If so, skip promotion — the student
                     # must resolve all recovery subjects before advancing.
-                    other_pending = await db.failed_subjects.find_one({
-                        "student_id": student_id,
-                        "program_id": prog_id,
-                        "module_number": int(module_key),
-                        "recovery_processed": {"$ne": True},
-                        "recovery_expired": {"$ne": True},
-                    })
-                    if other_pending:
+                    # Use pre-fetched set instead of individual find_one per student.
+                    if student_id in _direct_pending_set:
                         continue
 
                     # Defensive rule: never promote at recovery_close when the student still
@@ -605,7 +632,7 @@ async def check_and_close_modules():
                             f"course {course['id']} module {module_key} without full recovery pass "
                             "– removing from group instead of promoting"
                         )
-                        await _unenroll_student_from_course(student_id, course["id"])
+                        _direct_unenroll_ids.append(student_id)
                         removed_count += 1
                         student_doc = direct_students_map.get(student_id)
                         ps = (student_doc or {}).get("program_statuses") or {}
@@ -636,7 +663,7 @@ async def check_and_close_modules():
                             f"'{direct_prog_statuses.get(prog_id)}' for program {prog_id} "
                             f"– removing from course {course['id']} (no confirmed recovery)"
                         )
-                        await _unenroll_student_from_course(student_id, course["id"])
+                        _direct_unenroll_ids.append(student_id)
                         _upd: dict = {"estado": "reprobado"}
                         if prog_id:
                             direct_prog_statuses[prog_id] = "reprobado"
@@ -690,6 +717,28 @@ async def check_and_close_modules():
 
                 if direct_user_bulk_ops:
                     await db.users.bulk_write(direct_user_bulk_ops, ordered=False)
+                # Batch unenroll for direct_pass loop: one course update instead of N
+                if _direct_unenroll_ids:
+                    await db.courses.update_one(
+                        {"id": course["id"]},
+                        {
+                            "$pull": {"student_ids": {"$in": _direct_unenroll_ids}},
+                            "$addToSet": {"removed_student_ids": {"$each": _direct_unenroll_ids}}
+                        }
+                    )
+                    _still_enrolled_docs = await db.courses.find(
+                        {"student_ids": {"$in": _direct_unenroll_ids}},
+                        {"_id": 0, "student_ids": 1}
+                    ).to_list(None)
+                    _still_enrolled_set = set()
+                    for _c in _still_enrolled_docs:
+                        _still_enrolled_set.update(_c.get("student_ids") or [])
+                    for _sid in _direct_unenroll_ids:
+                        if _sid not in _still_enrolled_set:
+                            await db.users.update_one(
+                                {"id": _sid, "role": "estudiante"},
+                                {"$unset": {"grupo": ""}}
+                            )
 
                 # Strict fallback at recovery_close: if a student still has failing averages
                 # in this course/module and did not fully pass recovery records, remove them.
@@ -707,6 +756,7 @@ async def check_and_close_modules():
                     fallback_students_map = {}
                 fallback_user_bulk_ops: list = []
                 fallback_fs_bulk_ops: list = []
+                _fallback_unenroll_ids: list = []
 
                 for student_id in _fallback_ids:
                     # Skip if already unenrolled in previous steps
@@ -763,7 +813,7 @@ async def check_and_close_modules():
                     ):
                         continue
 
-                    await _unenroll_student_from_course(student_id, course["id"])
+                    _fallback_unenroll_ids.append(student_id)
                     removed_count += 1
                     student_doc = fallback_students_map.get(student_id)
                     ps = (student_doc or {}).get("program_statuses") or {}
@@ -792,6 +842,28 @@ async def check_and_close_modules():
                     await db.users.bulk_write(fallback_user_bulk_ops, ordered=False)
                 if fallback_fs_bulk_ops:
                     await db.failed_subjects.bulk_write(fallback_fs_bulk_ops, ordered=False)
+                # Batch unenroll for fallback loop: one course update instead of N
+                if _fallback_unenroll_ids:
+                    await db.courses.update_one(
+                        {"id": course["id"]},
+                        {
+                            "$pull": {"student_ids": {"$in": _fallback_unenroll_ids}},
+                            "$addToSet": {"removed_student_ids": {"$each": _fallback_unenroll_ids}}
+                        }
+                    )
+                    _still_enrolled_docs = await db.courses.find(
+                        {"student_ids": {"$in": _fallback_unenroll_ids}},
+                        {"_id": 0, "student_ids": 1}
+                    ).to_list(None)
+                    _still_enrolled_set = set()
+                    for _c in _still_enrolled_docs:
+                        _still_enrolled_set.update(_c.get("student_ids") or [])
+                    for _sid in _fallback_unenroll_ids:
+                        if _sid not in _still_enrolled_set:
+                            await db.users.update_one(
+                                {"id": _sid, "role": "estudiante"},
+                                {"$unset": {"grupo": ""}}
+                            )
 
         if removed_count > 0:
             logger.info(f"Recovery check: removed {removed_count} students from groups due to failed recovery")
