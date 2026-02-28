@@ -59,6 +59,11 @@ async def create_indexes(db):
         ("failed_subjects", [("student_id", 1), ("course_id", 1)], {"name": "failed_subjects_student_course"}),
         ("failed_subjects", [("course_id", 1), ("module_number", 1), ("recovery_processed", 1)], {"name": "failed_subjects_course_module_processed"}),
         ("failed_subjects", [("recovery_approved", 1), ("recovery_completed", 1), ("recovery_processed", 1), ("recovery_rejected", 1)], {"name": "failed_subjects_recovery_state"}),
+        # Additional indexes for scheduler performance
+        ("users", [("id", 1)], {"unique": True, "name": "users_id_unique"}),
+        ("failed_subjects", [("student_id", 1), ("recovery_processed", 1), ("recovery_expired", 1)], {"name": "failed_subjects_student_processed_expired"}),
+        ("grades", [("course_id", 1), ("student_id", 1), ("value", 1)], {"name": "grades_course_student_value"}),
+        ("courses", [("id", 1)], {"unique": True, "name": "courses_id_unique"}),
     ]
 
     created = 0
