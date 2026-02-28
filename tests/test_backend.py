@@ -574,22 +574,46 @@ class TestCanEnrollInCourse:
 class TestEnrollmentModuleAssignment:
     """Tests for automatic program_modules assignment when enrolling."""
 
-    def _get_module_for_enrollment(self, module_dates):
-        """Determine the module a student should be assigned at enrollment time.
-
-        Since enrollment is only allowed before M1 starts, the module will always
-        be 1 (the first module, returned when today is before module1.start).
-        """
-        from datetime import datetime, timezone
+    def _get_open_enrollment_module(self, module_dates, today_str):
+        """Mirror of get_open_enrollment_module from server.py with injectable today."""
         if not module_dates:
             return None
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        mod_numbers = sorted(int(k) for k in module_dates.keys() if str(k).isdigit())
+        if not mod_numbers:
+            return None
+        check_up_to = mod_numbers[-1] + 1
+        for mn in range(mod_numbers[0], check_up_to + 1):
+            mod_key = str(mn)
+            mod_dates = module_dates.get(mod_key) or module_dates.get(mn) or {}
+            mod_start = mod_dates.get("start")
+            if mn == 1:
+                if not mod_start:
+                    return 1
+                if today_str < mod_start:
+                    return 1
+            else:
+                prev_key = str(mn - 1)
+                prev_dates = module_dates.get(prev_key) or module_dates.get(mn - 1) or {}
+                prev_recovery_close = prev_dates.get("recovery_close") or prev_dates.get("end")
+                if not prev_recovery_close and not mod_start:
+                    return mn
+                if prev_recovery_close and today_str < prev_recovery_close:
+                    continue
+                if mod_start and today_str >= mod_start:
+                    continue
+                return mn
+        return None
+
+    def _get_current_module_from_dates(self, module_dates, today_str):
+        """Mirror of get_current_module_from_dates from server.py with injectable today."""
+        if not module_dates:
+            return None
         sorted_keys = sorted(module_dates.keys(), key=lambda k: int(k) if str(k).isdigit() else 0)
         for mod_key in sorted_keys:
             dates = module_dates.get(mod_key) or {}
             start = dates.get("start")
             end = dates.get("recovery_close") or dates.get("end")
-            if start and end and start <= today <= end:
+            if start and end and start <= today_str <= end:
                 return int(mod_key)
         modules_with_start = [
             (int(k), (module_dates.get(k) or {}).get("start"))
@@ -599,30 +623,93 @@ class TestEnrollmentModuleAssignment:
         if not modules_with_start:
             return None
         modules_with_start.sort()
-        if today < modules_with_start[0][1]:
+        if today_str < modules_with_start[0][1]:
             return modules_with_start[0][0]
         current = modules_with_start[0][0]
         for mod_num, start in modules_with_start:
-            if start <= today:
+            if start <= today_str:
                 current = mod_num
         return current
 
+    def _get_module_for_enrollment(self, module_dates, today_str=None):
+        """Determine the module a student should be assigned at enrollment time.
+
+        Uses get_open_enrollment_module first (covers inter-module windows), falling
+        back to get_current_module_from_dates.  This mirrors the fixed logic in
+        create_course / update_course.
+        """
+        from datetime import datetime, timezone
+        if today_str is None:
+            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if not module_dates:
+            return None
+        return (
+            self._get_open_enrollment_module(module_dates, today_str)
+            or self._get_current_module_from_dates(module_dates, today_str)
+        )
+
     def test_before_module1_assigns_module1(self):
         """When enrolling before M1 starts, student should be assigned module 1."""
-        from datetime import datetime, timezone, timedelta
-        future = datetime.now(timezone.utc) + timedelta(days=10)
         module_dates = {
             "1": {
-                "start": future.strftime("%Y-%m-%d"),
-                "end": (future + timedelta(days=180)).strftime("%Y-%m-%d"),
+                "start": "2099-06-01",
+                "end": "2099-12-31",
+                "recovery_close": "2099-12-31",
             }
         }
-        assert self._get_module_for_enrollment(module_dates) == 1
+        assert self._get_module_for_enrollment(module_dates, "2026-01-01") == 1
 
     def test_no_module_dates_returns_none(self):
         """Without module_dates, no module can be determined."""
         assert self._get_module_for_enrollment({}) is None
         assert self._get_module_for_enrollment(None) is None
+
+    def test_inter_module_window_assigns_module2(self):
+        """Key bug fix: during the window between M1 recovery_close and M2 start,
+        get_current_module_from_dates returns 1 (last started), but students enrolling
+        then are in the Module 2 enrollment window and must be assigned Module 2."""
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-08-01", "end": "2026-12-31", "recovery_close": "2027-01-15"},
+        }
+        # Today is between M1 recovery_close (07-15) and M2 start (08-01)
+        today = "2026-07-20"
+        # The OLD (buggy) logic using only get_current_module_from_dates would return 1:
+        assert self._get_current_module_from_dates(module_dates, today) == 1
+        # The FIXED logic using get_open_enrollment_module first must return 2:
+        assert self._get_module_for_enrollment(module_dates, today) == 2
+
+    def test_inter_module_window_no_mod2_dates_assigns_module2(self):
+        """Inter-module window with only M1 dates defined (M2 dates not yet added)."""
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+        }
+        today = "2026-07-20"
+        # The fixed logic must still return 2 (open enrollment for M2 inferred from M1 recovery_close)
+        assert self._get_module_for_enrollment(module_dates, today) == 2
+
+    def test_during_module2_assigns_module2(self):
+        """While Module 2 is active, students should be assigned module 2."""
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-08-01", "end": "2026-12-31", "recovery_close": "2027-01-15"},
+        }
+        today = "2026-09-01"  # well inside M2
+        assert self._get_module_for_enrollment(module_dates, today) == 2
+
+    def test_before_module2_start_but_after_m1_recovery_no_downgrade(self):
+        """A Module-2 student re-enrolling during the inter-module window must NOT be
+        downgraded to Module 1.  The module assignment result must be >= student's
+        current module (2)."""
+        module_dates = {
+            "1": {"start": "2026-01-01", "end": "2026-06-30", "recovery_close": "2026-07-15"},
+            "2": {"start": "2026-08-01", "end": "2026-12-31", "recovery_close": "2027-01-15"},
+        }
+        today = "2026-07-20"
+        student_current_module = 2
+        assigned_module = self._get_module_for_enrollment(module_dates, today)
+        # Must not downgrade
+        assert assigned_module >= student_current_module
 
 
 # ---------------------------------------------------------------------------
@@ -1906,8 +1993,96 @@ class TestPromotionRequiresBothApprovals:
 
 
 # ---------------------------------------------------------------------------
-# Unit tests for module alignment validation in approve_recovery_for_subject
+# Unit tests for recovery_close "en espera" (pending) habilitación handling
 # ---------------------------------------------------------------------------
+
+class TestRecoveryCloseEnEspera:
+    """Tests for the business rule: at recovery_close, any habilitación left without
+    confirmation (en espera) must treat the student as reprobado.
+
+    Rule: if admin leaves one habilitación en espera (recovery_approved=False) while
+    approving another, the student is NOT fully passed → reprobado.
+    Rule: if admin/teacher takes no action at all → reprobado.
+    Rule: the only way to pass is if ALL records are admin-approved AND
+    teacher-completed AND teacher-approved.
+    """
+
+    def _has_admin_action(self, records):
+        """Mirror of has_admin_action check in check_and_close_modules."""
+        return any(
+            r.get("recovery_approved") is True or r.get("recovery_completed") is True
+            for r in records
+        )
+
+    def _all_passed(self, records):
+        """Mirror of all_passed check in check_and_close_modules."""
+        return all(
+            r.get("recovery_approved") is True and
+            r.get("recovery_completed") is True and
+            r.get("teacher_graded_status") == "approved"
+            for r in records
+        )
+
+    def _student_outcome(self, records):
+        """Return 'reprobado' or 'promoted' based on check_and_close_modules logic."""
+        if not self._has_admin_action(records):
+            return "reprobado"
+        if self._all_passed(records):
+            return "promoted"
+        return "reprobado"
+
+    def test_no_admin_action_means_reprobado(self):
+        """Admin did nothing (all records recovery_approved=False) → reprobado."""
+        records = [
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._student_outcome(records) == "reprobado"
+
+    def test_admin_approves_one_leaves_other_en_espera_means_reprobado(self):
+        """Admin approves ONE habilitación but leaves another en espera → reprobado."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},  # en espera
+        ]
+        assert self._has_admin_action(records) is True  # admin acted on at least one
+        assert self._all_passed(records) is False        # not all passed
+        assert self._student_outcome(records) == "reprobado"
+
+    def test_admin_approves_all_teacher_approves_all_means_promoted(self):
+        """Admin and teacher both approve all subjects → promoted."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},
+        ]
+        assert self._student_outcome(records) == "promoted"
+
+    def test_teacher_does_not_confirm_means_reprobado(self):
+        """Admin approved but teacher didn't confirm → reprobado."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": False, "teacher_graded_status": None},
+        ]
+        assert self._student_outcome(records) == "reprobado"
+
+    def test_teacher_rejects_means_reprobado(self):
+        """Teacher explicitly rejects → reprobado."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "rejected"},
+        ]
+        assert self._student_outcome(records) == "reprobado"
+
+    def test_admin_approves_one_teacher_approves_it_but_another_en_espera(self):
+        """Admin approves subject A (teacher also approves), but subject B is en espera → reprobado."""
+        records = [
+            {"recovery_approved": True, "recovery_completed": True, "teacher_graded_status": "approved"},  # A: full pass
+            {"recovery_approved": False, "recovery_completed": False, "teacher_graded_status": None},       # B: en espera
+        ]
+        # has_admin_action is True because A was approved
+        assert self._has_admin_action(records) is True
+        # But not all_passed because B is not approved
+        assert self._all_passed(records) is False
+        assert self._student_outcome(records) == "reprobado"
+
 
 class TestModuleAlignmentValidation:
     """Tests for module alignment: recovery can only be approved for the student's current module."""
