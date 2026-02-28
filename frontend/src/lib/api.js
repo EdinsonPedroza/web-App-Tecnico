@@ -8,7 +8,7 @@ const API_BASE = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 15000,
+  timeout: 30000,
   headers: { 'Content-Type': 'application/json' }
 });
 

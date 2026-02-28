@@ -124,6 +124,10 @@ def validate_module_number(module_num, field_name="module"):
         raise ValueError(f"{field_name} must be >= {MIN_MODULE_NUMBER}, got {module_num}")
     return True
 
+# Pagination limits for list endpoints
+MAX_LIMIT = 500          # hard cap for most list endpoints
+MAX_LIMIT_GRADES = 5000  # higher cap for grades when filtered by course_id
+
 app = FastAPI()
 
 # Detect production environment
@@ -134,7 +138,7 @@ cors_origins_str = os.environ.get('CORS_ORIGINS', '*')
 cors_origins = cors_origins_str.split(',') if ',' in cors_origins_str else [cors_origins_str]
 allow_credentials = "*" not in cors_origins
 
-if IS_PRODUCTION and '*' in cors_origins:
+if (IS_PRODUCTION or JWT_SECRET != _JWT_DEFAULT) and '*' in cors_origins:
     import logging as _logging
     _logging.getLogger(__name__).warning(
         "⚠️  SECURITY WARNING: CORS_ORIGINS is set to '*' in production! "
@@ -2780,7 +2784,7 @@ async def delete_subject(subject_id: str, user=Depends(get_current_user)):
 
 # --- Courses Routes ---
 @api_router.get("/courses")
-async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str] = None, user=Depends(get_current_user)):
+async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
     conditions = []
     
     if teacher_id:
@@ -2811,7 +2815,9 @@ async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str
     else:
         query = {"$and": conditions}
     
-    courses = await db.courses.find(query, {"_id": 0}).to_list(2000)
+    limit = max(1, min(limit, MAX_LIMIT))
+    skip = max(0, skip)
+    courses = await db.courses.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
     return courses
 
 @api_router.get("/courses/{course_id}")
@@ -3407,13 +3413,15 @@ async def delete_course(course_id: str, force: bool = False, delete_students: bo
 
 # --- Activities Routes ---
 @api_router.get("/activities")
-async def get_activities(course_id: Optional[str] = None, subject_id: Optional[str] = None, user=Depends(get_current_user)):
+async def get_activities(course_id: Optional[str] = None, subject_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
     query = {}
     if course_id:
         query["course_id"] = course_id
     if subject_id:
         query["subject_id"] = subject_id
-    activities = await db.activities.find(query, {"_id": 0}).to_list(500)
+    limit = max(1, min(limit, MAX_LIMIT))
+    skip = max(0, skip)
+    activities = await db.activities.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
     
     # For students: show recovery activities only for subjects explicitly approved by admin.
     if user["role"] == "estudiante" and course_id:
@@ -3509,7 +3517,7 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
 
 # --- Grades Routes ---
 @api_router.get("/grades")
-async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, user=Depends(get_current_user)):
+async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
     query = {}
     if course_id:
         query["course_id"] = course_id
@@ -3519,7 +3527,10 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
         query["subject_id"] = subject_id
     if activity_id:
         query["activity_id"] = activity_id
-    grades = await db.grades.find(query, {"_id": 0}).to_list(50000)
+    effective_max = MAX_LIMIT_GRADES if course_id else MAX_LIMIT
+    limit = max(1, min(limit, effective_max))
+    skip = max(0, skip)
+    grades = await db.grades.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
     return grades
 
 @api_router.post("/grades")
@@ -3949,13 +3960,15 @@ async def get_file(filename: str):
 
 # --- Submissions Routes ---
 @api_router.get("/submissions")
-async def get_submissions(activity_id: Optional[str] = None, student_id: Optional[str] = None, user=Depends(get_current_user)):
+async def get_submissions(activity_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
     query = {}
     if activity_id:
         query["activity_id"] = activity_id
     if student_id:
         query["student_id"] = student_id
-    submissions = await db.submissions.find(query, {"_id": 0}).to_list(50000)
+    limit = max(1, min(limit, MAX_LIMIT))
+    skip = max(0, skip)
+    submissions = await db.submissions.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
     return submissions
 
 @api_router.post("/submissions")
