@@ -17,7 +17,9 @@ services:
       - MONGO_URL=${MONGO_URL:-mongodb://mongodb:27017}
       - DB_NAME=${DB_NAME:-WebApp}
       - PASSWORD_STORAGE_MODE=${PASSWORD_STORAGE_MODE:-bcrypt}
-      - JWT_SECRET=${JWT_SECRET:-educando_secret_key_2025}
+      # Generate a secure secret with: openssl rand -hex 32
+      # JWT_SECRET must ALWAYS be set externally — no insecure default is provided.
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
     volumes:
       - uploads_data:/app/uploads
 
