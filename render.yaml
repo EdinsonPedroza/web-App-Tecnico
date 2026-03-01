@@ -22,8 +22,8 @@ services:
         value: bcrypt
       - key: CORS_ORIGINS
         value: "https://corporacioneducando.com,https://www.corporacioneducando.com"
-        # ⚠️ PRODUCCIÓN: Cambia este valor por tu dominio real antes de desplegar.
-        # Ejemplo: "https://educando.com,https://www.educando.com"
+        # ⚠️ PRODUCCIÓN: Agrega también la URL pública del frontend en Render, p.ej.:
+        # "https://educando-frontend.onrender.com,https://corporacioneducando.com,https://www.corporacioneducando.com"
         # Nunca uses "*" en producción ya que permite solicitudes desde cualquier origen.
       - key: JWT_SECRET
         generateValue: true
@@ -58,9 +58,14 @@ services:
         - frontend/**
     envVars:
       - key: REACT_APP_BACKEND_URL
-        value: ""
+        sync: false
+        # ⚠️ OBLIGATORIO: Configura manualmente en el Render Dashboard con la URL pública
+        # HTTPS del backend, p.ej.: https://educando-backend.onrender.com
       - key: BACKEND_URL
-        value: "http://educando-backend:10000"
+        sync: false
+        # ⚠️ OBLIGATORIO: Render NO soporta comunicación inter-servicio por nombre de
+        # contenedor. DEBES configurar esta variable manualmente en el Render Dashboard
+        # con la URL pública HTTPS del backend, p.ej.: https://educando-backend.onrender.com
       - key: PORT
         value: 10000
     autoDeploy: true
