@@ -294,6 +294,7 @@ async def check_and_close_modules():
         all_programs_map = {p["id"]: p for p in programs} if programs else {}
         removed_count = 0
         promoted_recovery_count = 0
+        skipped_no_grades_recovery = 0
         for course in all_courses:
             module_dates = course.get("module_dates") or {}
             prog_id_for_course = course.get("program_id", "")
@@ -503,7 +504,14 @@ async def check_and_close_modules():
                             if sid in tracked_subject_ids:
                                 continue  # This subject has a record – already considered above
                             values = grades_index.get((student_id, sid), [])
-                            if values:  # Only flag if grades exist (skip ungraded subjects)
+                            if not values:
+                                # Subject has no grades — teacher may have forgotten to grade
+                                skipped_no_grades_recovery += 1
+                                logger.debug(
+                                    f"Recovery close: student {student_id} has no grades for "
+                                    f"subject {sid} in course {course['id']} module {module_key} – skipping subject"
+                                )
+                            elif values:  # Only flag if grades exist (skip ungraded subjects)
                                 avg = sum(values) / len(values)
                                 if avg < 3.0:
                                     all_passed = False
@@ -935,6 +943,11 @@ async def check_and_close_modules():
             logger.info(f"Recovery check: removed {removed_count} students from groups due to failed recovery")
         if promoted_recovery_count > 0:
             logger.info(f"Recovery check: promoted/graduated {promoted_recovery_count} students after passing recovery")
+        if skipped_no_grades_recovery > 0:
+            logger.warning(
+                f"WARNING: {skipped_no_grades_recovery} student-subject instances skipped during recovery check "
+                "due to missing grades — teachers may have forgotten to grade some subjects"
+            )
         
         logger.info("Automatic module closure check completed")
     except Exception as e:
@@ -1073,6 +1086,13 @@ async def startup_event():
             await db.scheduler_locks.create_index("lock_name", unique=True, name="scheduler_locks_unique")
         except Exception as idx_err:
             logger.debug(f"scheduler_locks_unique index already exists or could not be created: {idx_err}")
+        try:
+            await db.grade_changes.create_index(
+                [("student_id", 1), ("changed_at", -1)],
+                name="grade_changes_student_date"
+            )
+        except Exception as idx_err:
+            logger.debug(f"grade_changes_student_date index already exists or could not be created: {idx_err}")
         await create_initial_data()
         
         # Start the automatic module closure scheduler.
@@ -3475,7 +3495,7 @@ async def delete_course(course_id: str, force: bool = False, delete_students: bo
 
 # --- Activities Routes ---
 @api_router.get("/activities")
-async def get_activities(course_id: Optional[str] = None, subject_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
+async def get_activities(course_id: Optional[str] = None, subject_id: Optional[str] = None, skip: int = 0, limit: int = 500, user=Depends(get_current_user)):
     query = {}
     if course_id:
         query["course_id"] = course_id
@@ -3579,7 +3599,7 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
 
 # --- Grades Routes ---
 @api_router.get("/grades")
-async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
+async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, skip: int = 0, limit: int = 5000, user=Depends(get_current_user)):
     query = {}
     if course_id:
         query["course_id"] = course_id
@@ -3589,7 +3609,7 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
         query["subject_id"] = subject_id
     if activity_id:
         query["activity_id"] = activity_id
-    effective_max = MAX_LIMIT_GRADES if course_id else MAX_LIMIT
+    effective_max = 10000 if course_id else MAX_LIMIT
     limit = max(1, min(limit, effective_max))
     skip = max(0, skip)
     grades = await db.grades.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
@@ -3743,6 +3763,21 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             update_data["comments"] = req.comments
         if req.recovery_status:
             update_data["recovery_status"] = req.recovery_status
+        
+        # Audit trail: record grade change when the numeric value is modified
+        if grade_value is not None and existing.get("value") is not None and existing["value"] != grade_value:
+            await db.grade_changes.insert_one({
+                "id": str(uuid.uuid4()),
+                "grade_id": existing["id"],
+                "student_id": req.student_id,
+                "course_id": req.course_id,
+                "activity_id": req.activity_id,
+                "subject_id": req.subject_id,
+                "old_value": existing["value"],
+                "new_value": grade_value,
+                "changed_by": user["id"],
+                "changed_at": datetime.now(timezone.utc).isoformat()
+            })
             
         await db.grades.update_one(
             {"id": existing["id"]},
@@ -4069,13 +4104,13 @@ async def get_file(filename: str):
 
 # --- Submissions Routes ---
 @api_router.get("/submissions")
-async def get_submissions(activity_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
+async def get_submissions(activity_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 1000, user=Depends(get_current_user)):
     query = {}
     if activity_id:
         query["activity_id"] = activity_id
     if student_id:
         query["student_id"] = student_id
-    limit = max(1, min(limit, MAX_LIMIT))
+    limit = max(1, min(limit, 1000))
     skip = max(0, skip)
     submissions = await db.submissions.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
     return submissions
@@ -4426,6 +4461,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     promoted_count = 0
     graduated_count = 0
     recovery_count = 0
+    skipped_no_grades = 0
     failed_subjects_records = []
     
     # Get all courses/groups
@@ -4479,6 +4515,17 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
         
         # Get all grades for the student
         all_grades = grades_by_student.get(student_id, [])
+        
+        # Skip students with no grades in any of their module courses — teacher may have
+        # forgotten to grade them. Count and log them instead of processing with 0.0 averages.
+        graded_course_ids = {g.get("course_id") for g in all_grades}
+        if student_courses and not any(c["id"] in graded_course_ids for c in student_courses):
+            skipped_no_grades += 1
+            logger.debug(
+                f"Student {student_id} skipped in module {module_number} closure: "
+                "no grades found in any enrolled course"
+            )
+            continue
         
         # Group grades by course; detect failing subjects individually
         failed_courses = []
@@ -4617,6 +4664,11 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     if failed_subjects_records:
         await db.failed_subjects.insert_many(failed_subjects_records)
     
+    if skipped_no_grades > 0:
+        logger.warning(
+            f"WARNING: {skipped_no_grades} students skipped due to missing grades in module {module_number}"
+        )
+    
     return {
         "message": "Cierre de módulo completado",
         "module_number": module_number,
@@ -4624,7 +4676,8 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
         "promoted_count": promoted_count,
         "graduated_count": graduated_count,
         "recovery_pending_count": recovery_count,
-        "failed_subjects_count": len(failed_subjects_records)
+        "failed_subjects_count": len(failed_subjects_records),
+        "skipped_no_grades_count": skipped_no_grades
     }
 
 @api_router.post("/admin/close-module")
