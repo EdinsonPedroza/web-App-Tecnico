@@ -39,7 +39,7 @@ cat > "$ENV_LOCAL_FILE" << EOF
 
 MONGO_URL="$MONGO_URL"
 DB_NAME="$DB_NAME"
-CORS_ORIGINS="*"
+CORS_ORIGINS="http://localhost:3000"
 EOF
 
 # Verificar que se creó el archivo
