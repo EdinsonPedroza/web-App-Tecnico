@@ -427,7 +427,7 @@ async def check_and_close_modules():
                             logger.error(f"Error auto-closing Module {mod_num} for {program_name}: {e}", exc_info=True)
         
         # Check course-level recovery close dates: promote winners, remove losers
-        all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+        all_courses = await db.courses.find({}, {"_id": 0}).to_list(5000)
         all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "module_number": 1}).to_list(5000)
         subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subjects}
         # Pre-load programs indexed by id for fallback module_dates construction
@@ -4872,9 +4872,11 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     skipped_no_grades = 0
     failed_subjects_records = []
     promotion_pending_ops: list = []
-    
-    # Get all courses/groups
-    courses = await db.courses.find({}, {"_id": 0}).to_list(5000)
+    user_bulk_ops: list = []
+
+    # Get courses/groups — filter by program_id when known to reduce data loaded
+    courses_query = {"program_id": program_id} if program_id else {}
+    courses = await db.courses.find(courses_query, {"_id": 0}).to_list(5000)
     
     # Load subjects for per-subject grade calculations
     all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(1000)
@@ -4906,10 +4908,14 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     aggregated_grades = await db.grades.aggregate(pipeline).to_list(200000)
     # Build index: (student_id, course_id, subject_id) -> {"avg": float, "count": int}
     grades_avg_index = {}
+    # Secondary index: (student_id, course_id) -> list of {"avg", "count"} for fallback path
+    course_grades_index: dict = {}
     student_graded_courses = {}
     for g in aggregated_grades:
         key = (g["_id"]["student_id"], g["_id"]["course_id"], g["_id"]["subject_id"])
-        grades_avg_index[key] = {"avg": g["avg_value"], "count": g["count"]}
+        entry = {"avg": g["avg_value"], "count": g["count"]}
+        grades_avg_index[key] = entry
+        course_grades_index.setdefault((g["_id"]["student_id"], g["_id"]["course_id"]), []).append(entry)
         student_graded_courses.setdefault(g["_id"]["student_id"], set()).add(g["_id"]["course_id"])
 
     for student in students:
@@ -4984,8 +4990,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                         })
             else:
                 # Fallback: no subjects defined, use course-level average (weighted by count)
-                course_entries = [v for (sid, cid, _subj), v in grades_avg_index.items()
-                                  if sid == student_id and cid == course["id"]]
+                course_entries = course_grades_index.get((student_id, course["id"]), [])
                 total_sum = sum(e["avg"] * e["count"] for e in course_entries)
                 total_count = sum(e["count"] for e in course_entries)
                 average = total_sum / total_count if total_count > 0 else 0.0
@@ -5026,13 +5031,13 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
             for prog_id in failed_program_ids:
                 student_program_statuses[prog_id] = "pendiente_recuperacion"
             new_global_estado = derive_estado_from_program_statuses(student_program_statuses)
-            await db.users.update_one(
+            user_bulk_ops.append(UpdateOne(
                 {"id": student_id},
                 {"$set": {
                     "program_statuses": student_program_statuses,
                     "estado": new_global_estado
                 }}
-            )
+            ))
         else:
             # Student passed all courses.
             # If any of the student's courses in this module has a recovery_close date
@@ -5070,18 +5075,22 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                 
                 new_global_estado = derive_estado_from_program_statuses(student_program_statuses)
                 # Update program_modules and program_statuses
-                await db.users.update_one(
+                user_bulk_ops.append(UpdateOne(
                     {"id": student_id},
                     {"$set": {
                         "program_modules": student_program_modules,
                         "program_statuses": student_program_statuses,
                         "estado": new_global_estado
                     }}
-                )
+                ))
     
     # Bulk write deferred program_promotion_pending updates
     if promotion_pending_ops:
         await db.users.bulk_write(promotion_pending_ops, ordered=False)
+
+    # Bulk write status updates for failed/promoted/graduated students
+    if user_bulk_ops:
+        await db.users.bulk_write(user_bulk_ops, ordered=False)
 
     # Bulk insert failed subjects records
     if failed_subjects_records:
