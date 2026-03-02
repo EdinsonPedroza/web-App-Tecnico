@@ -473,7 +473,7 @@ async def check_and_close_modules():
             course_grades = await db.grades.find(
                 {"course_id": course["id"]},
                 {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
-            ).to_list(None)
+            ).to_list(200000)
             grades_index = {}
             for _g in course_grades:
                 if _g.get("value") is None:
@@ -539,7 +539,7 @@ async def check_and_close_modules():
                     "module_number": int(module_key),
                     "recovery_expired": {"$ne": True},
                     "recovery_processed": {"$ne": True}
-                }, {"_id": 0}).to_list(None)
+                }, {"_id": 0}).to_list(50000)
                 
                 prog_id = course.get("program_id", "")
 
@@ -565,7 +565,7 @@ async def check_and_close_modules():
                     _rec_student_docs = await db.users.find(
                         {"id": {"$in": _rec_student_ids}},
                         {"_id": 0, "id": 1, "program_modules": 1, "program_statuses": 1}
-                    ).to_list(None)
+                    ).to_list(5000)
                     students_map = {s["id"]: s for s in _rec_student_docs}
                 else:
                     students_map = {}
@@ -573,6 +573,7 @@ async def check_and_close_modules():
                 user_bulk_ops: list = []
                 fs_bulk_ops: list = []
                 _records_unenroll_ids: list = []
+                _audit_log_batch: list = []
 
                 for student_id, records in students_records.items():
                     # Business rule: at recovery_close, any habilitación left without admin or
@@ -683,7 +684,7 @@ async def check_and_close_modules():
                                     }
                                 ))
                                 logger.info(f"Student {student_id} graduated (recovery passed all subjects in course {course['id']})")
-                                await log_audit("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close"})
+                                _audit_log_batch.append(_make_audit_record("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close"}))
                             else:
                                 next_module = int(module_key) + 1
                                 program_statuses[prog_id] = "activo"
@@ -702,7 +703,7 @@ async def check_and_close_modules():
                                     }
                                 ))
                                 logger.info(f"Student {student_id} promoted to module {next_module} (recovery passed in course {course['id']})")
-                                await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close"})
+                                _audit_log_batch.append(_make_audit_record("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close"}))
                             promoted_recovery_count += 1
                     else:
                         # Not all subjects passed: admin left some habilitaciones "en espera"
@@ -724,7 +725,7 @@ async def check_and_close_modules():
                             update_fields[f"program_modules.{prog_id}"] = int(module_key)
                         user_bulk_ops.append(UpdateOne({"id": student_id, "role": "estudiante"}, {"$set": update_fields}))
                         logger.info(f"Student {student_id} marked as reprobado for program {prog_id} (recovery closed, did not pass)")
-                        await log_audit("student_removed_from_group", "system", "system", {"student_id": student_id, "course_id": course["id"], "program_id": prog_id, "trigger": "recovery_close_failed"})
+                        _audit_log_batch.append(_make_audit_record("student_removed_from_group", "system", "system", {"student_id": student_id, "course_id": course["id"], "program_id": prog_id, "trigger": "recovery_close_failed"}))
                         removed_count += 1
                     
                     # Mark all records for this student in this course/module as processed
@@ -738,6 +739,11 @@ async def check_and_close_modules():
                     await db.users.bulk_write(user_bulk_ops, ordered=False)
                 if fs_bulk_ops:
                     await db.failed_subjects.bulk_write(fs_bulk_ops, ordered=False)
+                if _audit_log_batch:
+                    try:
+                        await db.audit_logs.insert_many(_audit_log_batch, ordered=False)
+                    except Exception as _audit_exc:
+                        logger.error(f"Failed to batch write recovery audit logs: {_audit_exc}")
                 # Batch unenroll for students_records loop: one course update instead of N
                 if _records_unenroll_ids:
                     await db.courses.update_one(
@@ -750,7 +756,7 @@ async def check_and_close_modules():
                     _still_enrolled_docs = await db.courses.find(
                         {"student_ids": {"$in": _records_unenroll_ids}},
                         {"_id": 0, "student_ids": 1}
-                    ).to_list(None)
+                    ).to_list(1000)
                     _still_enrolled_set: set = set()
                     for _c in _still_enrolled_docs:
                         _still_enrolled_set.update(_c.get("student_ids") or [])
@@ -769,7 +775,7 @@ async def check_and_close_modules():
                     _direct_docs = await db.users.find(
                         {"id": {"$in": _direct_ids}},
                         {"_id": 0, "id": 1, "program_modules": 1, "program_statuses": 1}
-                    ).to_list(None)
+                    ).to_list(5000)
                     direct_students_map = {s["id"]: s for s in _direct_docs}
                     # Pre-fetch all pending failed_subjects for direct-pass students in one query
                     _direct_pending_list = await db.failed_subjects.find({
@@ -778,13 +784,14 @@ async def check_and_close_modules():
                         "module_number": int(module_key),
                         "recovery_processed": {"$ne": True},
                         "recovery_expired": {"$ne": True},
-                    }, {"_id": 0, "student_id": 1}).to_list(None)
+                    }, {"_id": 0, "student_id": 1}).to_list(50000)
                     _direct_pending_set = {rec["student_id"] for rec in _direct_pending_list}
                 else:
                     direct_students_map = {}
                     _direct_pending_set = set()
                 direct_user_bulk_ops: list = []
                 _direct_unenroll_ids: list = []
+                _direct_audit_log_batch: list = []
 
                 for student_id in course.get("student_ids", []):
                     if student_id in students_records:
@@ -876,11 +883,11 @@ async def check_and_close_modules():
                             {"id": student_id, "role": "estudiante"}, {"$set": _upd}
                         ))
                         removed_count += 1
-                        await log_audit(
+                        _direct_audit_log_batch.append(_make_audit_record(
                             "student_removed_from_group", "system", "system",
                             {"student_id": student_id, "course_id": course["id"],
                              "program_id": prog_id, "trigger": "recovery_close_unconfirmed_recovery"}
-                        )
+                        ))
                         continue
                     program = prog_doc
                     max_modules = max(len(program.get("modules", [])) if program and program.get("modules") else 2, 2)
@@ -895,7 +902,7 @@ async def check_and_close_modules():
                             }
                         ))
                         logger.info(f"Student {student_id} graduated (direct pass, deferred to recovery_close for course {course['id']})")
-                        await log_audit("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close_direct_pass"})
+                        _direct_audit_log_batch.append(_make_audit_record("student_graduated", "system", "system", {"student_id": student_id, "course_id": course["id"], "trigger": "recovery_close_direct_pass"}))
                     else:
                         next_module = int(module_key) + 1
                         direct_prog_statuses[prog_id] = "activo"
@@ -914,11 +921,16 @@ async def check_and_close_modules():
                             }
                         ))
                         logger.info(f"Student {student_id} promoted to module {next_module} (direct pass, deferred to recovery_close for course {course['id']})")
-                        await log_audit("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close_direct_pass"})
+                        _direct_audit_log_batch.append(_make_audit_record("student_promoted", "system", "system", {"student_id": student_id, "course_id": course["id"], "next_module": next_module, "trigger": "recovery_close_direct_pass"}))
                     promoted_recovery_count += 1
 
                 if direct_user_bulk_ops:
                     await db.users.bulk_write(direct_user_bulk_ops, ordered=False)
+                if _direct_audit_log_batch:
+                    try:
+                        await db.audit_logs.insert_many(_direct_audit_log_batch, ordered=False)
+                    except Exception as _audit_exc:
+                        logger.error(f"Failed to batch write direct_pass audit logs: {_audit_exc}")
                 # Batch unenroll for direct_pass loop: one course update instead of N
                 if _direct_unenroll_ids:
                     await db.courses.update_one(
@@ -931,7 +943,7 @@ async def check_and_close_modules():
                     _still_enrolled_docs = await db.courses.find(
                         {"student_ids": {"$in": _direct_unenroll_ids}},
                         {"_id": 0, "student_ids": 1}
-                    ).to_list(None)
+                    ).to_list(1000)
                     _still_enrolled_set = set()
                     for _c in _still_enrolled_docs:
                         _still_enrolled_set.update(_c.get("student_ids") or [])
@@ -952,7 +964,7 @@ async def check_and_close_modules():
                     _fb_docs = await db.users.find(
                         {"id": {"$in": _fallback_ids}},
                         {"_id": 0, "id": 1, "program_modules": 1, "program_statuses": 1}
-                    ).to_list(None)
+                    ).to_list(5000)
                     fallback_students_map = {s["id"]: s for s in _fb_docs}
                 else:
                     fallback_students_map = {}
@@ -1068,7 +1080,7 @@ async def check_and_close_modules():
                     _still_enrolled_docs = await db.courses.find(
                         {"student_ids": {"$in": _fallback_unenroll_ids}},
                         {"_id": 0, "student_ids": 1}
-                    ).to_list(None)
+                    ).to_list(1000)
                     _still_enrolled_set = set()
                     for _c in _still_enrolled_docs:
                         _still_enrolled_set.update(_c.get("student_ids") or [])
@@ -1701,7 +1713,7 @@ async def _get_program_courses_for_student(
         courses = await db.courses.find(
             {"program_id": prog_id, "student_ids": student_id},
             {"_id": 0, "id": 1},
-        ).to_list(None)
+        ).to_list(1000)
         return courses or [{"id": fallback_course_id}]
     return [{"id": fallback_course_id}]
 
@@ -1760,7 +1772,7 @@ async def _check_and_update_recovery_completion(student_id: str, course_id: str)
             "recovery_expired": {"$ne": True},
         },
         {"_id": 0},
-    ).to_list(None)
+    ).to_list(50000)
 
     if not all_records:
         return
@@ -1850,7 +1862,7 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
             "recovery_expired": {"$ne": True},
         },
         {"_id": 0},
-    ).to_list(None)
+    ).to_list(50000)
 
     if not approved_records:
         return
@@ -1992,18 +2004,23 @@ def log_security_event(event_type: str, details: dict):
 async def log_audit(action: str, user_id: str, user_role: str, details: dict):
     """Insert an audit log record into the audit_logs collection."""
     try:
-        record = {
-            "id": str(uuid.uuid4()),
-            "action": action,
-            "user_id": user_id,
-            "user_role": user_role,
-            "details": details,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "expires_at": datetime.now(timezone.utc) + timedelta(days=90)
-        }
+        record = _make_audit_record(action, user_id, user_role, details)
         await db.audit_logs.insert_one(record)
     except Exception as exc:
         logger.error(f"Failed to write audit log (action={action}): {exc}")
+
+def _make_audit_record(action: str, user_id: str, user_role: str, details: dict) -> dict:
+    """Build an audit log record dict without inserting it (for batch inserts)."""
+    now = datetime.now(timezone.utc)
+    return {
+        "id": str(uuid.uuid4()),
+        "action": action,
+        "user_id": user_id,
+        "user_role": user_role,
+        "details": details,
+        "timestamp": now.isoformat(),
+        "expires_at": now + timedelta(days=90)
+    }
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -2541,7 +2558,7 @@ async def get_users(
         enrolled_courses = await db.courses.find(
             {"student_ids": {"$in": user_ids}},
             {"_id": 0, "id": 1, "name": 1, "student_ids": 1, "program_id": 1}
-        ).to_list(None)
+        ).to_list(1000)
         for u in users:
             u["course_ids"] = [c["id"] for c in enrolled_courses if u["id"] in (c.get("student_ids") or [])]
             u["enrolled_courses"] = [{"id": c["id"], "name": c["name"], "program_id": c.get("program_id")} for c in enrolled_courses if u["id"] in (c.get("student_ids") or [])]
@@ -3173,7 +3190,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
                 students_info = await db.users.find(
                     {"id": {"$in": student_ids_to_add}, "role": "estudiante"},
                     {"_id": 0, "id": 1, "program_statuses": 1, "program_modules": 1}
-                ).to_list(None)
+                ).to_list(5000)
                 student_map = {s["id"]: s for s in students_info}
                 for sid in student_ids_to_add:
                     s = student_map.get(sid)
@@ -3205,7 +3222,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
             students_mod_info = await db.users.find(
                 {"id": {"$in": student_ids_to_add}, "role": "estudiante"},
                 {"_id": 0, "id": 1, "program_modules": 1, "module": 1, "program_statuses": 1}
-            ).to_list(None)
+            ).to_list(5000)
             student_mod_map = {s["id"]: s for s in students_mod_info}
             for sid in student_ids_to_add:
                 s = student_mod_map.get(sid) or {}
@@ -3235,7 +3252,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
         conflicting_groups = await db.courses.find(
             {"program_id": req.program_id, "student_ids": {"$in": student_ids_to_add}},
             {"_id": 0, "name": 1, "student_ids": 1}
-        ).to_list(None)
+        ).to_list(1000)
         if conflicting_groups:
             conflict_names = [g["name"] for g in conflicting_groups]
             raise HTTPException(
@@ -3285,7 +3302,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
             # Fall back to minimum module number from subjects
             subject_docs = await db.subjects.find(
                 {"id": {"$in": course["subject_ids"]}}, {"_id": 0, "module_number": 1}
-            ).to_list(None)
+            ).to_list(500)
             valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
             if valid_modules:
                 module_number = min(valid_modules)
@@ -3313,7 +3330,7 @@ async def create_course(req: CourseCreate, user=Depends(get_current_user)):
             enrolled_docs = await db.users.find(
                 {"id": {"$in": course["student_ids"]}, "role": "estudiante"},
                 {"_id": 0, "id": 1, "program_statuses": 1}
-            ).to_list(None)
+            ).to_list(5000)
             for s in enrolled_docs:
                 ps = s.get("program_statuses") or {}
                 if ps.get(program_id) == "reprobado":
@@ -3375,7 +3392,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                     students_info = await db.users.find(
                         {"id": {"$in": newly_added_ids}, "role": "estudiante"},
                         {"_id": 0, "id": 1, "program_statuses": 1, "program_modules": 1}
-                    ).to_list(None)
+                    ).to_list(5000)
                     student_map = {s["id"]: s for s in students_info}
                     for sid in newly_added_ids:
                         s = student_map.get(sid)
@@ -3406,7 +3423,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                 conflicting_groups = await db.courses.find(
                     {"program_id": program_id, "id": {"$ne": course_id}, "student_ids": {"$in": req.student_ids}},
                     {"_id": 0, "name": 1, "student_ids": 1}
-                ).to_list(None)
+                ).to_list(1000)
                 if conflicting_groups:
                     conflict_names = [g["name"] for g in conflicting_groups]
                     raise HTTPException(
@@ -3433,7 +3450,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                 students_mod_info = await db.users.find(
                     {"id": {"$in": newly_added_ids}, "role": "estudiante"},
                     {"_id": 0, "id": 1, "program_modules": 1, "module": 1, "program_statuses": 1}
-                ).to_list(None)
+                ).to_list(5000)
                 for s in students_mod_info:
                     prog_modules = s.get("program_modules") or {}
                     student_mod = prog_modules.get(program_id)
@@ -3474,7 +3491,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
                 if subject_ids_for_module:
                     subject_docs = await db.subjects.find(
                         {"id": {"$in": subject_ids_for_module}}, {"_id": 0, "module_number": 1}
-                    ).to_list(None)
+                    ).to_list(500)
                     valid_modules = [s["module_number"] for s in subject_docs if s.get("module_number")]
                     if valid_modules:
                         module_number = min(valid_modules)
@@ -3516,7 +3533,7 @@ async def update_course(course_id: str, req: CourseUpdate, user=Depends(get_curr
             added_student_docs = await db.users.find(
                 {"id": {"$in": newly_added_ids}, "role": "estudiante"},
                 {"_id": 0, "id": 1, "program_statuses": 1}
-            ).to_list(None)
+            ).to_list(5000)
             for s in added_student_docs:
                 ps = s.get("program_statuses") or {}
                 if ps.get(program_id_for_new) == "reprobado":
@@ -3554,7 +3571,7 @@ async def delete_course(course_id: str, force: bool = False, delete_students: bo
         students = await db.users.find(
             {"id": {"$in": student_ids_in_course}, "role": "estudiante"},
             {"_id": 0, "id": 1, "program_statuses": 1, "estado": 1}
-        ).to_list(None)
+        ).to_list(5000)
         blocking_students = []
         for s in students:
             program_statuses = s.get("program_statuses") or {}
@@ -3612,12 +3629,12 @@ async def delete_course(course_id: str, force: bool = False, delete_students: bo
     # Collect file references before deleting (for disk/Cloudinary cleanup)
     activities_for_files = await db.activities.find(
         {"course_id": course_id}, {"_id": 0, "id": 1, "files": 1}
-    ).to_list(None)
+    ).to_list(10000)
     activity_ids = [a["id"] for a in activities_for_files if a.get("id")]
     if activity_ids:
         submissions_for_files = await db.submissions.find(
             {"activity_id": {"$in": activity_ids}}, {"_id": 0, "files": 1}
-        ).to_list(None)
+        ).to_list(50000)
     else:
         submissions_for_files = []
 
@@ -3716,7 +3733,7 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
             "recovery_approved": True,
             "recovery_processed": {"$ne": True},
             "recovery_rejected": {"$ne": True},
-        }, {"_id": 0, "subject_id": 1}).to_list(None)
+        }, {"_id": 0, "subject_id": 1}).to_list(50000)
         approved_subject_ids = {r.get("subject_id") for r in approved_records if r.get("subject_id")}
         has_course_level_approval = any(not r.get("subject_id") for r in approved_records)
 
@@ -4703,7 +4720,7 @@ async def promote_student(user_id: str, program_id: Optional[str] = None, user=D
     # Load max_modules per program for N-module support
     prog_docs = await db.programs.find(
         {"id": {"$in": target_programs}}, {"_id": 0, "id": 1, "modules": 1}
-    ).to_list(None)
+    ).to_list(100)
     prog_max_map = {p["id"]: max(len(p.get("modules") or []), 2) for p in prog_docs}
 
     set_fields: dict = {}
@@ -4772,7 +4789,7 @@ async def graduate_student(user_id: str, program_id: Optional[str] = None, user=
     # Load max_modules per program for dynamic last-module check (N-module support)
     prog_docs = await db.programs.find(
         {"id": {"$in": target_programs}}, {"_id": 0, "id": 1, "modules": 1}
-    ).to_list(None)
+    ).to_list(100)
     prog_max_map = {p["id"]: max(len(p.get("modules") or []), 2) for p in prog_docs}
 
     for pid in target_programs:
@@ -4841,13 +4858,17 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     else:
         query["estado"] = "activo"
     
-    students = await db.users.find(query, {"_id": 0}).to_list(5000)
+    students = await db.users.find(query, {
+        "_id": 0, "id": 1, "name": 1, "module": 1, "program_modules": 1,
+        "program_statuses": 1, "program_id": 1, "program_ids": 1, "estado": 1
+    }).to_list(5000)
     
     promoted_count = 0
     graduated_count = 0
     recovery_count = 0
     skipped_no_grades = 0
     failed_subjects_records = []
+    promotion_pending_ops: list = []
     
     # Get all courses/groups
     courses = await db.courses.find({}, {"_id": 0}).to_list(5000)
@@ -4879,7 +4900,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
             "count": {"$sum": 1}
         }}
     ]
-    aggregated_grades = await db.grades.aggregate(pipeline).to_list(None)
+    aggregated_grades = await db.grades.aggregate(pipeline).to_list(200000)
     # Build index: (student_id, course_id, subject_id) -> {"avg": float, "count": int}
     grades_avg_index = {}
     student_graded_courses = {}
@@ -5025,7 +5046,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                 # can show "Aprobado (pend. avance)" and the field is cleared at recovery_close.
                 pending_set = {f"program_promotion_pending.{p}": True for p in programs_in_module}
                 if pending_set:
-                    await db.users.update_one({"id": student_id}, {"$set": pending_set})
+                    promotion_pending_ops.append(UpdateOne({"id": student_id}, {"$set": pending_set}))
                 promoted_count += 1
             else:
                 # No recovery period configured: promote immediately (backward compatibility).
@@ -5055,6 +5076,10 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                     }}
                 )
     
+    # Bulk write deferred program_promotion_pending updates
+    if promotion_pending_ops:
+        await db.users.bulk_write(promotion_pending_ops, ordered=False)
+
     # Bulk insert failed subjects records
     if failed_subjects_records:
         await db.failed_subjects.insert_many(failed_subjects_records)
@@ -5210,7 +5235,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         student_docs = await db.users.find(
             {"id": {"$in": student_ids_in_records}},
             {"_id": 0, "id": 1, "cedula": 1, "name": 1}
-        ).to_list(None)
+        ).to_list(5000)
         students_lookup = {s["id"]: s for s in student_docs}
     
     # Pre-load grades for all relevant student/course pairs to compute per-subject averages
@@ -5220,7 +5245,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         grades_for_records = await db.grades.find(
             {"student_id": {"$in": student_ids_in_records}, "course_id": {"$in": course_ids_in_records}},
             {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1, "value": 1, "recovery_status": 1}
-        ).to_list(None)
+        ).to_list(200000)
     # Index: (student_id, course_id, subject_id) -> [grade values]
     grades_index = {}
     # Index: (student_id, course_id, subject_id) -> recovery_status (teacher's grading result)
@@ -5812,7 +5837,7 @@ async def get_student_recoveries(user=Depends(get_current_user)):
     missing_subject_ids = [s["subject_id"] for s in failed_subjects if s.get("subject_id") and not s.get("subject_name")]
     subject_name_lookup = {}
     if missing_subject_ids:
-        subj_docs = await db.subjects.find({"id": {"$in": missing_subject_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(None)
+        subj_docs = await db.subjects.find({"id": {"$in": missing_subject_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
         subject_name_lookup = {s["id"]: s["name"] for s in subj_docs}
     
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -5871,7 +5896,7 @@ async def get_course_results_report(course_id: str, subject_id: Optional[str] = 
         all_subject_ids = [course["subject_id"]]
     # When subject_id filter is provided, restrict to that single subject
     subject_ids = [subject_id] if subject_id and subject_id in all_subject_ids else all_subject_ids
-    all_subjects = await db.subjects.find({"id": {"$in": subject_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(None) if subject_ids else []
+    all_subjects = await db.subjects.find({"id": {"$in": subject_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(500) if subject_ids else []
     subject_map = {s["id"]: s["name"] for s in all_subjects}
     
     # Load enrolled students
@@ -5879,10 +5904,10 @@ async def get_course_results_report(course_id: str, subject_id: Optional[str] = 
     students = await db.users.find(
         {"id": {"$in": student_ids}, "role": "estudiante"},
         {"_id": 0, "id": 1, "name": 1, "cedula": 1}
-    ).to_list(None) if student_ids else []
+    ).to_list(5000) if student_ids else []
     
     # Load grades for this course and build an index: (student_id, subject_id) -> [values]
-    grades = await db.grades.find({"course_id": course_id}, {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}).to_list(None)
+    grades = await db.grades.find({"course_id": course_id}, {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}).to_list(200000)
     grades_index = {}
     for g in grades:
         if g.get("value") is not None:
@@ -6063,7 +6088,7 @@ async def get_recovery_results_report(format: Optional[str] = None, user=Depends
     all_failed = await db.failed_subjects.find(
         {"recovery_processed": {"$ne": True}},
         {"_id": 0}
-    ).to_list(None)
+    ).to_list(50000)
 
     if not all_failed:
         all_failed = []
@@ -6074,10 +6099,10 @@ async def get_recovery_results_report(format: Optional[str] = None, user=Depends
     program_ids_set = list({r.get("program_id") for r in all_failed if r.get("program_id")})
     subject_ids_set = list({r.get("subject_id") for r in all_failed if r.get("subject_id")})
 
-    students_list = await db.users.find({"id": {"$in": student_ids_set}}, {"_id": 0, "id": 1, "name": 1, "cedula": 1}).to_list(None) if student_ids_set else []
-    courses_list = await db.courses.find({"id": {"$in": course_ids_set}}, {"_id": 0, "id": 1, "name": 1, "module_dates": 1}).to_list(None) if course_ids_set else []
-    programs_list = await db.programs.find({"id": {"$in": program_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(None) if program_ids_set else []
-    subjects_list = await db.subjects.find({"id": {"$in": subject_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(None) if subject_ids_set else []
+    students_list = await db.users.find({"id": {"$in": student_ids_set}}, {"_id": 0, "id": 1, "name": 1, "cedula": 1}).to_list(5000) if student_ids_set else []
+    courses_list = await db.courses.find({"id": {"$in": course_ids_set}}, {"_id": 0, "id": 1, "name": 1, "module_dates": 1}).to_list(1000) if course_ids_set else []
+    programs_list = await db.programs.find({"id": {"$in": program_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(100) if program_ids_set else []
+    subjects_list = await db.subjects.find({"id": {"$in": subject_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(500) if subject_ids_set else []
 
     student_map = {s["id"]: s for s in students_list}
     course_map = {c["id"]: c for c in courses_list}
@@ -6200,7 +6225,7 @@ async def delete_graduated_students(user=Depends(get_current_user)):
     graduated_students = await db.users.find(
         {"role": "estudiante", "estado": "egresado"},
         {"_id": 0, "id": 1}
-    ).to_list(None)  # None means no limit
+    ).to_list(5000)  # None means no limit
     
     if not graduated_students:
         return {
@@ -6778,7 +6803,7 @@ async def get_audit_logs(
     actor_ids = list({log["user_id"] for log in logs if log.get("user_id") and log["user_id"] != "system"})
     actor_map: dict = {}
     if actor_ids:
-        actors = await db.users.find({"id": {"$in": actor_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(None)
+        actors = await db.users.find({"id": {"$in": actor_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(5000)
         actor_map = {a["id"]: a["name"] for a in actors}
 
     for log in logs:
