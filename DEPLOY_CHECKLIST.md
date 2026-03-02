@@ -72,7 +72,6 @@ En **Render Dashboard** → selecciona el servicio `educando-backend` → **Envi
 | `AWS_S3_REGION` | Región del bucket (p.ej. `us-east-1`) |
 | `CREATE_SEED_USERS` | `true` solo en el primer deploy; cambiar a `false` después (ver paso 5) |
 | `DB_NAME` | `WebApp` |
-| `PASSWORD_STORAGE_MODE` | `bcrypt` |
 
 ### Frontend (`educando-frontend`)
 

@@ -15,7 +15,13 @@ export function AuthProvider({ children }) {
   const inactivityTimer = useRef(null);
   const warningTimer = useRef(null);
 
-  const logout = useCallback((reason) => {
+  const logout = useCallback(async (reason) => {
+    try {
+      const refreshToken = localStorage.getItem('educando_refresh_token');
+      if (refreshToken) {
+        await api.post('/auth/logout', { refresh_token: refreshToken }).catch(() => {});
+      }
+    } catch {}
     localStorage.removeItem('educando_token');
     localStorage.removeItem('educando_refresh_token');
     localStorage.removeItem('educando_user');

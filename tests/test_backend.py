@@ -1004,7 +1004,6 @@ def test_app():
     os.environ.setdefault('MONGO_URL', 'mongodb://localhost:27017')
     os.environ.setdefault('JWT_SECRET', 'test_secret_key_for_testing')
     os.environ.setdefault('DB_NAME', 'WebAppTest')
-    os.environ.setdefault('PASSWORD_STORAGE_MODE', 'bcrypt')
 
     try:
         from server import app

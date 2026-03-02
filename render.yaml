@@ -18,8 +18,6 @@ services:
         # Ejemplo: mongodb+srv://usuario:password@cluster.mongodb.net/WebApp?retryWrites=true&w=majority
       - key: DB_NAME
         value: WebApp
-      - key: PASSWORD_STORAGE_MODE
-        value: bcrypt
       - key: CORS_ORIGINS
         value: "https://corporacioneducando.com,https://www.corporacioneducando.com"
         # ⚠️ PRODUCCIÓN: Agrega también la URL pública del frontend en Render, p.ej.:

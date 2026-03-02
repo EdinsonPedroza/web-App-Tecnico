@@ -95,10 +95,6 @@ JWT_ALGORITHM = "HS256"
 
 # Password hashing with bcrypt (using bcrypt directly to avoid passlib compatibility issues)
 
-# Password storage mode: 'plain' for plain text, 'bcrypt' for hashed (default: 'bcrypt' for security)
-# For backwards compatibility with existing plain text passwords, set PASSWORD_STORAGE_MODE='plain'
-PASSWORD_STORAGE_MODE = os.environ.get('PASSWORD_STORAGE_MODE', 'bcrypt').lower()
-
 # Rate limiting constants
 MAX_LOGIN_ATTEMPTS_PER_IP = 50        # límite alto para WiFi compartido
 MAX_LOGIN_ATTEMPTS_PER_USER = 5       # límite estricto por usuario individual
@@ -128,14 +124,6 @@ async def lifespan(app):
     # === STARTUP ===
     try:
         logger.info("Starting application initialization...")
-
-        # Log production warnings
-        if PASSWORD_STORAGE_MODE == 'plain':
-            logger.warning(
-                "⚠️  SECURITY WARNING: Password storage mode is set to 'plain'. "
-                "Passwords are stored in plain text, which is INSECURE. "
-                "Set PASSWORD_STORAGE_MODE='bcrypt' in your environment variables for production."
-            )
 
         # Test MongoDB connection
         await db.command('ping')
@@ -1368,14 +1356,10 @@ async def create_initial_data():
         # Insertar usuarios semilla solo si no existen (setOnInsert)
         # Esto preserva los cambios hechos desde el admin panel
         created_count = 0
-        for u in seed_users:
-            result = await db.users.update_one(
-                {"id": u["id"]},
-                {"$setOnInsert": u},
-                upsert=True
-            )
-            if result.upserted_id:
-                created_count += 1
+        if seed_users:
+            ops = [UpdateOne({"id": u["id"]}, {"$setOnInsert": u}, upsert=True) for u in seed_users]
+            result = await db.users.bulk_write(ops, ordered=False)
+            created_count = result.upserted_count
         
         if created_count > 0:
             logger.info(f"Creados {created_count} usuarios semilla nuevos")
@@ -1495,7 +1479,6 @@ async def create_initial_data():
 
     logger.info("Datos iniciales verificados/creados exitosamente")
     logger.info("5 usuarios semilla disponibles (ver USUARIOS_Y_CONTRASEÑAS.txt)")
-    logger.info(f"Modo de almacenamiento de contraseñas: {PASSWORD_STORAGE_MODE}")
 
 # --- Utility Functions ---
 def get_current_module_from_dates(module_dates: dict) -> Optional[int]:
@@ -1881,51 +1864,48 @@ def sanitize_string(input_str: str, max_length: int = 500) -> str:
     return sanitized[:max_length]
 
 def hash_password(password: str) -> str:
-    """Store password based on PASSWORD_STORAGE_MODE (plain or bcrypt)
-    
-    WARNING: Plain text storage is insecure and should only be used for
-    backwards compatibility with existing data. Set PASSWORD_STORAGE_MODE='bcrypt'
-    for production systems.
-    """
-    if PASSWORD_STORAGE_MODE == 'plain':
-        # Store password as plain text (for backwards compatibility with existing data)
-        # WARNING: This is insecure! Only use for compatibility with existing data.
-        logger.warning("Storing password as plain text (PASSWORD_STORAGE_MODE='plain'). "
-                      "This is insecure. Consider using PASSWORD_STORAGE_MODE='bcrypt' for production.")
-        return password
-    else:
-        # Hash password using bcrypt directly (avoids passlib compatibility issues)
-        return _bcrypt.hashpw(password.encode('utf-8'), _bcrypt.gensalt()).decode('utf-8')
+    """Hash password using bcrypt."""
+    return _bcrypt.hashpw(password.encode('utf-8'), _bcrypt.gensalt()).decode('utf-8')
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against bcrypt hash, SHA256, or plain text"""
+def verify_password(plain_password: str, hashed_password: str) -> tuple:
+    """Verify password against bcrypt hash, SHA256, or plain text.
+    
+    Returns a tuple (is_valid: bool, needs_rehash: bool).
+    is_valid is True when the password matches the stored hash.
+    needs_rehash is True when the stored password is not a bcrypt hash and should
+    be migrated to bcrypt on the next successful login.
+    """
     # Check format first to avoid timing attacks
     # bcrypt hashes start with $2a$, $2b$, or $2y$
     if hashed_password.startswith(('$2a$', '$2b$', '$2y$')):
         # Stored as bcrypt hash - use bcrypt directly (avoids passlib compatibility issues)
         # bcrypt requires bytes input, so we encode strings to UTF-8
         try:
-            return _bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+            return (_bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8')), False)
         except Exception as e:
             logger.error(f"Bcrypt verification error: {type(e).__name__}")
-            return False
+            return (False, False)
     
     # Check if it's a SHA256 hash (64 hex characters)
     elif len(hashed_password) == 64 and all(c in '0123456789abcdef' for c in hashed_password.lower()):
         # Stored as SHA256 hash
         try:
-            return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+            is_valid = hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+            return (is_valid, is_valid)  # needs_rehash if valid
         except Exception:
-            return False
+            return (False, False)
     
-    # Otherwise, try plain text comparison (for backwards compatibility)
+    # Otherwise, try plain text comparison (for backwards compatibility / migration)
     else:
-        # Log warning for security audit
-        if PASSWORD_STORAGE_MODE == 'plain':
-            logger.debug("Plain text password comparison used (PASSWORD_STORAGE_MODE='plain')")
-        else:
-            logger.warning(f"Plain text password detected in database for backwards compatibility")
-        return plain_password == hashed_password
+        logger.warning("Plain text password detected in database — will be re-hashed on successful login")
+        is_valid = plain_password == hashed_password
+        return (is_valid, is_valid)  # needs_rehash if valid
+
+def safe_object_id(value: str, field_name: str = "id") -> str:
+    """Validate that a string parameter is safe for MongoDB queries (no operator injection)."""
+    if not isinstance(value, str) or not value or value.startswith('$') or '{' in value or len(value) > 200:
+        raise HTTPException(status_code=400, detail=f"{field_name} inválido")
+    return value
 
 def create_token(user_id: str, role: str) -> str:
     payload = {
@@ -2310,7 +2290,8 @@ async def login(req: LoginRequest, request: Request):
         })
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     
-    if not verify_password(req.password, user["password_hash"]):
+    is_valid, needs_rehash = verify_password(req.password, user["password_hash"])
+    if not is_valid:
         log_security_event("LOGIN_FAILED_WRONG_PASSWORD", {
             "ip": client_ip,
             "role": req.role,
@@ -2327,6 +2308,17 @@ async def login(req: LoginRequest, request: Request):
         })
         raise HTTPException(status_code=403, detail="Cuenta desactivada")
     
+    # Migrate password to bcrypt if it was stored as plain text or SHA256
+    if needs_rehash:
+        try:
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {"password_hash": hash_password(req.password)}}
+            )
+            logger.info(f"Password re-hashed to bcrypt for user_id={user['id']}")
+        except Exception as rehash_err:
+            logger.error(f"Failed to re-hash password for user_id={user['id']}: {rehash_err}")
+
     # Successful login - clear rate limit attempts for this identifier only
     # Security: Do NOT clear IP-based attempts on success to prevent bypass attacks
     # where an attacker uses a known-valid account to reset the IP counter
@@ -2387,6 +2379,20 @@ async def refresh_token(request: Request):
         "token": new_access_token,
         "refresh_token": new_refresh_token
     }
+
+@api_router.post("/auth/logout")
+async def logout(request: Request, user=Depends(get_current_user)):
+    body = {}
+    try:
+        body = await request.json()
+    except (ValueError, Exception) as e:
+        logger.debug(f"Logout: could not parse request body: {type(e).__name__}")
+    refresh_token_value = body.get("refresh_token") if body else None
+    if refresh_token_value:
+        await db.refresh_tokens.delete_one({"token": refresh_token_value, "user_id": user["id"]})
+    else:
+        await db.refresh_tokens.delete_many({"user_id": user["id"]})
+    return {"message": "Sesión cerrada exitosamente"}
 
 @api_router.get("/auth/me")
 async def get_me(user=Depends(get_current_user)):
@@ -2836,7 +2842,7 @@ async def editor_delete_admin(admin_id: str, user=Depends(get_current_user)):
 
 # --- Programs Routes ---
 @api_router.get("/programs")
-async def get_programs():
+async def get_programs(user=Depends(get_current_user)):
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
     return programs
 
@@ -2896,7 +2902,7 @@ async def get_student_programs(user=Depends(get_current_user)):
 
 # --- Subjects Routes ---
 @api_router.get("/subjects")
-async def get_subjects(program_id: Optional[str] = None, teacher_id: Optional[str] = None):
+async def get_subjects(program_id: Optional[str] = None, teacher_id: Optional[str] = None, user=Depends(get_current_user)):
     query = {}
     if program_id:
         query["program_id"] = program_id
@@ -2944,7 +2950,7 @@ async def create_subject(req: SubjectCreate, user=Depends(get_current_user)):
     return subject
 
 @api_router.get("/subjects/{subject_id}")
-async def get_subject(subject_id: str):
+async def get_subject(subject_id: str, user=Depends(get_current_user)):
     subject = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
     if not subject:
         raise HTTPException(status_code=404, detail="Materia no encontrada")
@@ -2974,24 +2980,25 @@ async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str
     conditions = []
     
     if teacher_id:
+        safe_teacher_id = safe_object_id(teacher_id, "teacher_id")
         # Get teacher's assigned subjects
-        teacher = await db.users.find_one({"id": teacher_id}, {"_id": 0})
+        teacher = await db.users.find_one({"id": safe_teacher_id}, {"_id": 0})
         if teacher and teacher.get("subject_ids"):
             # Match courses that have any subject in common with teacher's subjects
             # Also include courses explicitly assigned to this teacher (backward compatibility)
             conditions.append({
                 "$or": [
-                    {"teacher_id": teacher_id},
+                    {"teacher_id": safe_teacher_id},
                     {"subject_ids": {"$in": teacher["subject_ids"]}},
                     {"subject_id": {"$in": teacher["subject_ids"]}}  # Backward compatibility
                 ]
             })
         else:
             # Fallback to old behavior if teacher has no subjects assigned
-            conditions.append({"teacher_id": teacher_id})
+            conditions.append({"teacher_id": safe_teacher_id})
     
     if student_id:
-        conditions.append({"student_ids": student_id})
+        conditions.append({"student_ids": safe_object_id(student_id, "student_id")})
     
     # Build final query
     if len(conditions) == 0:
@@ -3602,9 +3609,9 @@ async def delete_course(course_id: str, force: bool = False, delete_students: bo
 async def get_activities(course_id: Optional[str] = None, subject_id: Optional[str] = None, skip: int = 0, limit: int = 500, user=Depends(get_current_user)):
     query = {}
     if course_id:
-        query["course_id"] = course_id
+        query["course_id"] = safe_object_id(course_id, "course_id")
     if subject_id:
-        query["subject_id"] = subject_id
+        query["subject_id"] = safe_object_id(subject_id, "subject_id")
     limit = max(1, min(limit, MAX_LIMIT))
     skip = max(0, skip)
     activities = await db.activities.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
@@ -3737,13 +3744,13 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
         student_id = user["id"]
     query = {}
     if course_id:
-        query["course_id"] = course_id
+        query["course_id"] = safe_object_id(course_id, "course_id")
     if student_id:
-        query["student_id"] = student_id
+        query["student_id"] = safe_object_id(student_id, "student_id")
     if subject_id:
-        query["subject_id"] = subject_id
+        query["subject_id"] = safe_object_id(subject_id, "subject_id")
     if activity_id:
-        query["activity_id"] = activity_id
+        query["activity_id"] = safe_object_id(activity_id, "activity_id")
     effective_max = MAX_LIMIT_GRADES if course_id else MAX_LIMIT
     limit = max(1, min(limit, effective_max))
     skip = max(0, skip)
@@ -3963,9 +3970,9 @@ async def update_grade(grade_id: str, req: GradeUpdate, user=Depends(get_current
 async def get_class_videos(course_id: Optional[str] = None, subject_id: Optional[str] = None, user=Depends(get_current_user)):
     query = {}
     if course_id:
-        query["course_id"] = course_id
+        query["course_id"] = safe_object_id(course_id, "course_id")
     if subject_id:
-        query["subject_id"] = subject_id
+        query["subject_id"] = safe_object_id(subject_id, "subject_id")
     # Students only see videos whose available_from has already passed (or is not set)
     if user["role"] == "estudiante":
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -4078,17 +4085,35 @@ def _validate_file_content(file_content: bytes, declared_ext: str) -> bool:
     return True
 
 @api_router.post("/upload")
-async def upload_file(file: UploadFile = File(...), user=Depends(get_current_user)):
+async def upload_file(request: Request, file: UploadFile = File(...), user=Depends(get_current_user)):
     if user["role"] not in ["profesor", "admin", "estudiante"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     
     original_name = file.filename
-    file_content = await file.read()
-    file_size = len(file_content)
-
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-    if file_size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="El archivo excede el tamaño máximo permitido (10MB)")
+
+    # Pre-check using Content-Length header if available
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_FILE_SIZE + 1024:  # small buffer for multipart overhead
+                raise HTTPException(status_code=413, detail="El archivo excede el tamaño máximo permitido (10MB)")
+        except ValueError:
+            pass  # Invalid Content-Length header — let chunked read enforce the size limit
+
+    # Read file in chunks to avoid loading large files entirely into memory at once
+    chunks = []
+    total_size = 0
+    while True:
+        chunk = await file.read(64 * 1024)  # 64KB chunks
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="El archivo excede el tamaño máximo permitido (10MB)")
+        chunks.append(chunk)
+    file_content = b"".join(chunks)
+    file_size = total_size
 
     _ext = Path(original_name).suffix.lower().lstrip(".")
 
@@ -4221,8 +4246,17 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
 
 @api_router.get("/files/{filename}")
 async def get_file(filename: str, user=Depends(get_current_user)):
+    # Reject filenames with path traversal or dangerous characters
+    if any(c in filename for c in ('..', '/', '\\', '\x00')):
+        raise HTTPException(status_code=400, detail="Nombre de archivo inválido")
     safe_filename = Path(filename).name
     file_path = UPLOAD_DIR / safe_filename
+    # Verify the resolved path stays within UPLOAD_DIR
+    try:
+        if not file_path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+            raise HTTPException(status_code=400, detail="Nombre de archivo inválido")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Nombre de archivo inválido")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     ext = safe_filename.rsplit('.', 1)[-1].lower() if '.' in safe_filename else ''
@@ -4258,9 +4292,9 @@ async def get_submissions(activity_id: Optional[str] = None, student_id: Optiona
         student_id = user["id"]
     query = {}
     if activity_id:
-        query["activity_id"] = activity_id
+        query["activity_id"] = safe_object_id(activity_id, "activity_id")
     if student_id:
-        query["student_id"] = student_id
+        query["student_id"] = safe_object_id(student_id, "student_id")
     limit = max(1, min(limit, 1000))
     skip = max(0, skip)
     submissions = await db.submissions.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
