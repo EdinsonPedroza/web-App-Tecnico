@@ -120,7 +120,7 @@ def validate_module_number(module_num, field_name="module"):
 
 # Pagination limits for list endpoints
 MAX_LIMIT = 500          # hard cap for most list endpoints
-MAX_LIMIT_GRADES = 5000  # higher cap for grades when filtered by course_id
+MAX_LIMIT_GRADES = 1000  # hard cap for grades when filtered by course_id (reduced from 5000 to prevent DoS)
 
 
 @asynccontextmanager
@@ -1333,17 +1333,37 @@ async def create_initial_data():
     if not create_seed_users:
         logger.info("CREATE_SEED_USERS=false: Omitiendo creación de usuarios semilla (modo producción)")
     else:
+        # Determine if running in development mode for seed password fallbacks
+        _is_dev = os.environ.get("ENVIRONMENT", "development").lower() in ("development", "dev", "local")
+
+        # Read seed passwords from env vars; fall back to defaults only in dev mode
+        editor_password = os.environ.get("SEED_EDITOR_PASSWORD", "Editor2024!" if _is_dev else None)
+        prof1_password = os.environ.get("SEED_PROF1_PASSWORD", "Profesor1!" if _is_dev else None)
+        prof2_password = os.environ.get("SEED_PROF2_PASSWORD", "Profesor2!" if _is_dev else None)
+
+        if not editor_password:
+            logger.warning("SEED_EDITOR_PASSWORD not set. Skipping editor seed user.")
+        if not prof1_password:
+            logger.warning("SEED_PROF1_PASSWORD not set. Skipping seed user prof-1.")
+        if not prof2_password:
+            logger.warning("SEED_PROF2_PASSWORD not set. Skipping seed user prof-2.")
+
         # Definir usuarios semilla (seed users) - solo se crean si no existen
         # Note: Email domains vary by role (@tecnico.com, @estudiante.com, @profesor.com) 
         # as specified in the requirements to clearly distinguish user types
-        seed_users = [
-            # 1 Editor
-            {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-editor-1")), "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password("Editor2024!"), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
-            
-            # 2 Profesores
-            {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-prof-1")), "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor1!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
-            {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-prof-2")), "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password("Profesor2!"), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"},
-        ]
+        seed_users = []
+        if editor_password:
+            seed_users.append(
+                {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-editor-1")), "name": "Editor Principal", "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password(editor_password), "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"}
+            )
+        if prof1_password:
+            seed_users.append(
+                {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-prof-1")), "name": "Ana Martínez", "email": "ana.martinez@profesor.com", "cedula": None, "password_hash": hash_password(prof1_password), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"}
+            )
+        if prof2_password:
+            seed_users.append(
+                {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-prof-2")), "name": "Juan Rodríguez", "email": "juan.rodriguez@profesor.com", "cedula": None, "password_hash": hash_password(prof2_password), "role": "profesor", "program_id": None, "program_ids": [], "subject_ids": [], "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"}
+            )
         
         # Insertar usuarios semilla solo si no existen (setOnInsert)
         # Esto preserva los cambios hechos desde el admin panel
@@ -1911,7 +1931,8 @@ def create_token(user_id: str, role: str) -> str:
     payload = {
         "user_id": user_id,
         "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(days=2)
+        # Short-lived access token (30 min); refresh token handles silent renewal
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=30)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -2316,8 +2337,16 @@ async def login(req: LoginRequest, request: Request):
     await log_audit("login_success", user["id"], user["role"], {"ip": client_ip})
     
     token = create_token(user["id"], user["role"])
+    # Create refresh token for silent session renewal (expires in 7 days)
+    refresh_token_str = str(uuid.uuid4())
+    await db.refresh_tokens.insert_one({
+        "token": refresh_token_str,
+        "user_id": user["id"],
+        "created_at": datetime.now(timezone.utc),
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=7)
+    })
     user_data = {k: v for k, v in user.items() if k != "password_hash"}
-    return {"token": token, "user": user_data}
+    return {"token": token, "refresh_token": refresh_token_str, "user": user_data}
 
 @api_router.post("/auth/refresh")
 async def refresh_token(request: Request):
