@@ -42,8 +42,11 @@ loglevel = "info"
 preload_app = True
 
 # Reiniciar workers periódicamente para evitar memory leaks
-max_requests = 1000
-max_requests_jitter = 50
+max_requests = 2000
+max_requests_jitter = 100
 
 # Worker connections para el worker único (asyncio maneja miles de conexiones concurrentes)
-worker_connections = 1000
+worker_connections = 2000
+
+# Usar memoria compartida para heartbeat en contenedores (evita I/O en disco)
+worker_tmp_dir = "/dev/shm"

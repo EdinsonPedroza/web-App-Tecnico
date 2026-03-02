@@ -28,9 +28,9 @@ services:
       - key: PORT
         value: 10000
       - key: WORKERS
-        value: "2"
-        # Render Starter tiene 512MB RAM. 2 workers es el máximo recomendado.
-        # Aumentar a 4 si se actualiza a plan con 1GB RAM.
+        value: "4"
+        # Para 1,500+ estudiantes se recomienda plan Standard (1GB RAM) con 4 workers.
+        # Si usas Starter (512MB) reduce a 2 workers.
       - key: DEBUG
         value: false
       - key: ALLOW_USER_RESET

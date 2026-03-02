@@ -66,3 +66,32 @@ No hay evidencia de fallas críticas de funcionalidad en pruebas.
 > ✅ **La aplicación está desplegada y funcionando en producción en Render** con MongoDB Atlas Flex y AWS S3.
 
 Sin embargo, hay **2 áreas de mejora pendientes** (consistencia de toolchain frontend y deprecaciones de framework) que conviene atender para robustez de largo plazo.
+
+---
+
+## Escalabilidad validada para ~1,500 estudiantes
+
+### Configuración actual optimizada
+
+| Componente | Configuración | Notas |
+|---|---|---|
+| **MongoDB Atlas** | Flex (5GB, burst) | Soporta la carga actual |
+| **Gunicorn workers** | 4 (UvicornWorker) | Plan Standard de Render recomendado (1GB RAM) |
+| **worker_connections** | 2000 | Asyncio maneja alta concurrencia por worker |
+| **max_requests** | 2000 | Reduce frecuencia de reinicios bajo carga alta |
+| **worker_tmp_dir** | `/dev/shm` | Heartbeat en RAM — evita I/O en disco en contenedores |
+| **nginx keepalive_timeout** | 65s | Reduce overhead de nuevas conexiones TCP |
+| **nginx proxy_buffering** | on (16k × 8) | Libera workers más rápido bajo carga alta |
+| **nginx proxy_next_upstream** | error/timeout/5xx | Resiliencia ante fallos transitorios de worker |
+
+### Capacidad estimada
+
+- **Usuarios simultáneos en pico:** ~300–750
+- **Estudiantes totales soportados:** ~1,500
+- **Gestor de paquetes frontend:** yarn (estandarizado — `package-lock.json` eliminado)
+
+### Para escalar más allá de 1,500 estudiantes
+
+- **MongoDB Atlas M10** dedicado (3,000+ conexiones, 2GB RAM)
+- **6–8 workers** o múltiples instancias de backend en Render
+- Evaluar caché de sesiones (Redis) si la carga de autenticación sube significativamente

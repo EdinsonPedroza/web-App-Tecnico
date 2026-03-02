@@ -79,12 +79,16 @@ Las credenciales se configuran al hacer el primer deploy con `CREATE_SEED_USERS=
 
 > ⚠️ Cambia `CREATE_SEED_USERS` a `false` después del primer deploy.
 
-### Producción para 3000 usuarios
+### Escalabilidad
 
-La configuración actual en Render Starter soporta ~200-500 usuarios simultáneos. Para escalar a 3000 usuarios simultáneos se recomienda:
+#### Configuración actual (hasta ~1,500 estudiantes)
+- **MongoDB Atlas Flex** — 5GB storage, burst capacity, backups básicos
+- **Backend:** 4 workers con Gunicorn + Uvicorn (plan Standard de Render recomendado, 1GB RAM)
+- **Usuarios simultáneos estimados:** ~300-750 en pico
 
-- **MongoDB Atlas:** Upgrade a M10 (3000+ conexiones)
-- **Backend:** Múltiples instancias con más workers (actualizar plan de Render)
+#### Para escalar a 3,000+ usuarios
+- **MongoDB Atlas:** Upgrade a M10 dedicado (3,000+ conexiones, 2GB RAM)
+- **Backend:** 6-8 workers o múltiples instancias
 - **Dominio custom:** Configurar registros CNAME en `corporacioneducando.com`
 
 ---
