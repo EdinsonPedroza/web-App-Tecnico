@@ -25,7 +25,6 @@ import json
 import shutil
 import re
 import bcrypt as _bcrypt
-from collections import defaultdict
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -99,18 +98,12 @@ JWT_ALGORITHM = "HS256"
 # For backwards compatibility with existing plain text passwords, set PASSWORD_STORAGE_MODE='plain'
 PASSWORD_STORAGE_MODE = os.environ.get('PASSWORD_STORAGE_MODE', 'bcrypt').lower()
 
-# Rate limiting: track login attempts per IP
-# WARNING: This is in-memory storage and will be reset on server restart.
-# For production with multiple instances or persistence across restarts,
-# consider using Redis or another distributed cache for rate limiting.
-login_attempts = defaultdict(list)
-login_attempts_by_identifier = defaultdict(list)
+# Rate limiting constants
 MAX_LOGIN_ATTEMPTS_PER_IP = 50        # límite alto para WiFi compartido
 MAX_LOGIN_ATTEMPTS_PER_USER = 5       # límite estricto por usuario individual
 LOGIN_ATTEMPT_WINDOW = 300  # 5 minutes in seconds
 
 # Rate limiting for file uploads: track per user
-upload_attempts = defaultdict(list)
 MAX_UPLOADS_PER_MINUTE = 20
 UPLOAD_WINDOW = 60  # 1 minute in seconds
 
@@ -1060,13 +1053,6 @@ async def startup_event():
                 "Set PASSWORD_STORAGE_MODE='bcrypt' in your environment variables for production."
             )
         
-        # Warn about in-memory rate limiting
-        if os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DYNO'):
-            logger.warning(
-                "⚠️  PRODUCTION NOTICE: Rate limiting is in-memory and will reset on server restart. "
-                "For distributed deployments, consider using Redis for persistent rate limiting."
-            )
-        
         # Test MongoDB connection
         await db.command('ping')
         logger.info("MongoDB connection successful")
@@ -1077,6 +1063,17 @@ async def startup_event():
             logger.info("Índices MongoDB verificados/creados exitosamente")
         except Exception as e:
             logger.warning(f"No se pudieron crear índices automáticamente: {e}")
+        # TTL + compound index for rate_limits collection (shared across all Gunicorn workers)
+        try:
+            await db.rate_limits.create_index("expires_at", expireAfterSeconds=0, name="rate_limits_ttl")
+        except Exception as idx_err:
+            logger.warning(f"rate_limits_ttl index could not be created: {idx_err}")
+        try:
+            await db.rate_limits.create_index(
+                [("key", 1), ("timestamp", 1)], name="rate_limits_key_timestamp"
+            )
+        except Exception as idx_err:
+            logger.warning(f"rate_limits_key_timestamp index could not be created: {idx_err}")
         # TTL and unique indexes for distributed scheduler locks
         try:
             await db.scheduler_locks.create_index("expires_at", expireAfterSeconds=0, name="scheduler_locks_ttl")
@@ -1883,32 +1880,31 @@ def create_token(user_id: str, role: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-# Lock for thread-safe access to login_attempts
-login_attempts_lock = asyncio.Lock()
-
 async def check_rate_limit(ip_address: str, identifier: str = None) -> bool:
     """Verifica límite por IP (50) y por identificador de usuario (5).
     En redes educativas con WiFi compartido, el límite por IP es alto
-    para no bloquear a todos por los errores de uno."""
-    async with login_attempts_lock:
-        current_time = datetime.now().timestamp()
-        # Limpiar intentos viejos por IP
-        login_attempts[ip_address] = [
-            t for t in login_attempts[ip_address]
-            if current_time - t < LOGIN_ATTEMPT_WINDOW
-        ]
-        # Verificar límite por IP (protección anti-bots)
-        if len(login_attempts[ip_address]) >= MAX_LOGIN_ATTEMPTS_PER_IP:
+    para no bloquear a todos por los errores de uno.
+    Uses MongoDB for shared state across all Gunicorn workers."""
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(seconds=LOGIN_ATTEMPT_WINDOW)
+    # Check IP limit
+    ip_key = f"login_ip:{ip_address}"
+    ip_count = await db.rate_limits.count_documents({
+        "key": ip_key,
+        "timestamp": {"$gte": window_start}
+    })
+    if ip_count >= MAX_LOGIN_ATTEMPTS_PER_IP:
+        return False
+    # Check per-identifier limit
+    if identifier:
+        id_key = f"login_id:{identifier}"
+        id_count = await db.rate_limits.count_documents({
+            "key": id_key,
+            "timestamp": {"$gte": window_start}
+        })
+        if id_count >= MAX_LOGIN_ATTEMPTS_PER_USER:
             return False
-        # Verificar límite por identificador individual (cédula o email)
-        if identifier:
-            login_attempts_by_identifier[identifier] = [
-                t for t in login_attempts_by_identifier[identifier]
-                if current_time - t < LOGIN_ATTEMPT_WINDOW
-            ]
-            if len(login_attempts_by_identifier[identifier]) >= MAX_LOGIN_ATTEMPTS_PER_USER:
-                return False
-        return True
+    return True
 
 def log_security_event(event_type: str, details: dict):
     """Log security-related events with sanitized details"""
@@ -2221,11 +2217,13 @@ async def login(req: LoginRequest, request: Request):
             detail="Demasiados intentos de inicio de sesión. Por favor, intente más tarde."
         )
     
-    # Record login attempt (with lock)
-    async with login_attempts_lock:
-        login_attempts[client_ip].append(datetime.now().timestamp())
-        if identifier:
-            login_attempts_by_identifier[identifier].append(datetime.now().timestamp())
+    # Record login attempt in MongoDB
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=LOGIN_ATTEMPT_WINDOW)
+    docs = [{"key": f"login_ip:{client_ip}", "timestamp": now, "expires_at": expires_at}]
+    if identifier:
+        docs.append({"key": f"login_id:{identifier}", "timestamp": now, "expires_at": expires_at})
+    await db.rate_limits.insert_many(docs)
     
     # Validate input and find user
     if req.role == "estudiante":
@@ -2273,11 +2271,11 @@ async def login(req: LoginRequest, request: Request):
         })
         raise HTTPException(status_code=403, detail="Cuenta desactivada")
     
-    # Successful login - clear attempts for this IP (with lock)
-    async with login_attempts_lock:
-        login_attempts[client_ip] = []
-        if identifier:
-            login_attempts_by_identifier[identifier] = []
+    # Successful login - clear rate limit attempts for this IP and identifier
+    keys_to_clear = [f"login_ip:{client_ip}"]
+    if identifier:
+        keys_to_clear.append(f"login_id:{identifier}")
+    await db.rate_limits.delete_many({"key": {"$in": keys_to_clear}})
     
     logger.info(f"Successful login: user_id={user['id']}, role={user['role']}, ip={client_ip}")
     await log_audit("login_success", user["id"], user["role"], {"ip": client_ip})
@@ -3998,13 +3996,22 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
 
     _safe_basename = re.sub(r'[^\w\-]', '_', Path(original_name).stem)[:100]
 
-    # Rate limit: max 20 uploads per minute per user
+    # Rate limit: max 20 uploads per minute per user (MongoDB-backed, shared across workers)
     _user_id = user["id"]
-    _now = datetime.now().timestamp()
-    upload_attempts[_user_id] = [t for t in upload_attempts[_user_id] if _now - t < UPLOAD_WINDOW]
-    if len(upload_attempts[_user_id]) >= MAX_UPLOADS_PER_MINUTE:
+    _upload_key = f"upload:{_user_id}"
+    _now = datetime.now(timezone.utc)
+    _window_start = _now - timedelta(seconds=UPLOAD_WINDOW)
+    _upload_count = await db.rate_limits.count_documents({
+        "key": _upload_key,
+        "timestamp": {"$gte": _window_start}
+    })
+    if _upload_count >= MAX_UPLOADS_PER_MINUTE:
         raise HTTPException(status_code=429, detail="Demasiadas subidas. Intente de nuevo en un minuto.")
-    upload_attempts[_user_id].append(_now)
+    await db.rate_limits.insert_one({
+        "key": _upload_key,
+        "timestamp": _now,
+        "expires_at": _now + timedelta(seconds=UPLOAD_WINDOW)
+    })
 
     _unique_suffix = str(uuid.uuid4())[:8]
 
