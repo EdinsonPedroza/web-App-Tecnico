@@ -190,6 +190,13 @@ async def lifespan(app):
                 name='Automatic Module Closure',
                 replace_existing=True
             )
+            scheduler.add_job(
+                cleanup_expired_data,
+                CronTrigger(hour=3, minute=0, timezone=BOGOTA_TZ),
+                id='cleanup_expired_data',
+                name='Cleanup Expired Tokens and Rate Limits',
+                replace_existing=True
+            )
             scheduler.start()
             logger.info("Automatic module closure scheduler started (runs daily at 02:00 AM Bogotá time / UTC-5)")
         else:
@@ -336,6 +343,21 @@ async def release_scheduler_lock(lock_name: str):
         await db.scheduler_locks.delete_one({"lock_name": lock_name})
     except Exception as e:
         logger.error(f"Failed to release scheduler lock '{lock_name}': {e}")
+
+
+async def cleanup_expired_data():
+    """Safety-net cleanup for expired tokens and rate limits."""
+    try:
+        if not await acquire_scheduler_lock("cleanup_expired_data", ttl_seconds=600):
+            logger.info("cleanup_expired_data: another worker holds the lock, skipping")
+            return
+        cutoff = datetime.now(timezone.utc)
+        r1 = await db.refresh_tokens.delete_many({"expires_at": {"$lt": cutoff}})
+        r2 = await db.rate_limits.delete_many({"expires_at": {"$lt": cutoff}})
+        if r1.deleted_count or r2.deleted_count:
+            logger.info(f"Cleanup: removed {r1.deleted_count} expired refresh tokens, {r2.deleted_count} expired rate limits")
+    except Exception as e:
+        logger.error(f"cleanup_expired_data failed: {e}")
 
 
 async def check_and_close_modules():
@@ -2015,7 +2037,13 @@ class LoginRequest(BaseModel):
     @validator('email')
     def sanitize_email(cls, v):
         if v:
-            return sanitize_string(v, 200)
+            v = v.strip()[:200]
+            # Remove control characters but preserve valid email characters
+            v = ''.join(char for char in v if char.isprintable())
+            # Basic format check (detailed validation happens via email-validator on UserCreate)
+            if v and not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', v):
+                raise ValueError("Formato de email inválido")
+            return v
         return v
     
     @validator('cedula')
@@ -2219,12 +2247,12 @@ class GradeCreate(BaseModel):
     course_id: str
     activity_id: Optional[str] = None
     subject_id: Optional[str] = None  # Specific subject within the course/group
-    value: Optional[float] = None
+    value: Optional[float] = Field(None, ge=0.0, le=5.0)
     comments: Optional[str] = ""
     recovery_status: Optional[str] = None  # 'approved', 'rejected', or None
 
 class GradeUpdate(BaseModel):
-    value: Optional[float] = None
+    value: Optional[float] = Field(None, ge=0.0, le=5.0)
     comments: Optional[str] = None
     recovery_status: Optional[str] = None  # 'approved', 'rejected', or None
 
@@ -2345,6 +2373,10 @@ async def login(req: LoginRequest, request: Request):
     await log_audit("login_success", user["id"], user["role"], {"ip": client_ip})
     
     token = create_token(user["id"], user["role"])
+    # Single-session policy: revoke all previous refresh tokens before creating a new one.
+    # This is appropriate for an educational platform where students use shared computers —
+    # a new login on one machine automatically invalidates sessions on other machines.
+    await db.refresh_tokens.delete_many({"user_id": user["id"]})
     # Create refresh token for silent session renewal (expires in 7 days)
     refresh_token_str = str(uuid.uuid4())
     await db.refresh_tokens.insert_one({
@@ -2358,6 +2390,23 @@ async def login(req: LoginRequest, request: Request):
 
 @api_router.post("/auth/refresh")
 async def refresh_token(request: Request):
+    # Rate limit refresh requests by IP
+    client_ip = request.client.host if request.client else "unknown"
+    refresh_key = f"refresh_ip:{client_ip}"
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(seconds=300)  # 5-minute window
+    count = await db.rate_limits.count_documents({
+        "key": refresh_key,
+        "timestamp": {"$gte": window_start}
+    })
+    if count >= 30:  # Max 30 refreshes per IP per 5 minutes
+        raise HTTPException(status_code=429, detail="Demasiadas solicitudes de renovación de sesión")
+    await db.rate_limits.insert_one({
+        "key": refresh_key,
+        "timestamp": now,
+        "expires_at": now + timedelta(seconds=300)
+    })
+
     try:
         body = await request.json()
     except json.JSONDecodeError:
@@ -2622,7 +2671,11 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
         raise HTTPException(status_code=403, detail="Solo admin puede editar usuarios")
     
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
-    
+
+    # Security: prevent privilege escalation via field injection
+    FORBIDDEN_UPDATE_FIELDS = {"id", "role", "password_hash", "created_at"}
+    update_data = {k: v for k, v in update_data.items() if k not in FORBIDDEN_UPDATE_FIELDS}
+
     # Hash password if provided and not empty
     if "password" in update_data:
         password = update_data.pop("password")
@@ -2800,7 +2853,11 @@ async def editor_update_admin(admin_id: str, req: AdminUpdateByEditor, user=Depe
     
     # Build update data
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
-    
+
+    # Security: prevent privilege escalation via field injection
+    FORBIDDEN_UPDATE_FIELDS = {"id", "role", "password_hash", "created_at"}
+    update_data = {k: v for k, v in update_data.items() if k not in FORBIDDEN_UPDATE_FIELDS}
+
     # Hash password if provided
     if "password" in update_data:
         password = update_data.pop("password")
@@ -3784,6 +3841,18 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
 async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+
+    # IDOR guard: verify the professor owns this course
+    course = await db.courses.find_one({"id": req.course_id}, {"_id": 0, "teacher_id": 1})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+    if course.get("teacher_id") != user["id"]:
+        log_security_event("UNAUTHORIZED_GRADE_ATTEMPT", {
+            "professor_id": user["id"],
+            "course_id": req.course_id,
+            "course_teacher_id": course.get("teacher_id")
+        })
+        raise HTTPException(status_code=403, detail="No eres el profesor asignado a este curso")
     
     # Rule E: For recovery activities, only approve/reject is allowed — no numeric grade
     if req.activity_id:

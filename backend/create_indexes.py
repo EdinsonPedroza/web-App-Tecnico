@@ -67,6 +67,9 @@ async def create_indexes(db):
         # refresh_tokens
         ("refresh_tokens", [("token", 1)], {"unique": True, "name": "refresh_tokens_token_unique"}),
         ("refresh_tokens", [("user_id", 1)], {"name": "refresh_tokens_user_id"}),
+        # rate_limits — TTL index to auto-expire documents + compound for query performance
+        ("rate_limits", [("expires_at", 1)], {"expireAfterSeconds": 0, "name": "rate_limits_ttl"}),
+        ("rate_limits", [("key", 1), ("timestamp", -1)], {"name": "rate_limits_key_timestamp"}),
     ]
 
     created = 0

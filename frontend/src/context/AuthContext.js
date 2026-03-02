@@ -17,14 +17,14 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async (reason) => {
     try {
-      const refreshToken = localStorage.getItem('educando_refresh_token');
+      const refreshToken = sessionStorage.getItem('educando_refresh_token');
       if (refreshToken) {
         await api.post('/auth/logout', { refresh_token: refreshToken }).catch(() => {});
       }
     } catch {}
-    localStorage.removeItem('educando_token');
-    localStorage.removeItem('educando_refresh_token');
-    localStorage.removeItem('educando_user');
+    sessionStorage.removeItem('educando_token');
+    sessionStorage.removeItem('educando_refresh_token');
+    sessionStorage.removeItem('educando_user');
     setUser(null);
     if (reason === 'inactivity') {
       toast.info('Sesión cerrada por inactividad');
@@ -44,23 +44,23 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   useEffect(() => {
-    const token = localStorage.getItem('educando_token');
-    const savedUser = localStorage.getItem('educando_user');
+    const token = sessionStorage.getItem('educando_token');
+    const savedUser = sessionStorage.getItem('educando_user');
     if (token && savedUser) {
       try {
         setUser(JSON.parse(savedUser));
       } catch {
-        localStorage.removeItem('educando_token');
-        localStorage.removeItem('educando_user');
+        sessionStorage.removeItem('educando_token');
+        sessionStorage.removeItem('educando_user');
       }
       // Sincronizar datos con el backend en segundo plano
       api.get('/auth/me').then(res => {
-        localStorage.setItem('educando_user', JSON.stringify(res.data));
+        sessionStorage.setItem('educando_user', JSON.stringify(res.data));
         setUser(res.data);
       }).catch(() => {
         // Token inválido o expirado: hacer logout silencioso
-        localStorage.removeItem('educando_token');
-        localStorage.removeItem('educando_user');
+        sessionStorage.removeItem('educando_token');
+        sessionStorage.removeItem('educando_user');
         setUser(null);
       });
     }
@@ -88,9 +88,9 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (credentials) => {
     const res = await api.post('/auth/login', credentials);
     const { token, refresh_token, user: userData } = res.data;
-    localStorage.setItem('educando_token', token);
-    localStorage.setItem('educando_refresh_token', refresh_token);
-    localStorage.setItem('educando_user', JSON.stringify(userData));
+    sessionStorage.setItem('educando_token', token);
+    sessionStorage.setItem('educando_refresh_token', refresh_token);
+    sessionStorage.setItem('educando_user', JSON.stringify(userData));
     setUser(userData);
     return userData;
   }, []);
