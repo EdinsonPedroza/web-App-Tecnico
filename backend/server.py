@@ -968,7 +968,15 @@ AWS_S3_BUCKET_NAME = os.environ.get('AWS_S3_BUCKET_NAME')
 AWS_S3_REGION = os.environ.get('AWS_S3_REGION', 'us-east-1')
 USE_S3 = bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_S3_BUCKET_NAME)
 
+s3_client = None
 if USE_S3:
+    import boto3
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        region_name=AWS_S3_REGION
+    )
     logger.info("AWS S3 configured – PDFs will use persistent S3 storage.")
 else:
     logger.warning("AWS S3 not configured – PDFs stored on ephemeral local disk.")
@@ -1027,14 +1035,7 @@ async def startup_event():
         # Verify S3 bucket accessibility at startup
         if USE_S3:
             try:
-                import boto3
-                s3_test = boto3.client(
-                    's3',
-                    aws_access_key_id=AWS_ACCESS_KEY_ID,
-                    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-                    region_name=AWS_S3_REGION
-                )
-                s3_test.head_bucket(Bucket=AWS_S3_BUCKET_NAME)
+                s3_client.head_bucket(Bucket=AWS_S3_BUCKET_NAME)
                 logger.info(f"✅ AWS S3 bucket '{AWS_S3_BUCKET_NAME}' is accessible.")
             except Exception as e:
                 logger.error(f"❌ AWS S3 bucket verification failed: {e}. PDF uploads will fail!")
@@ -3791,6 +3792,56 @@ async def update_class_video(video_id: str, req: ClassVideoUpdate, user=Depends(
     return updated
 
 # --- File Upload Route ---
+_MAGIC_BYTES = {
+    b'\x25\x50\x44\x46': 'pdf',           # %PDF
+    b'\xff\xd8\xff': 'jpg',                # JPEG
+    b'\x89\x50\x4e\x47': 'png',           # PNG
+    b'\x47\x49\x46\x38': 'gif',           # GIF
+    b'\x52\x49\x46\x46': 'webp',          # RIFF (WebP)
+    b'\x50\x4b\x03\x04': 'office',        # ZIP-based (docx, xlsx, pptx)
+    b'\xd0\xcf\x11\xe0': 'office_legacy', # OLE2 (doc, xls, ppt)
+}
+
+def _validate_file_content(file_content: bytes, declared_ext: str) -> bool:
+    """Validate that file content matches the declared extension (basic magic byte check)."""
+    if len(file_content) < 4:
+        return False
+
+    header = file_content[:4]
+
+    # For text files, skip magic byte validation
+    if declared_ext == 'txt':
+        return True
+
+    for magic, file_type in _MAGIC_BYTES.items():
+        if header[:len(magic)] == magic:
+            # Check if the detected type matches the declared extension
+            if file_type == 'pdf' and declared_ext == 'pdf':
+                return True
+            elif file_type == 'jpg' and declared_ext in ('jpg', 'jpeg'):
+                return True
+            elif file_type == 'png' and declared_ext == 'png':
+                return True
+            elif file_type == 'gif' and declared_ext == 'gif':
+                return True
+            elif file_type == 'webp' and declared_ext == 'webp':
+                # RIFF is used by multiple formats; verify the 'WEBP' marker at bytes 8-11
+                return len(file_content) >= 12 and file_content[8:12] == b'WEBP'
+            elif file_type == 'office' and declared_ext in ('docx', 'xlsx', 'pptx'):
+                return True
+            elif file_type == 'office_legacy' and declared_ext in ('doc', 'xls', 'ppt'):
+                return True
+            # Magic matched but extension doesn't correspond
+            return False
+
+    # No magic match found — allow (some formats like .txt don't have magic bytes)
+    # For known binary types that SHOULD have magic bytes, reject
+    if declared_ext in ('pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp',
+                        'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'):
+        return False
+
+    return True
+
 @api_router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user=Depends(get_current_user)):
     if user["role"] not in ["profesor", "admin", "estudiante"]:
@@ -3804,14 +3855,19 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="El archivo excede el tamaño máximo permitido (10MB)")
 
-    import re as _re
     _ext = Path(original_name).suffix.lower().lstrip(".")
 
     ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "jpg", "jpeg", "png", "gif", "webp"}
     if _ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Tipo de archivo no permitido: .{_ext}")
 
-    _safe_basename = _re.sub(r'[^\w\-]', '_', Path(original_name).stem)[:100]
+    if not _validate_file_content(file_content, _ext):
+        raise HTTPException(
+            status_code=400,
+            detail=f"El contenido del archivo no coincide con la extensión .{_ext}"
+        )
+
+    _safe_basename = re.sub(r'[^\w\-]', '_', Path(original_name).stem)[:100]
 
     # Rate limit: max 20 uploads per minute per user
     _user_id = user["id"]
@@ -3824,8 +3880,6 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     _unique_suffix = str(uuid.uuid4())[:8]
 
     if USE_S3:
-        import boto3
-
         # Content-type correcto por extensión
         _content_type_map = {
             "pdf":  "application/pdf",
@@ -3855,12 +3909,6 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
         _s3_key = f"{_folder}/{_safe_basename}_{_unique_suffix}.{_ext}"
 
         try:
-            s3_client = boto3.client(
-                's3',
-                aws_access_key_id=AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-                region_name=AWS_S3_REGION
-            )
             logger.info(f"Attempting S3 upload: bucket={AWS_S3_BUCKET_NAME}, region={AWS_S3_REGION}, key={_s3_key}")
             s3_client.put_object(
                 Bucket=AWS_S3_BUCKET_NAME,
@@ -3880,10 +3928,10 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
                 "resource_type": "raw"
             }
         except Exception as e:
-            logger.error(f"S3 upload failed: {e}", exc_info=True)
+            logger.error(f"S3 upload failed for key={_s3_key}: {e}", exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Error uploading file to S3: {str(e)}. Please check S3 configuration."
+                detail="Error al subir el archivo. Intente de nuevo más tarde."
             )
 
     # Fallback: use Cloudinary if configured
