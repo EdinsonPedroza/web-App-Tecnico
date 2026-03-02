@@ -64,6 +64,9 @@ async def create_indexes(db):
         ("failed_subjects", [("student_id", 1), ("recovery_processed", 1), ("recovery_expired", 1)], {"name": "failed_subjects_student_processed_expired"}),
         ("grades", [("course_id", 1), ("student_id", 1), ("value", 1)], {"name": "grades_course_student_value"}),
         ("courses", [("id", 1)], {"unique": True, "name": "courses_id_unique"}),
+        # refresh_tokens
+        ("refresh_tokens", [("token", 1)], {"unique": True, "name": "refresh_tokens_token_unique"}),
+        ("refresh_tokens", [("user_id", 1)], {"name": "refresh_tokens_user_id"}),
     ]
 
     created = 0

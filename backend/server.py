@@ -167,6 +167,14 @@ async def lifespan(app):
             await db.refresh_tokens.create_index("expires_at", expireAfterSeconds=0, name="refresh_tokens_ttl")
         except Exception as idx_err:
             logger.debug(f"refresh_tokens_ttl index already exists or could not be created: {idx_err}")
+        try:
+            await db.refresh_tokens.create_index("token", unique=True, name="refresh_tokens_token_unique")
+        except Exception as idx_err:
+            logger.debug(f"refresh_tokens_token_unique index already exists or could not be created: {idx_err}")
+        try:
+            await db.refresh_tokens.create_index("user_id", name="refresh_tokens_user_id")
+        except Exception as idx_err:
+            logger.debug(f"refresh_tokens_user_id index already exists or could not be created: {idx_err}")
         await create_initial_data()
 
         # Start the automatic module closure scheduler.
@@ -1863,6 +1871,12 @@ def sanitize_string(input_str: str, max_length: int = 500) -> str:
     # Limit length
     return sanitized[:max_length]
 
+def mask_identifier(value: str) -> str:
+    """Mask personal identifiers for safe logging (Colombian Ley 1581 compliance)."""
+    if not value or len(value) < 4:
+        return "****"
+    return value[:2] + "*" * (len(value) - 4) + value[-2:]
+
 def hash_password(password: str) -> str:
     """Hash password using bcrypt."""
     return _bcrypt.hashpw(password.encode('utf-8'), _bcrypt.gensalt()).decode('utf-8')
@@ -1983,6 +1997,8 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
+        if not user.get("active", True):
+            raise HTTPException(status_code=403, detail="Cuenta desactivada")
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
@@ -2246,7 +2262,7 @@ async def login(req: LoginRequest, request: Request):
         log_security_event("RATE_LIMIT_EXCEEDED", {
             "ip": client_ip,
             "role": req.role,
-            "identifier": req.email or req.cedula
+            "identifier": mask_identifier(req.email or req.cedula or "")
         })
         raise HTTPException(
             status_code=429, 
@@ -2286,7 +2302,7 @@ async def login(req: LoginRequest, request: Request):
         log_security_event("LOGIN_FAILED_USER_NOT_FOUND", {
             "ip": client_ip,
             "role": req.role,
-            "identifier": identifier
+            "identifier": mask_identifier(identifier)
         })
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     
@@ -2296,7 +2312,7 @@ async def login(req: LoginRequest, request: Request):
             "ip": client_ip,
             "role": req.role,
             "user_id": user["id"],
-            "identifier": identifier
+            "identifier": mask_identifier(identifier)
         })
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     
@@ -2304,7 +2320,7 @@ async def login(req: LoginRequest, request: Request):
         log_security_event("LOGIN_FAILED_INACTIVE_ACCOUNT", {
             "ip": client_ip,
             "user_id": user["id"],
-            "identifier": identifier
+            "identifier": mask_identifier(identifier)
         })
         raise HTTPException(status_code=403, detail="Cuenta desactivada")
     
@@ -2342,7 +2358,10 @@ async def login(req: LoginRequest, request: Request):
 
 @api_router.post("/auth/refresh")
 async def refresh_token(request: Request):
-    body = await request.json()
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Body JSON inválido")
     old_token = body.get("refresh_token")
     if not old_token:
         raise HTTPException(status_code=400, detail="refresh_token requerido")
