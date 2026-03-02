@@ -35,8 +35,22 @@ api.interceptors.response.use(
   async (error) => {
     const originalConfig = error.config || {};
 
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !originalConfig.__refreshed) {
+      const refreshToken = localStorage.getItem('educando_refresh_token');
+      if (refreshToken) {
+        originalConfig.__refreshed = true;
+        try {
+          const refreshRes = await axios.post(`${API_BASE}/auth/refresh`, { refresh_token: refreshToken });
+          localStorage.setItem('educando_token', refreshRes.data.token);
+          localStorage.setItem('educando_refresh_token', refreshRes.data.refresh_token);
+          originalConfig.headers = { ...originalConfig.headers, Authorization: `Bearer ${refreshRes.data.token}` };
+          return api(originalConfig);
+        } catch (_refreshError) {
+          // Refresh failed — clear session and redirect
+        }
+      }
       localStorage.removeItem('educando_token');
+      localStorage.removeItem('educando_refresh_token');
       localStorage.removeItem('educando_user');
       window.location.href = '/';
       return Promise.reject(error);

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -121,7 +122,119 @@ def validate_module_number(module_num, field_name="module"):
 MAX_LIMIT = 500          # hard cap for most list endpoints
 MAX_LIMIT_GRADES = 5000  # higher cap for grades when filtered by course_id
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app):
+    # === STARTUP ===
+    try:
+        logger.info("Starting application initialization...")
+
+        # Log production warnings
+        if PASSWORD_STORAGE_MODE == 'plain':
+            logger.warning(
+                "⚠️  SECURITY WARNING: Password storage mode is set to 'plain'. "
+                "Passwords are stored in plain text, which is INSECURE. "
+                "Set PASSWORD_STORAGE_MODE='bcrypt' in your environment variables for production."
+            )
+
+        # Test MongoDB connection
+        await db.command('ping')
+        logger.info("MongoDB connection successful")
+        # Crear índices para rendimiento óptimo
+        try:
+            from create_indexes import create_indexes
+            await create_indexes(db)
+            logger.info("Índices MongoDB verificados/creados exitosamente")
+        except Exception as e:
+            logger.warning(f"No se pudieron crear índices automáticamente: {e}")
+        # TTL + compound index for rate_limits collection (shared across all Gunicorn workers)
+        try:
+            await db.rate_limits.create_index("expires_at", expireAfterSeconds=0, name="rate_limits_ttl")
+        except Exception as idx_err:
+            logger.warning(f"rate_limits_ttl index could not be created: {idx_err}")
+        try:
+            await db.rate_limits.create_index(
+                [("key", 1), ("timestamp", 1)], name="rate_limits_key_timestamp"
+            )
+        except Exception as idx_err:
+            logger.warning(f"rate_limits_key_timestamp index could not be created: {idx_err}")
+        # TTL and unique indexes for distributed scheduler locks
+        try:
+            await db.scheduler_locks.create_index("expires_at", expireAfterSeconds=0, name="scheduler_locks_ttl")
+        except Exception as idx_err:
+            logger.debug(f"scheduler_locks_ttl index already exists or could not be created: {idx_err}")
+        try:
+            await db.scheduler_locks.create_index("lock_name", unique=True, name="scheduler_locks_unique")
+        except Exception as idx_err:
+            logger.debug(f"scheduler_locks_unique index already exists or could not be created: {idx_err}")
+        try:
+            await db.grade_changes.create_index(
+                [("student_id", 1), ("changed_at", -1)],
+                name="grade_changes_student_date"
+            )
+        except Exception as idx_err:
+            logger.debug(f"grade_changes_student_date index already exists or could not be created: {idx_err}")
+        # TTL index for refresh_tokens collection
+        try:
+            await db.refresh_tokens.create_index("expires_at", expireAfterSeconds=0, name="refresh_tokens_ttl")
+        except Exception as idx_err:
+            logger.debug(f"refresh_tokens_ttl index already exists or could not be created: {idx_err}")
+        await create_initial_data()
+
+        # Start the automatic module closure scheduler.
+        # Only worker 0 (or single-worker deployments) starts the scheduler to prevent
+        # race conditions when multiple Gunicorn workers run the same APScheduler job.
+        worker_id = os.environ.get("WORKER_ID")
+        should_start_scheduler = worker_id is None or worker_id == "0"
+        if should_start_scheduler:
+            scheduler.add_job(
+                check_and_close_modules,
+                CronTrigger(hour=2, minute=0, timezone=BOGOTA_TZ),  # 02:00 AM hora Bogotá (UTC-5)
+                id='auto_close_modules',
+                name='Automatic Module Closure',
+                replace_existing=True
+            )
+            scheduler.start()
+            logger.info("Automatic module closure scheduler started (runs daily at 02:00 AM Bogotá time / UTC-5)")
+        else:
+            logger.info(f"Worker {worker_id}: skipping scheduler start (only worker 0 runs the scheduler)")
+
+        # Verify S3 bucket accessibility at startup
+        if USE_S3:
+            try:
+                s3_client.head_bucket(Bucket=AWS_S3_BUCKET_NAME)
+                logger.info(f"✅ AWS S3 bucket '{AWS_S3_BUCKET_NAME}' is accessible.")
+            except Exception as e:
+                logger.error(f"❌ AWS S3 bucket verification failed: {e}. PDF uploads will fail!")
+
+        logger.info("Application startup completed successfully")
+    except Exception as e:
+        logger.error(f"Startup failed: {e}", exc_info=True)
+        if "auth" in str(e).lower() or "connection" in str(e).lower() or "ServerSelectionTimeoutError" in type(e).__name__:
+            logger.error(
+                "MongoDB connection failed. Please check your MONGO_URL environment variable. "
+                "Common causes: invalid credentials, IP not whitelisted in MongoDB Atlas, "
+                "or incorrect connection string format. "
+                "See backend/.env.example for configuration examples."
+            )
+        logger.warning(
+            "Application started WITHOUT database connection. "
+            "API endpoints requiring MongoDB will not work until the connection is restored."
+        )
+
+    yield  # Application runs here
+
+    # === SHUTDOWN ===
+    logger.info("Application shutting down...")
+    try:
+        scheduler.shutdown(wait=False)
+        logger.info("APScheduler shut down gracefully")
+    except Exception as e:
+        logger.warning(f"Error shutting down scheduler: {e}")
+    client.close()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Detect production environment
 IS_PRODUCTION = any(os.environ.get(env) for env in ['RENDER', 'RAILWAY_ENVIRONMENT', 'DYNO'])
@@ -154,6 +267,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        # Content Security Policy — defense in depth against XSS
+        # Only apply to HTML responses (not API JSON responses)
+        content_type = response.headers.get("content-type", "")
+        if "text/html" in content_type:
+            csp_directives = [
+                "default-src 'self'",
+                "script-src 'self'",
+                "style-src 'self' 'unsafe-inline'",
+                "img-src 'self' data: blob: https://*.amazonaws.com",
+                "font-src 'self' data:",
+                "connect-src 'self' https://*.onrender.com",
+                "frame-ancestors 'none'",
+                "base-uri 'self'",
+                "form-action 'self'",
+            ]
+            response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         if request.url.path.startswith("/api/auth/"):
@@ -1038,100 +1167,6 @@ if USE_S3:
     logger.info("AWS S3 configured – PDFs will use persistent S3 storage.")
 else:
     logger.warning("AWS S3 not configured – PDFs stored on ephemeral local disk.")
-
-# --- Startup Event - Crear datos iniciales ---
-@app.on_event("startup")
-async def startup_event():
-    try:
-        logger.info("Starting application initialization...")
-        
-        # Log production warnings
-        if PASSWORD_STORAGE_MODE == 'plain':
-            logger.warning(
-                "⚠️  SECURITY WARNING: Password storage mode is set to 'plain'. "
-                "Passwords are stored in plain text, which is INSECURE. "
-                "Set PASSWORD_STORAGE_MODE='bcrypt' in your environment variables for production."
-            )
-        
-        # Test MongoDB connection
-        await db.command('ping')
-        logger.info("MongoDB connection successful")
-        # Crear índices para rendimiento óptimo
-        try:
-            from create_indexes import create_indexes
-            await create_indexes(db)
-            logger.info("Índices MongoDB verificados/creados exitosamente")
-        except Exception as e:
-            logger.warning(f"No se pudieron crear índices automáticamente: {e}")
-        # TTL + compound index for rate_limits collection (shared across all Gunicorn workers)
-        try:
-            await db.rate_limits.create_index("expires_at", expireAfterSeconds=0, name="rate_limits_ttl")
-        except Exception as idx_err:
-            logger.warning(f"rate_limits_ttl index could not be created: {idx_err}")
-        try:
-            await db.rate_limits.create_index(
-                [("key", 1), ("timestamp", 1)], name="rate_limits_key_timestamp"
-            )
-        except Exception as idx_err:
-            logger.warning(f"rate_limits_key_timestamp index could not be created: {idx_err}")
-        # TTL and unique indexes for distributed scheduler locks
-        try:
-            await db.scheduler_locks.create_index("expires_at", expireAfterSeconds=0, name="scheduler_locks_ttl")
-        except Exception as idx_err:
-            logger.debug(f"scheduler_locks_ttl index already exists or could not be created: {idx_err}")
-        try:
-            await db.scheduler_locks.create_index("lock_name", unique=True, name="scheduler_locks_unique")
-        except Exception as idx_err:
-            logger.debug(f"scheduler_locks_unique index already exists or could not be created: {idx_err}")
-        try:
-            await db.grade_changes.create_index(
-                [("student_id", 1), ("changed_at", -1)],
-                name="grade_changes_student_date"
-            )
-        except Exception as idx_err:
-            logger.debug(f"grade_changes_student_date index already exists or could not be created: {idx_err}")
-        await create_initial_data()
-        
-        # Start the automatic module closure scheduler.
-        # Only worker 0 (or single-worker deployments) starts the scheduler to prevent
-        # race conditions when multiple Gunicorn workers run the same APScheduler job.
-        worker_id = os.environ.get("WORKER_ID")
-        should_start_scheduler = worker_id is None or worker_id == "0"
-        if should_start_scheduler:
-            scheduler.add_job(
-                check_and_close_modules,
-                CronTrigger(hour=2, minute=0, timezone=BOGOTA_TZ),  # 02:00 AM hora Bogotá (UTC-5)
-                id='auto_close_modules',
-                name='Automatic Module Closure',
-                replace_existing=True
-            )
-            scheduler.start()
-            logger.info("Automatic module closure scheduler started (runs daily at 02:00 AM Bogotá time / UTC-5)")
-        else:
-            logger.info(f"Worker {worker_id}: skipping scheduler start (only worker 0 runs the scheduler)")
-        
-        # Verify S3 bucket accessibility at startup
-        if USE_S3:
-            try:
-                s3_client.head_bucket(Bucket=AWS_S3_BUCKET_NAME)
-                logger.info(f"✅ AWS S3 bucket '{AWS_S3_BUCKET_NAME}' is accessible.")
-            except Exception as e:
-                logger.error(f"❌ AWS S3 bucket verification failed: {e}. PDF uploads will fail!")
-        
-        logger.info("Application startup completed successfully")
-    except Exception as e:
-        logger.error(f"Startup failed: {e}", exc_info=True)
-        if "auth" in str(e).lower() or "connection" in str(e).lower() or "ServerSelectionTimeoutError" in type(e).__name__:
-            logger.error(
-                "MongoDB connection failed. Please check your MONGO_URL environment variable. "
-                "Common causes: invalid credentials, IP not whitelisted in MongoDB Atlas, "
-                "or incorrect connection string format. "
-                "See backend/.env.example for configuration examples."
-            )
-        logger.warning(
-            "Application started WITHOUT database connection. "
-            "API endpoints requiring MongoDB will not work until the connection is restored."
-        )
 
 async def create_initial_data():
     """Crea los usuarios y datos iniciales si no existen"""
@@ -2283,6 +2318,46 @@ async def login(req: LoginRequest, request: Request):
     token = create_token(user["id"], user["role"])
     user_data = {k: v for k, v in user.items() if k != "password_hash"}
     return {"token": token, "user": user_data}
+
+@api_router.post("/auth/refresh")
+async def refresh_token(request: Request):
+    body = await request.json()
+    old_token = body.get("refresh_token")
+    if not old_token:
+        raise HTTPException(status_code=400, detail="refresh_token requerido")
+
+    # Find and DELETE the old token atomically (rotation)
+    token_doc = await db.refresh_tokens.find_one_and_delete({"token": old_token})
+
+    if not token_doc:
+        # Token not found — either already used (replay attack) or revoked
+        raise HTTPException(status_code=401, detail="Refresh token inválido o ya utilizado")
+
+    # Check expiration
+    if token_doc.get("expires_at") and token_doc["expires_at"] < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Refresh token expirado")
+
+    user_id = token_doc["user_id"]
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user or not user.get("active", True):
+        raise HTTPException(status_code=401, detail="Usuario no encontrado o inactivo")
+
+    # Create NEW refresh token (rotation)
+    new_refresh_token = str(uuid.uuid4())
+    await db.refresh_tokens.insert_one({
+        "token": new_refresh_token,
+        "user_id": user_id,
+        "created_at": datetime.now(timezone.utc),
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=7)
+    })
+
+    # Create new access token
+    new_access_token = create_token(user_id, user["role"])
+
+    return {
+        "token": new_access_token,
+        "refresh_token": new_refresh_token
+    }
 
 @api_router.get("/auth/me")
 async def get_me(user=Depends(get_current_user)):
@@ -3627,7 +3702,7 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
 
 # --- Grades Routes ---
 @api_router.get("/grades")
-async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, skip: int = 0, limit: int = 5000, user=Depends(get_current_user)):
+async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
     # IDOR guard: students can only access their own data
     if user["role"] == "estudiante":
         student_id = user["id"]
@@ -3640,11 +3715,15 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
         query["subject_id"] = subject_id
     if activity_id:
         query["activity_id"] = activity_id
-    effective_max = 10000 if course_id else MAX_LIMIT
+    effective_max = MAX_LIMIT_GRADES if course_id else MAX_LIMIT
     limit = max(1, min(limit, effective_max))
     skip = max(0, skip)
+    total_count = await db.grades.count_documents(query)
     grades = await db.grades.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
-    return grades
+    response = JSONResponse(content=grades)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Has-More"] = str((skip + limit) < total_count).lower()
+    return response
 
 @api_router.post("/grades")
 async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
@@ -4524,16 +4603,28 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
     
     # Cargar TODAS las grades de todos los cursos en UNA sola query (optimización crítica)
     all_course_ids = [c["id"] for c in courses]
-    all_grades_bulk = await db.grades.find(
-        {"course_id": {"$in": all_course_ids}}, {"_id": 0}
-    ).to_list(100000)
-    # Indexar por student_id para acceso O(1) en el loop
-    grades_by_student = {}
-    for g in all_grades_bulk:
-        sid = g.get("student_id")
-        if sid:
-            grades_by_student.setdefault(sid, []).append(g)
-    
+    # Compute grade averages in MongoDB to avoid loading all grade documents into memory
+    pipeline = [
+        {"$match": {"course_id": {"$in": all_course_ids}, "value": {"$ne": None}}},
+        {"$group": {
+            "_id": {
+                "student_id": "$student_id",
+                "course_id": "$course_id",
+                "subject_id": "$subject_id"
+            },
+            "avg_value": {"$avg": "$value"},
+            "count": {"$sum": 1}
+        }}
+    ]
+    aggregated_grades = await db.grades.aggregate(pipeline).to_list(None)
+    # Build index: (student_id, course_id, subject_id) -> {"avg": float, "count": int}
+    grades_avg_index = {}
+    student_graded_courses = {}
+    for g in aggregated_grades:
+        key = (g["_id"]["student_id"], g["_id"]["course_id"], g["_id"]["subject_id"])
+        grades_avg_index[key] = {"avg": g["avg_value"], "count": g["count"]}
+        student_graded_courses.setdefault(g["_id"]["student_id"], set()).add(g["_id"]["course_id"])
+
     for student in students:
         student_id = student["id"]
         student_program_modules = student.get("program_modules", {})
@@ -4556,12 +4647,9 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
         # Get all courses for this student in the specified programs
         student_courses = [c for c in courses if student_id in c.get("student_ids", []) and c["program_id"] in programs_in_module]
         
-        # Get all grades for the student
-        all_grades = grades_by_student.get(student_id, [])
-        
         # Skip students with no grades in any of their module courses — teacher may have
         # forgotten to grade them. Count and log them instead of processing with 0.0 averages.
-        graded_course_ids = {g.get("course_id") for g in all_grades}
+        graded_course_ids = student_graded_courses.get(student_id, set())
         if student_courses and not any(c["id"] in graded_course_ids for c in student_courses):
             skipped_no_grades += 1
             logger.debug(
@@ -4573,8 +4661,6 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
         # Group grades by course; detect failing subjects individually
         failed_courses = []
         for course in student_courses:
-            course_grades = [g for g in all_grades if g.get("course_id") == course["id"]]
-            
             subject_ids = course.get("subject_ids") or []
             if not subject_ids and course.get("subject_id"):
                 subject_ids = [course["subject_id"]]
@@ -4588,8 +4674,8 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                     # included in module 1 closures but excluded from module 2+ closures.
                     if subject_module_map.get(subject_id, 1) != module_number:
                         continue
-                    subject_grades = [g["value"] for g in course_grades if g.get("subject_id") == subject_id and g.get("value") is not None]
-                    subject_avg = sum(subject_grades) / len(subject_grades) if subject_grades else 0.0
+                    grade_info = grades_avg_index.get((student_id, course["id"], subject_id))
+                    subject_avg = grade_info["avg"] if grade_info else 0.0
                     
                     if subject_avg < 3.0:
                         course_has_failing = True
@@ -4610,9 +4696,12 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                             "created_at": datetime.now(timezone.utc).isoformat()
                         })
             else:
-                # Fallback: no subjects defined, use course-level average
-                grade_values = [g["value"] for g in course_grades if g.get("value") is not None]
-                average = sum(grade_values) / len(grade_values) if grade_values else 0.0
+                # Fallback: no subjects defined, use course-level average (weighted by count)
+                course_entries = [v for (sid, cid, _subj), v in grades_avg_index.items()
+                                  if sid == student_id and cid == course["id"]]
+                total_sum = sum(e["avg"] * e["count"] for e in course_entries)
+                total_count = sum(e["count"] for e in course_entries)
+                average = total_sum / total_count if total_count > 0 else 0.0
                 
                 if average < 3.0:
                     course_has_failing = True
@@ -6449,11 +6538,3 @@ app.include_router(api_router)
 @app.get("/")
 async def app_root():
     return {"message": "Corporación Social Educando API"}
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    # Shutdown scheduler gracefully
-    if scheduler.running:
-        scheduler.shutdown()
-        logger.info("Scheduler shut down")
-    client.close()
