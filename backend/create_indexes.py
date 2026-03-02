@@ -49,6 +49,7 @@ async def create_indexes(db):
         # programs
         ("programs", [("active", 1)], {"name": "programs_active"}),
         # subjects
+        ("subjects", [("id", 1)], {"unique": True, "name": "subjects_id_unique"}),
         ("subjects", [("program_id", 1)], {"name": "subjects_program_id"}),
         ("subjects", [("program_id", 1), ("module_number", 1)], {"name": "subjects_program_module"}),
         # module_closures
