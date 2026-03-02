@@ -20,6 +20,7 @@ export default function StudentsPage() {
   const [students, setStudents] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [courses, setCourses] = useState([]);
+  const [fullCourses, setFullCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -63,7 +64,7 @@ export default function StudentsPage() {
       const [studRes, progRes, courseRes] = await Promise.all([
         api.get(`/users?${params.toString()}`),
         api.get('/programs'),
-        api.get('/courses')
+        api.get('/courses?fields=summary')
       ]);
       setStudents(studRes.data.users);
       setTotalStudents(studRes.data.total);
@@ -119,8 +120,11 @@ export default function StudentsPage() {
     return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
   };
 
-  // Get which courses a student is enrolled in
-  const getStudentCourseIds = (studentId) => courses.filter(c => (c.student_ids || []).includes(studentId)).map(c => c.id);
+  // Get which courses a student is enrolled in (uses precalculated data from backend)
+  const getStudentCourseIds = (studentId) => {
+    const student = students.find(s => s.id === studentId);
+    return student?.course_ids || [];
+  };
 
   // Return true if enrollment is currently open for this course based on module_dates.
   // Mirrors the backend can_enroll_in_module / get_open_enrollment_module logic.
@@ -171,11 +175,21 @@ export default function StudentsPage() {
     return true;
   };
 
+  const loadFullCourses = async () => {
+    try {
+      const res = await api.get('/courses');
+      setFullCourses(res.data);
+    } catch (err) {
+      toast.error('Error cargando grupos');
+    }
+  };
+
   const openCreate = () => {
     setEditing(null);
     setForm({ name: '', cedula: '', password: '', phone: '', program_id: '', program_ids: [], course_ids: [], program_modules: {}, program_statuses: {}, estado: 'activo' });
     setProgramSearch('');
     setCourseSearch('');
+    loadFullCourses();
     setDialogOpen(true);
   };
 
@@ -202,13 +216,14 @@ export default function StudentsPage() {
       phone: student.phone || '',
       program_id: student.program_id || '',
       program_ids: studentProgramIds,
-      course_ids: getStudentCourseIds(student.id),
+      course_ids: student.course_ids || [],
       program_modules: programModules,
       program_statuses: programStatuses,
       estado: student.estado || 'activo'
     });
     setProgramSearch('');
     setCourseSearch('');
+    loadFullCourses();
     setDialogOpen(true);
   };
 
@@ -340,7 +355,7 @@ export default function StudentsPage() {
       // Update course enrollments — handle failures independently so a created student
       // is never silently lost if a particular enrollment request fails.
       const enrollmentErrors = [];
-      for (const course of courses) {
+      for (const course of fullCourses) {
         const isEnrolled = (course.student_ids || []).includes(studentId);
         const shouldBeEnrolled = (form.course_ids || []).includes(course.id);
 

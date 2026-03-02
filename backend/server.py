@@ -2536,6 +2536,16 @@ async def get_users(
     skip = (page - 1) * page_size
     users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("name", 1).skip(skip).limit(page_size).to_list(page_size)
 
+    if role == "estudiante" and users:
+        user_ids = [u["id"] for u in users]
+        enrolled_courses = await db.courses.find(
+            {"student_ids": {"$in": user_ids}},
+            {"_id": 0, "id": 1, "name": 1, "student_ids": 1, "program_id": 1}
+        ).to_list(None)
+        for u in users:
+            u["course_ids"] = [c["id"] for c in enrolled_courses if u["id"] in (c.get("student_ids") or [])]
+            u["enrolled_courses"] = [{"id": c["id"], "name": c["name"], "program_id": c.get("program_id")} for c in enrolled_courses if u["id"] in (c.get("student_ids") or [])]
+
     return {
         "users": users,
         "total": total,
@@ -3053,7 +3063,7 @@ async def delete_subject(subject_id: str, user=Depends(get_current_user)):
 
 # --- Courses Routes ---
 @api_router.get("/courses")
-async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
+async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 100, fields: Optional[str] = None, user=Depends(get_current_user)):
     conditions = []
     
     if teacher_id:
@@ -3085,9 +3095,14 @@ async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str
     else:
         query = {"$and": conditions}
     
+    projection = {"_id": 0}
+    if fields == "summary":
+        projection["student_ids"] = 0
+        projection["removed_student_ids"] = 0
+
     limit = max(1, min(limit, MAX_LIMIT))
     skip = max(0, skip)
-    courses = await db.courses.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
+    courses = await db.courses.find(query, projection).skip(skip).limit(limit).to_list(limit)
     return courses
 
 @api_router.get("/courses/{course_id}")
@@ -3831,7 +3846,7 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
 
 # --- Grades Routes ---
 @api_router.get("/grades")
-async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
+async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user), request: Request = None):
     # IDOR guard: students can only access their own data
     if user["role"] == "estudiante":
         student_id = user["id"]
@@ -3844,6 +3859,8 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
         query["subject_id"] = safe_object_id(subject_id, "subject_id")
     if activity_id:
         query["activity_id"] = safe_object_id(activity_id, "activity_id")
+    if course_id and request and "limit" not in request.query_params:
+        limit = MAX_LIMIT_GRADES
     effective_max = MAX_LIMIT_GRADES if course_id else MAX_LIMIT
     limit = max(1, min(limit, effective_max))
     skip = max(0, skip)
