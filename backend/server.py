@@ -2593,6 +2593,8 @@ async def update_user(user_id: str, req: UserUpdate, user=Depends(get_current_us
 async def delete_user(user_id: str, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede eliminar usuarios")
+    if user_id == user["id"]:
+        raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta")
     target = await db.users.find_one({"id": user_id}, {"_id": 0, "name": 1, "role": 1})
     result = await db.users.delete_one({"id": user_id})
     if result.deleted_count == 0:
@@ -3574,10 +3576,31 @@ async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
     await log_audit("activity_created", user["id"], user["role"], {"activity_id": activity["id"], "course_id": req.course_id, "title": req.title})
     return activity
 
+async def _verify_professor_course_ownership(activity_id: str, user: dict):
+    """Raise HTTP 403/404 if the professor is not assigned to the activity's course."""
+    activity = await db.activities.find_one({"id": activity_id}, {"_id": 0})
+    if not activity:
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    course = await db.courses.find_one({"id": activity.get("course_id")}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+    teacher_ids = list(course.get("teacher_ids") or [])
+    if course.get("teacher_id"):
+        teacher_ids.append(course["teacher_id"])
+    if user["id"] not in teacher_ids:
+        user_subject_ids = set(user.get("subject_ids") or [])
+        course_subject_ids = set(course.get("subject_ids") or [])
+        if not user_subject_ids.intersection(course_subject_ids):
+            raise HTTPException(status_code=403, detail="No tienes permiso para modificar actividades de este curso")
+    return activity
+
 @api_router.put("/activities/{activity_id}")
 async def update_activity(activity_id: str, req: ActivityUpdate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    
+    await _verify_professor_course_ownership(activity_id, user)
+    
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
     result = await db.activities.update_one({"id": activity_id}, {"$set": update_data})
     if result.matched_count == 0:
@@ -3587,8 +3610,15 @@ async def update_activity(activity_id: str, req: ActivityUpdate, user=Depends(ge
 
 @api_router.delete("/activities/{activity_id}")
 async def delete_activity(activity_id: str, user=Depends(get_current_user)):
-    if user["role"] != "profesor":
-        raise HTTPException(status_code=403, detail="Solo profesores")
+    if user["role"] not in ["profesor", "admin"]:
+        raise HTTPException(status_code=403, detail="Solo profesores o admin")
+    
+    if user["role"] == "profesor":
+        await _verify_professor_course_ownership(activity_id, user)
+    else:
+        activity = await db.activities.find_one({"id": activity_id}, {"_id": 0})
+        if not activity:
+            raise HTTPException(status_code=404, detail="Actividad no encontrada")
     
     # Cascade delete: remove related grades and submissions
     await db.grades.delete_many({"activity_id": activity_id})
@@ -3600,6 +3630,9 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
 # --- Grades Routes ---
 @api_router.get("/grades")
 async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] = None, subject_id: Optional[str] = None, activity_id: Optional[str] = None, skip: int = 0, limit: int = 5000, user=Depends(get_current_user)):
+    # IDOR guard: students can only access their own data
+    if user["role"] == "estudiante":
+        student_id = user["id"]
     query = {}
     if course_id:
         query["course_id"] = course_id
@@ -4072,7 +4105,7 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     }
 
 @api_router.get("/files/{filename}")
-async def get_file(filename: str):
+async def get_file(filename: str, user=Depends(get_current_user)):
     safe_filename = Path(filename).name
     file_path = UPLOAD_DIR / safe_filename
     if not file_path.exists():
@@ -4105,6 +4138,9 @@ async def get_file(filename: str):
 # --- Submissions Routes ---
 @api_router.get("/submissions")
 async def get_submissions(activity_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 1000, user=Depends(get_current_user)):
+    # IDOR guard: students can only access their own data
+    if user["role"] == "estudiante":
+        student_id = user["id"]
     query = {}
     if activity_id:
         query["activity_id"] = activity_id
