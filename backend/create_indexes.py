@@ -70,6 +70,15 @@ async def create_indexes(db):
         # rate_limits — TTL index to auto-expire documents + compound for query performance
         ("rate_limits", [("expires_at", 1)], {"expireAfterSeconds": 0, "name": "rate_limits_ttl"}),
         ("rate_limits", [("key", 1), ("timestamp", -1)], {"name": "rate_limits_key_timestamp"}),
+        # audit_logs — TTL index (90-day retention) + query performance indexes
+        ("audit_logs", [("expires_at", 1)], {"expireAfterSeconds": 0, "name": "audit_logs_ttl"}),
+        ("audit_logs", [("timestamp", -1)], {"name": "audit_logs_timestamp"}),
+        ("audit_logs", [("user_id", 1), ("action", 1)], {"name": "audit_logs_user_action"}),
+        # grade_changes — query index + TTL index (1-year retention)
+        ("grade_changes", [("grade_id", 1)], {"name": "grade_changes_grade_id"}),
+        ("grade_changes", [("changed_at", 1)], {"expireAfterSeconds": 365 * 24 * 3600, "name": "grade_changes_ttl"}),
+        # module_closures — compound index for scheduler lookup query
+        ("module_closures", [("program_id", 1), ("module_number", 1), ("closed_date", 1)], {"name": "module_closures_lookup", "unique": True}),
     ]
 
     created = 0

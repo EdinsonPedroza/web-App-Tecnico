@@ -1998,7 +1998,8 @@ async def log_audit(action: str, user_id: str, user_role: str, details: dict):
             "user_id": user_id,
             "user_role": user_role,
             "details": details,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=90)
         }
         await db.audit_logs.insert_one(record)
     except Exception as exc:
@@ -3720,6 +3721,22 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
 async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    # IDOR guard: verify the professor is assigned to this course
+    course = await db.courses.find_one({"id": req.course_id}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+    teacher_ids_list = list(course.get("teacher_ids") or [])
+    if course.get("teacher_id"):
+        teacher_ids_list.append(course["teacher_id"])
+    if user["id"] not in teacher_ids_list:
+        user_subject_ids = set(user.get("subject_ids") or [])
+        course_subject_ids = set(course.get("subject_ids") or [])
+        if not user_subject_ids.intersection(course_subject_ids):
+            log_security_event("UNAUTHORIZED_ACTIVITY_CREATE", {
+                "professor_id": user["id"],
+                "course_id": req.course_id,
+            })
+            raise HTTPException(status_code=403, detail="No tienes permiso para crear actividades en este curso")
     # Validate: only ONE recovery activity per subject per course
     if req.is_recovery:
         recovery_query = {"course_id": req.course_id, "is_recovery": True}
@@ -3843,16 +3860,22 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Solo profesores")
 
     # IDOR guard: verify the professor owns this course
-    course = await db.courses.find_one({"id": req.course_id}, {"_id": 0, "teacher_id": 1})
+    course = await db.courses.find_one({"id": req.course_id}, {"_id": 0})
     if not course:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
-    if course.get("teacher_id") != user["id"]:
-        log_security_event("UNAUTHORIZED_GRADE_ATTEMPT", {
-            "professor_id": user["id"],
-            "course_id": req.course_id,
-            "course_teacher_id": course.get("teacher_id")
-        })
-        raise HTTPException(status_code=403, detail="No eres el profesor asignado a este curso")
+    teacher_ids_list = list(course.get("teacher_ids") or [])
+    if course.get("teacher_id"):
+        teacher_ids_list.append(course["teacher_id"])
+    if user["id"] not in teacher_ids_list:
+        user_subject_ids = set(user.get("subject_ids") or [])
+        course_subject_ids = set(course.get("subject_ids") or [])
+        if not user_subject_ids.intersection(course_subject_ids):
+            log_security_event("UNAUTHORIZED_GRADE_ATTEMPT", {
+                "professor_id": user["id"],
+                "course_id": req.course_id,
+                "course_teacher_id": course.get("teacher_id")
+            })
+            raise HTTPException(status_code=403, detail="No eres el profesor asignado a este curso")
     
     # Rule E: For recovery activities, only approve/reject is allowed — no numeric grade
     if req.activity_id:
@@ -4397,6 +4420,11 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
     if not activity:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
     
+    # Enrollment check: student must be enrolled in the activity's course
+    course = await db.courses.find_one({"id": activity["course_id"]}, {"_id": 0, "student_ids": 1, "program_id": 1})
+    if not course or user["id"] not in (course.get("student_ids") or []):
+        raise HTTPException(status_code=403, detail="No estás inscrito en este curso")
+    
     now = datetime.now(timezone.utc)
     
     # Check admin approval for recovery activities (subject-scoped)
@@ -4432,8 +4460,7 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
         subject = await db.subjects.find_one({"id": activity["subject_id"]}, {"_id": 0, "module_number": 1})
         if subject and subject.get("module_number") is not None:
             subject_module = subject["module_number"]
-            # Get course's program_id
-            course = await db.courses.find_one({"id": activity["course_id"]}, {"_id": 0, "program_id": 1})
+            # Reuse already-fetched course for program_id
             if course and course.get("program_id"):
                 program_id = course["program_id"]
                 student_module = (user.get("program_modules") or {}).get(program_id)
