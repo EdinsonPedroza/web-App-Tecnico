@@ -1772,7 +1772,7 @@ async def _check_and_update_recovery_completion(student_id: str, course_id: str)
             "recovery_expired": {"$ne": True},
         },
         {"_id": 0},
-    ).to_list(50000)
+    ).to_list(200)
 
     if not all_records:
         return
@@ -1862,7 +1862,7 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
             "recovery_expired": {"$ne": True},
         },
         {"_id": 0},
-    ).to_list(50000)
+    ).to_list(200)
 
     if not approved_records:
         return
@@ -1874,8 +1874,8 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
 
     # Mark records as rejected so the scheduler handles expulsion at recovery_close
     now = datetime.now(timezone.utc)
-    for record in approved_records:
-        await db.failed_subjects.update_one(
+    bulk_reject_ops = [
+        UpdateOne(
             {"id": record["id"]},
             {"$set": {
                 "recovery_rejected": True,
@@ -1883,6 +1883,9 @@ async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
                 "rejected_by": "teacher"
             }}
         )
+        for record in approved_records
+    ]
+    await db.failed_subjects.bulk_write(bulk_reject_ops, ordered=False)
     logger.info(
         f"Student {student_id} marked for deferred expulsion from group {course_id} "
         f"(teacher rejected recovery subject; scheduler will process at recovery_close)"
@@ -5925,6 +5928,14 @@ async def get_course_results_report(course_id: str, subject_id: Optional[str] = 
         if module_dates:
             module_number = next(iter(module_dates.keys()), None)
 
+    # Pre-load all active recovery records for this course in one query (avoids N+1)
+    _recovery_docs = await db.failed_subjects.find(
+        {"course_id": course_id, "recovery_processed": {"$ne": True}},
+        {"_id": 0, "student_id": 1}
+    ).to_list(10000)
+    # Use a set: we only need to know whether a student has any active recovery record
+    recovery_student_ids = {r["student_id"] for r in _recovery_docs}
+
     # Build per-student summary rows (one row per student, columns for each subject average)
     rows = []
     for student in students:
@@ -5939,11 +5950,8 @@ async def get_course_results_report(course_id: str, subject_id: Optional[str] = 
             # Fall back: no subject_ids configured – use all grades for this course
             all_values = [v for (s, _subj), vals in grades_index.items() if s == sid for v in vals]
         general_avg = round(sum(all_values) / len(all_values), 2) if all_values else 0.0
-        # Check recovery status
-        recovery_record = await db.failed_subjects.find_one(
-            {"student_id": sid, "course_id": course_id, "recovery_processed": {"$ne": True}},
-            {"_id": 0, "recovery_approved": 1}
-        )
+        # Check recovery status using pre-loaded set (no per-student DB query)
+        recovery_record = sid in recovery_student_ids
         if general_avg >= 3.0:
             status = "Aprobado"
         elif recovery_record:
