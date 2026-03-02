@@ -37,6 +37,7 @@ async def create_indexes(db):
         ("grades", [("activity_id", 1)], {"name": "grades_activity_id"}),
         ("grades", [("student_id", 1), ("course_id", 1)], {"name": "grades_student_course"}),
         ("grades", [("student_id", 1), ("course_id", 1), ("activity_id", 1)], {"name": "grades_student_course_activity"}),
+        ("grades", [("student_id", 1), ("course_id", 1), ("subject_id", 1)], {"name": "grades_student_course_subject"}),
         # submissions
         ("submissions", [("student_id", 1)], {"name": "submissions_student_id"}),
         ("submissions", [("activity_id", 1)], {"name": "submissions_activity_id"}),
@@ -56,6 +57,7 @@ async def create_indexes(db):
         ("recovery_enabled", [("student_id", 1), ("course_id", 1)], {"name": "recovery_enabled_student_course"}),
         # failed_subjects
         ("failed_subjects", [("student_id", 1)], {"name": "failed_subjects_student_id"}),
+        ("failed_subjects", [("course_id", 1), ("recovery_processed", 1), ("student_id", 1)], {"name": "failed_subjects_course_processed_student"}),
         ("failed_subjects", [("student_id", 1), ("course_id", 1)], {"name": "failed_subjects_student_course"}),
         ("failed_subjects", [("course_id", 1), ("module_number", 1), ("recovery_processed", 1)], {"name": "failed_subjects_course_module_processed"}),
         ("failed_subjects", [("course_id", 1), ("module_number", 1), ("recovery_processed", 1), ("recovery_expired", 1)],
