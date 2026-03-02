@@ -4195,6 +4195,69 @@ def _validate_file_content(file_content: bytes, declared_ext: str) -> bool:
 
     return True
 
+_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
+_MAX_IMAGE_DIMENSION = 1920
+_JPEG_QUALITY = 80
+
+def compress_image(file_content: bytes, filename: str) -> tuple:
+    """Compress and optionally resize an image file.
+
+    If the file is not an image (based on extension), the original bytes and
+    filename are returned unchanged.  For images:
+      - Large images (> _MAX_IMAGE_DIMENSION in either dimension) are resized
+        while preserving aspect ratio.
+      - PNG images without an alpha channel are converted to JPEG for smaller
+        file size.
+      - PNG images with transparency are kept as optimized PNG.
+      - All other images are saved as JPEG at _JPEG_QUALITY quality.
+
+    Returns:
+        (compressed_bytes, new_filename)
+    """
+    from PIL import Image
+    import io as _io
+
+    ext = Path(filename).suffix.lower().lstrip(".")
+    if ext not in _IMAGE_EXTENSIONS:
+        return file_content, filename
+
+    original_size = len(file_content)
+
+    img = Image.open(_io.BytesIO(file_content))
+
+    # Resize if either dimension exceeds the maximum
+    w, h = img.size
+    if w > _MAX_IMAGE_DIMENSION or h > _MAX_IMAGE_DIMENSION:
+        img.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION), Image.LANCZOS)
+
+    output = _io.BytesIO()
+    stem = Path(filename).stem
+
+    if ext == "png":
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            # Keep as PNG – optimize
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            img.save(output, format="PNG", optimize=True)
+            new_filename = f"{stem}.png"
+        else:
+            # Convert to JPEG
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.save(output, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+            new_filename = f"{stem}.jpg"
+    else:
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.save(output, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+        new_filename = f"{stem}.jpg"
+
+    compressed_bytes = output.getvalue()
+    compressed_size = len(compressed_bytes)
+    savings = round((1 - compressed_size / original_size) * 100, 1) if original_size else 0
+    logger.info(f"Image compressed: {original_size} -> {compressed_size} ({savings}% reduction)")
+    return compressed_bytes, new_filename
+
 @api_router.post("/upload")
 async def upload_file(request: Request, file: UploadFile = File(...), user=Depends(get_current_user)):
     if user["role"] not in ["profesor", "admin", "estudiante"]:
@@ -4239,6 +4302,11 @@ async def upload_file(request: Request, file: UploadFile = File(...), user=Depen
         )
 
     _safe_basename = re.sub(r'[^\w\-]', '_', Path(original_name).stem)[:100]
+
+    # Compress images before storing
+    file_content, original_name = compress_image(file_content, original_name)
+    _ext = Path(original_name).suffix.lower().lstrip(".")
+    file_size = len(file_content)
 
     # Rate limit: max 20 uploads per minute per user (MongoDB-backed, shared across workers)
     _user_id = user["id"]

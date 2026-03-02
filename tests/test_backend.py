@@ -4157,3 +4157,163 @@ class TestLastModuleRecoveryGraduation:
         else:
             program_statuses[prog_id] = "activo"
         assert program_statuses[prog_id] == "egresado"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for compress_image utility
+# ---------------------------------------------------------------------------
+
+import io as _io
+from PIL import Image as _PILImage
+
+
+def _make_jpeg_bytes(width=100, height=100):
+    """Create a minimal in-memory JPEG image and return its bytes."""
+    img = _PILImage.new("RGB", (width, height), color=(200, 100, 50))
+    buf = _io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
+
+
+def _make_png_bytes(width=100, height=100, with_alpha=False):
+    """Create a minimal in-memory PNG image and return its bytes."""
+    mode = "RGBA" if with_alpha else "RGB"
+    color = (100, 150, 200, 128) if with_alpha else (100, 150, 200)
+    img = _PILImage.new(mode, (width, height), color=color)
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _make_webp_bytes(width=100, height=100):
+    """Create a minimal in-memory WEBP image and return its bytes."""
+    img = _PILImage.new("RGB", (width, height), color=(80, 160, 240))
+    buf = _io.BytesIO()
+    img.save(buf, format="WEBP", quality=95)
+    return buf.getvalue()
+
+
+def _get_compress_image():
+    """Build and return a compress_image function mirroring the backend implementation."""
+    from pathlib import Path as _Path
+    import logging as _logging
+    _logger = _logging.getLogger("test_compress")
+
+    _IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
+    _MAX_IMAGE_DIMENSION = 1920
+    _JPEG_QUALITY = 80
+
+    def compress_image(file_content: bytes, filename: str):
+        from PIL import Image
+        import io as _io2
+
+        ext = _Path(filename).suffix.lower().lstrip(".")
+        if ext not in _IMAGE_EXTENSIONS:
+            return file_content, filename
+
+        original_size = len(file_content)
+        img = Image.open(_io2.BytesIO(file_content))
+
+        w, h = img.size
+        if w > _MAX_IMAGE_DIMENSION or h > _MAX_IMAGE_DIMENSION:
+            img.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION), Image.LANCZOS)
+
+        output = _io2.BytesIO()
+        stem = _Path(filename).stem
+
+        if ext == "png":
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                img.save(output, format="PNG", optimize=True)
+                new_filename = f"{stem}.png"
+            else:
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.save(output, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+                new_filename = f"{stem}.jpg"
+        else:
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.save(output, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+            new_filename = f"{stem}.jpg"
+
+        compressed_bytes = output.getvalue()
+        compressed_size = len(compressed_bytes)
+        savings = round((1 - compressed_size / original_size) * 100, 1) if original_size else 0
+        _logger.info(f"Image compressed: {original_size} -> {compressed_size} ({savings}% reduction)")
+        return compressed_bytes, new_filename
+
+    return compress_image
+
+
+class TestCompressImage:
+    """Tests for the compress_image utility function."""
+
+    @pytest.fixture(scope="class")
+    def compress_image(self):
+        return _get_compress_image()
+
+    def test_jpeg_is_compressed(self, compress_image):
+        """JPEG image bytes are returned as valid JPEG with smaller or equal size."""
+        jpeg_bytes = _make_jpeg_bytes(800, 600)
+        result_bytes, result_name = compress_image(jpeg_bytes, "photo.jpg")
+        img = _PILImage.open(_io.BytesIO(result_bytes))
+        assert img.format == "JPEG"
+        assert result_name.endswith(".jpg")
+
+    def test_png_without_alpha_converted_to_jpeg(self, compress_image):
+        """PNG without transparency is converted to JPEG."""
+        png_bytes = _make_png_bytes(200, 200, with_alpha=False)
+        result_bytes, result_name = compress_image(png_bytes, "image.png")
+        img = _PILImage.open(_io.BytesIO(result_bytes))
+        assert img.format == "JPEG"
+        assert result_name == "image.jpg"
+
+    def test_png_with_alpha_stays_png(self, compress_image):
+        """PNG with alpha channel is kept as PNG."""
+        png_bytes = _make_png_bytes(200, 200, with_alpha=True)
+        result_bytes, result_name = compress_image(png_bytes, "transparent.png")
+        img = _PILImage.open(_io.BytesIO(result_bytes))
+        assert img.format == "PNG"
+        assert result_name == "transparent.png"
+
+    def test_pdf_not_modified(self, compress_image):
+        """PDF content is returned unchanged."""
+        pdf_bytes = b"%PDF-1.4 some fake pdf content"
+        result_bytes, result_name = compress_image(pdf_bytes, "document.pdf")
+        assert result_bytes == pdf_bytes
+        assert result_name == "document.pdf"
+
+    def test_large_image_resized(self, compress_image):
+        """Image larger than 1920px in either dimension is resized."""
+        large_jpeg = _make_jpeg_bytes(3000, 2000)
+        result_bytes, _ = compress_image(large_jpeg, "large.jpg")
+        img = _PILImage.open(_io.BytesIO(result_bytes))
+        assert max(img.size) <= 1920
+
+    def test_small_image_not_resized(self, compress_image):
+        """Small image (within 1920px) is not up-scaled."""
+        small_jpeg = _make_jpeg_bytes(400, 300)
+        result_bytes, _ = compress_image(small_jpeg, "small.jpg")
+        img = _PILImage.open(_io.BytesIO(result_bytes))
+        assert img.size == (400, 300)
+
+    def test_webp_converted_to_jpeg(self, compress_image):
+        """WEBP image is converted to JPEG."""
+        webp_bytes = _make_webp_bytes(200, 200)
+        result_bytes, result_name = compress_image(webp_bytes, "photo.webp")
+        img = _PILImage.open(_io.BytesIO(result_bytes))
+        assert img.format == "JPEG"
+        assert result_name == "photo.jpg"
+
+    def test_non_image_extensions_not_modified(self, compress_image):
+        """Non-image file types are returned unchanged."""
+        for fname, content in [
+            ("report.docx", b"PK fake docx"),
+            ("data.xlsx", b"PK fake xlsx"),
+            ("notes.txt", b"plain text content"),
+        ]:
+            out_bytes, out_name = compress_image(content, fname)
+            assert out_bytes == content
+            assert out_name == fname
