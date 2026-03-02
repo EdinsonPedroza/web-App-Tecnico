@@ -15,7 +15,7 @@ import openpyxl
 from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict, validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -466,19 +466,32 @@ async def check_and_close_modules():
                     continue
 
             # Pre-load course grades once per course (not once per module_key).
-            # grades_index and course_grades are shared across all module_key iterations.
+            # Uses aggregation to compute per-(student, subject) averages in MongoDB,
+            # avoiding loading up to 200k raw grade documents into memory.
             subject_ids = course.get("subject_ids") or []
             if not subject_ids and course.get("subject_id"):
                 subject_ids = [course["subject_id"]]
-            course_grades = await db.grades.find(
-                {"course_id": course["id"]},
-                {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
-            ).to_list(200000)
+            _grade_pipeline = [
+                {"$match": {"course_id": course["id"], "value": {"$ne": None}}},
+                {"$group": {
+                    "_id": {"student_id": "$student_id", "subject_id": "$subject_id"},
+                    "avg": {"$avg": "$value"},
+                    "count": {"$sum": 1}
+                }}
+            ]
+            _grade_aggs = await db.grades.aggregate(_grade_pipeline).to_list(100000)
+            # grades_index: (student_id, subject_id) -> (avg, count)
             grades_index = {}
-            for _g in course_grades:
-                if _g.get("value") is None:
-                    continue
-                grades_index.setdefault((_g.get("student_id"), _g.get("subject_id")), []).append(_g["value"])
+            # student_all_grades_avg: student_id -> {"wsum": float, "n": int} for no-subjects fallback
+            student_all_grades_avg: dict = {}
+            for _g in _grade_aggs:
+                _sid = _g["_id"]["student_id"]
+                _subj = _g["_id"]["subject_id"]
+                _avg, _cnt = float(_g["avg"]), int(_g["count"])
+                grades_index[(_sid, _subj)] = (_avg, _cnt)
+                _sagg = student_all_grades_avg.setdefault(_sid, {"wsum": 0.0, "n": 0})
+                _sagg["wsum"] += _avg * _cnt
+                _sagg["n"] += _cnt
 
             for module_key, dates in module_dates.items():
                 recovery_close = dates.get("recovery_close") if dates else None
@@ -556,7 +569,7 @@ async def check_and_close_modules():
                     continue
 
                 # Filter course subjects to those belonging to this module_key.
-                # course_grades and grades_index are pre-loaded once per course above.
+                # grades_index and student_all_grades_avg are pre-loaded once per course above.
                 module_subject_ids = [sid for sid in subject_ids if subject_module_map.get(sid, 1) == int(module_key)]
                 
                 # Pre-load all student docs and the program in bulk before the loop
@@ -644,16 +657,16 @@ async def check_and_close_modules():
                         for sid in module_subject_ids:
                             if sid in tracked_subject_ids:
                                 continue  # This subject has a record – already considered above
-                            values = grades_index.get((student_id, sid), [])
-                            if not values:
+                            _gd = grades_index.get((student_id, sid))
+                            if _gd is None:
                                 # Subject has no grades — teacher may have forgotten to grade
                                 skipped_no_grades_recovery += 1
                                 logger.debug(
                                     f"Recovery close: student {student_id} has no grades for "
                                     f"subject {sid} in course {course['id']} module {module_key} – skipping subject"
                                 )
-                            elif values:  # Only flag if grades exist (skip ungraded subjects)
-                                avg = sum(values) / len(values)
+                            else:  # Only flag if grades exist (skip ungraded subjects)
+                                avg = _gd[0]
                                 if avg < 3.0:
                                     all_passed = False
                                     logger.info(
@@ -819,20 +832,20 @@ async def check_and_close_modules():
                         has_grades_for_module = False
                         has_failing = False
                         for sid in module_subject_ids:
-                            values = grades_index.get((student_id, sid), [])
-                            if values:
+                            _gd = grades_index.get((student_id, sid))
+                            if _gd:
                                 has_grades_for_module = True
-                                avg = sum(values) / len(values)
+                                avg = _gd[0]
                                 if avg < 3.0:
                                     has_failing = True
                                     break
                         if not has_grades_for_module:
                             continue  # No grades for this module; skip (likely newly enrolled)
                     else:
-                        values = [g.get("value") for g in course_grades if g.get("student_id") == student_id and g.get("value") is not None]
-                        if not values:
+                        _all = student_all_grades_avg.get(student_id)
+                        if not _all or _all["n"] == 0:
                             continue  # No grades in this course; skip (likely newly enrolled)
-                        avg = sum(values) / len(values)
+                        avg = _all["wsum"] / _all["n"]
                         has_failing = avg < 3.0
 
                     if has_failing:
@@ -1009,20 +1022,20 @@ async def check_and_close_modules():
                         has_grades_for_module = False
                         has_failing = False
                         for sid in module_subject_ids:
-                            values = grades_index.get((student_id, sid), [])
-                            if values:
+                            _gd = grades_index.get((student_id, sid))
+                            if _gd:
                                 has_grades_for_module = True
-                                avg = sum(values) / len(values)
+                                avg = _gd[0]
                                 if avg < 3.0:
                                     has_failing = True
                                     break
                         if not has_grades_for_module:
                             continue  # No grades for this module; skip (likely newly enrolled)
                     else:
-                        values = [g.get("value") for g in course_grades if g.get("student_id") == student_id and g.get("value") is not None]
-                        if not values:
+                        _all = student_all_grades_avg.get(student_id)
+                        if not _all or _all["n"] == 0:
                             continue  # No grades in this course; skip (likely newly enrolled)
-                        avg = sum(values) / len(values)
+                        avg = _all["wsum"] / _all["n"]
                         has_failing = avg < 3.0
 
                     if not has_failing:
@@ -2055,7 +2068,8 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=200)
     role: str = Field(..., pattern="^(estudiante|profesor|admin|editor)$")
 
-    @validator('email')
+    @field_validator('email')
+    @classmethod
     def sanitize_email(cls, v):
         if v:
             v = v.strip()[:200]
@@ -2067,7 +2081,8 @@ class LoginRequest(BaseModel):
             return v
         return v
     
-    @validator('cedula')
+    @field_validator('cedula')
+    @classmethod
     def sanitize_cedula(cls, v):
         if v:
             # Only allow numbers for cedula (consistent with UserCreate/UserUpdate)
@@ -2079,7 +2094,8 @@ class AdminCreateByEditor(BaseModel):
     email: str = Field(..., min_length=1, max_length=200)
     password: str = Field(..., min_length=6, max_length=200)
 
-    @validator('name', 'email')
+    @field_validator('name', 'email')
+    @classmethod
     def sanitize_fields(cls, v):
         return sanitize_string(v, 200)
 
@@ -2089,7 +2105,8 @@ class AdminUpdateByEditor(BaseModel):
     password: Optional[str] = Field(None, min_length=6, max_length=200)
     active: Optional[bool] = None
 
-    @validator('name', 'email')
+    @field_validator('name', 'email')
+    @classmethod
     def sanitize_fields(cls, v):
         if v is not None:
             return sanitize_string(v, 200)
@@ -2111,13 +2128,15 @@ class UserCreate(BaseModel):
     program_statuses: Optional[dict] = None  # Maps program_id to status, e.g., {"prog-admin": "activo"}
     estado: Optional[str] = Field(None, pattern="^(activo|egresado|pendiente_recuperacion|retirado)$")  # Student status
 
-    @validator('name', 'email', 'phone')
+    @field_validator('name', 'email', 'phone')
+    @classmethod
     def sanitize_text_fields(cls, v):
         if v:
             return sanitize_string(v, 200)
         return v
     
-    @validator('cedula')
+    @field_validator('cedula')
+    @classmethod
     def sanitize_cedula(cls, v):
         if v:
             # Only allow numbers for cedula
@@ -2127,7 +2146,8 @@ class UserCreate(BaseModel):
             return cleaned
         return v
     
-    @validator('email')
+    @field_validator('email')
+    @classmethod
     def validate_email(cls, v):
         if v:
             # Email validation: must contain @ and a domain
@@ -2136,7 +2156,8 @@ class UserCreate(BaseModel):
                 raise ValueError('El correo electrónico debe contener @ y un dominio válido')
         return v
     
-    @validator('program_modules')
+    @field_validator('program_modules')
+    @classmethod
     def validate_program_modules(cls, v):
         if v is not None:
             for prog_id, module_num in v.items():
@@ -2158,13 +2179,15 @@ class UserUpdate(BaseModel):
     program_statuses: Optional[dict] = None  # Maps program_id to status, e.g., {"prog-admin": "activo"}
     estado: Optional[str] = Field(None, pattern="^(activo|egresado|pendiente_recuperacion|retirado)$")  # Student status
 
-    @validator('name', 'email', 'phone')
+    @field_validator('name', 'email', 'phone')
+    @classmethod
     def sanitize_text_fields(cls, v):
         if v:
             return sanitize_string(v, 200)
         return v
     
-    @validator('cedula')
+    @field_validator('cedula')
+    @classmethod
     def sanitize_cedula(cls, v):
         if v:
             # Only allow numbers for cedula
@@ -2174,7 +2197,8 @@ class UserUpdate(BaseModel):
             return cleaned
         return v
     
-    @validator('email')
+    @field_validator('email')
+    @classmethod
     def validate_email(cls, v):
         if v:
             # Email validation: must contain @ and a domain
@@ -2183,7 +2207,8 @@ class UserUpdate(BaseModel):
                 raise ValueError('El correo electrónico debe contener @ y un dominio válido')
         return v
     
-    @validator('program_modules')
+    @field_validator('program_modules')
+    @classmethod
     def validate_program_modules(cls, v):
         if v is not None:
             for prog_id, module_num in v.items():
