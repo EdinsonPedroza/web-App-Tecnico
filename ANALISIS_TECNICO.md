@@ -21,10 +21,10 @@ Tras revisar la arquitectura, la configuración, la lógica principal del backen
 
 ## Inconsistencias y riesgos detectados
 
-### 1) Configuración de producción con secreto JWT débil por defecto
-En `docker-compose.yml` el backend usa por defecto `JWT_SECRET=educando_secret_key_2025`, que es un valor estático y predecible si no se sobreescribe por variable de entorno. Aunque el backend bloquea otro valor inseguro interno, **este valor del compose también debería tratarse como obligatorio y fuerte**.
+### ~~1) Configuración de producción con secreto JWT débil por defecto~~ ✅ RESUELTO
+~~En `docker-compose.yml` el backend usa por defecto `JWT_SECRET=educando_secret_key_2025`, que es un valor estático y predecible si no se sobreescribe por variable de entorno. Aunque el backend bloquea otro valor inseguro interno, **este valor del compose también debería tratarse como obligatorio y fuerte**.~~
 
-**Recomendación:** eliminar valor por defecto en compose y exigir variable obligatoria en despliegue.
+**Resuelto:** `docker-compose.yml` ya no incluye valor por defecto para `JWT_SECRET`; la variable es obligatoria en despliegue.
 
 ### 2) Mezcla de gestores de paquetes en frontend
 El proyecto contiene `package-lock.json` y `yarn.lock` a la vez. Además, `yarn` en este entorno intentó resolver con versión moderna (Berry) y falló con lockfile/workspace.
@@ -38,15 +38,16 @@ Las pruebas muestran advertencias por:
 
 **Recomendación:** plan de actualización gradual para evitar deuda técnica y futuros breaking changes.
 
-### 4) Dependencia de almacenamiento local para uploads
-El backend indica que los archivos se guardan localmente (ephemeral storage en contenedores), y opcionalmente puede usar Cloudinary.
+### ~~4) Dependencia de almacenamiento local para uploads~~ ✅ RESUELTO
+~~El backend indica que los archivos se guardan localmente (ephemeral storage en contenedores), y opcionalmente puede usar Cloudinary.~~
 
-**Recomendación:** en producción usar siempre almacenamiento persistente (Cloudinary/S3) para evitar pérdida de archivos en redeploy.
+**Resuelto:** En producción se utiliza **AWS S3** como almacenamiento persistente para todos los archivos subidos por los usuarios. Ver `DEPLOY_CHECKLIST.md` para la configuración de las variables de entorno necesarias.
 
 ## ¿Hace falta agregar o eliminar algo?
 
 ### Agregar (prioridad alta)
-- Política obligatoria de `JWT_SECRET` fuerte en despliegue.
+- ~~Política obligatoria de `JWT_SECRET` fuerte en despliegue.~~ ✅ RESUELTO
+- ~~Almacenamiento persistente para uploads en producción.~~ ✅ RESUELTO
 - Estandarización de gestor de paquetes frontend y actualización de documentación.
 
 ### Agregar (prioridad media)
@@ -54,7 +55,7 @@ El backend indica que los archivos se guardan localmente (ephemeral storage en c
 - Migración de validadores Pydantic v1 → v2.
 
 ### Eliminar o ajustar
-- Eliminar defaults inseguros de secretos en archivos de infraestructura.
+- ~~Eliminar defaults inseguros de secretos en archivos de infraestructura.~~ ✅ RESUELTO
 - Evitar tener ambos lockfiles (`package-lock.json` y `yarn.lock`) si no hay razón operativa clara.
 
 ## Conclusión
@@ -62,4 +63,6 @@ El backend indica que los archivos se guardan localmente (ephemeral storage en c
 **Sí, el sistema funciona y la base lógica está bien construida.**
 No hay evidencia de fallas críticas de funcionalidad en pruebas.
 
-Sin embargo, hay **4 áreas de mejora reales** (seguridad de secretos en despliegue, consistencia de toolchain frontend, deprecaciones de framework y persistencia de uploads) que conviene atender para robustez de largo plazo.
+> ✅ **La aplicación está desplegada y funcionando en producción en Render** con MongoDB Atlas Flex y AWS S3.
+
+Sin embargo, hay **2 áreas de mejora pendientes** (consistencia de toolchain frontend y deprecaciones de framework) que conviene atender para robustez de largo plazo.
