@@ -174,12 +174,62 @@ api_router = APIRouter(prefix="/api")
 # Initialize scheduler for automatic module closure
 scheduler = AsyncIOScheduler()
 
+async def acquire_scheduler_lock(lock_name: str, ttl_seconds: int = 300) -> bool:
+    """Try to acquire a distributed lock using MongoDB.
+
+    Returns True if lock was acquired, False if another worker holds it.
+    Uses a TTL field so stale locks auto-expire after ttl_seconds.
+
+    Atomicity is guaranteed by the unique index on lock_name: when two workers
+    race to upsert a new lock, the second gets a DuplicateKeyError (caught here)
+    and returns False. For expired lock takeovers, only one update_one will report
+    modified_count > 0; the other gets 0 and returns False.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(seconds=ttl_seconds)
+        result = await db.scheduler_locks.update_one(
+            {
+                "lock_name": lock_name,
+                "$or": [
+                    {"expires_at": {"$lt": now}},  # Lock expired
+                    {"expires_at": {"$exists": False}}  # No lock exists
+                ]
+            },
+            {
+                "$set": {
+                    "lock_name": lock_name,
+                    "locked_by": f"worker-{os.environ.get('WORKER_ID', 'unknown')}-{os.getpid()}",
+                    "locked_at": now,
+                    "expires_at": expires_at
+                }
+            },
+            upsert=True
+        )
+        return result.modified_count > 0 or result.upserted_id is not None
+    except Exception as e:
+        logger.error(f"Failed to acquire scheduler lock '{lock_name}': {e}")
+        return False
+
+
+async def release_scheduler_lock(lock_name: str):
+    """Release a distributed lock."""
+    try:
+        await db.scheduler_locks.delete_one({"lock_name": lock_name})
+    except Exception as e:
+        logger.error(f"Failed to release scheduler lock '{lock_name}': {e}")
+
+
 async def check_and_close_modules():
     """
     Check all programs and courses for module close dates that have passed and automatically close them.
     This function runs daily at 00:01 AM.
     Also checks recovery close dates: students who haven't passed recovery by the deadline are removed.
     """
+    # Distributed lock: only one worker across all instances should run this job
+    if not await acquire_scheduler_lock("auto_close_modules", ttl_seconds=600):
+        logger.info("Module closure already running on another worker, skipping.")
+        return
     try:
         logger.info("Running automatic module closure check...")
         now = datetime.now(timezone.utc)
@@ -889,6 +939,8 @@ async def check_and_close_modules():
         logger.info("Automatic module closure check completed")
     except Exception as e:
         logger.error(f"Error in automatic module closure check: {e}", exc_info=True)
+    finally:
+        await release_scheduler_lock("auto_close_modules")
 
 # Health check endpoint for monitoring
 @app.get("/api/health")
@@ -1012,6 +1064,15 @@ async def startup_event():
             logger.info("Índices MongoDB verificados/creados exitosamente")
         except Exception as e:
             logger.warning(f"No se pudieron crear índices automáticamente: {e}")
+        # TTL and unique indexes for distributed scheduler locks
+        try:
+            await db.scheduler_locks.create_index("expires_at", expireAfterSeconds=0, name="scheduler_locks_ttl")
+        except Exception as idx_err:
+            logger.debug(f"scheduler_locks_ttl index already exists or could not be created: {idx_err}")
+        try:
+            await db.scheduler_locks.create_index("lock_name", unique=True, name="scheduler_locks_unique")
+        except Exception as idx_err:
+            logger.debug(f"scheduler_locks_unique index already exists or could not be created: {idx_err}")
         await create_initial_data()
         
         # Start the automatic module closure scheduler.

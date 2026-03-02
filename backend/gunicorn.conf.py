@@ -5,6 +5,23 @@ import os
 # Solo el worker 0 ejecuta el APScheduler para evitar race conditions.
 workers = int(os.environ.get("WORKERS", 4))
 
+# Counter for assigning sequential worker IDs
+_worker_counter = 0
+
+def post_fork(server, worker):
+    """Assign a sequential WORKER_ID to each forked worker.
+
+    Gunicorn does NOT set WORKER_ID automatically. Without this hook,
+    os.environ.get("WORKER_ID") returns None in ALL workers, causing
+    ALL of them to start the APScheduler (duplicating cron jobs).
+
+    post_fork is called sequentially by the master process, so the
+    global counter increment is safe (no concurrent access).
+    """
+    global _worker_counter
+    os.environ["WORKER_ID"] = str(_worker_counter)
+    _worker_counter += 1
+
 # Clase de worker: uvicorn para FastAPI async
 worker_class = "uvicorn.workers.UvicornWorker"
 
