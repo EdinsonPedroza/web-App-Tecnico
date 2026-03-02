@@ -2327,11 +2327,11 @@ async def login(req: LoginRequest, request: Request):
         })
         raise HTTPException(status_code=403, detail="Cuenta desactivada")
     
-    # Successful login - clear rate limit attempts for this IP and identifier
-    keys_to_clear = [f"login_ip:{client_ip}"]
+    # Successful login - clear rate limit attempts for this identifier only
+    # Security: Do NOT clear IP-based attempts on success to prevent bypass attacks
+    # where an attacker uses a known-valid account to reset the IP counter
     if identifier:
-        keys_to_clear.append(f"login_id:{identifier}")
-    await db.rate_limits.delete_many({"key": {"$in": keys_to_clear}})
+        await db.rate_limits.delete_many({"key": f"login_id:{identifier}"})
     
     logger.info(f"Successful login: user_id={user['id']}, role={user['role']}, ip={client_ip}")
     await log_audit("login_success", user["id"], user["role"], {"ip": client_ip})
