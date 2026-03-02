@@ -59,13 +59,13 @@ services:
     envVars:
       - key: REACT_APP_BACKEND_URL
         sync: false
-        # ⚠️ OBLIGATORIO: Configura manualmente en el Render Dashboard con la URL pública
-        # HTTPS del backend, p.ej.: https://educando-backend.onrender.com
+        # Dejar VACÍO para que el frontend use URLs relativas y nginx haga el proxy al backend.
+        # Solo establecer este valor si el frontend necesita comunicarse con un backend externo.
       - key: BACKEND_URL
         sync: false
-        # ⚠️ OBLIGATORIO: Render NO soporta comunicación inter-servicio por nombre de
-        # contenedor. DEBES configurar esta variable manualmente en el Render Dashboard
-        # con la URL pública HTTPS del backend, p.ej.: https://educando-backend.onrender.com
+        # ⚠️ Comunicación frontend→backend via Internal Address HTTP de Render.
+        # Configurar con la dirección interna del backend, p.ej.: http://educando-backend:10000
+        # NO usar la URL pública HTTPS para la comunicación inter-servicio interna.
       - key: PORT
         value: 10000
     autoDeploy: true
