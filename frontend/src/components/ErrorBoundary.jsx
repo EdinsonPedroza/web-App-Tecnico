@@ -48,6 +48,24 @@ class ErrorBoundary extends React.Component {
 
     // Log to backend if error logging endpoint exists (optional)
     this.logErrorToService(error, errorInfo);
+
+    // Auto-reload once for chunk errors (stale cache after deploy)
+    if (isChunkError(error)) {
+      const last = parseInt(sessionStorage.getItem('_eb_auto_reload_at') || '0', 10);
+      const now = Date.now();
+      if (now - last > 15000) {
+        sessionStorage.setItem('_eb_auto_reload_at', String(now));
+        setTimeout(async () => {
+          if ('caches' in window) {
+            try {
+              const names = await caches.keys();
+              await Promise.all(names.map(n => caches.delete(n)));
+            } catch (_) {}
+          }
+          window.location.reload();
+        }, 1500);
+      }
+    }
   }
 
   logErrorToService = (error, errorInfo) => {
@@ -79,20 +97,17 @@ class ErrorBoundary extends React.Component {
   };
 
   handleReload = async () => {
-    // Clear cache and reload
-    if (this.state.isChunkError) {
-      // For chunk errors, try to clear cache before reloading
-      if ('caches' in window) {
-        try {
-          const cacheNames = await caches.keys();
-          await Promise.all(cacheNames.map(name => caches.delete(name)));
-        } catch (error) {
-          // If cache clearing fails, log and continue to reload
-          console.error('Failed to clear caches:', error);
-        }
+    // Always clear all caches before reloading to fix stale bundle issues
+    if ('caches' in window) {
+      try {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      } catch (error) {
+        // If cache clearing fails, log and continue to reload
+        console.error('Failed to clear caches:', error);
       }
     }
-    // Reload the page
+    // Force reload bypassing cache
     window.location.reload();
   };
 
