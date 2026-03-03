@@ -28,6 +28,13 @@ class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
+    // Suppress NotFoundError DOMExceptions caused by browser extensions
+    // (e.g., Google Translate) manipulating the DOM outside React's control.
+    // These errors are harmless and the app continues working normally.
+    if (error instanceof DOMException && error.name === 'NotFoundError') {
+      return null; // Don't update state — don't show error screen
+    }
+
     // Check if it's a chunk loading error using shared utility
     const chunkError = isChunkError(error);
 
@@ -38,6 +45,12 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
+    // Ignore NotFoundError from browser extensions like Google Translate
+    if (error instanceof DOMException && error.name === 'NotFoundError') {
+      console.warn('Suppressed NotFoundError (likely caused by Google Translate or browser extension):', error.message);
+      return;
+    }
+
     // Log error details for debugging
     console.error('ErrorBoundary caught an error:', error, errorInfo);
     
