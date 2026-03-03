@@ -49,22 +49,21 @@ class ErrorBoundary extends React.Component {
     // Log to backend if error logging endpoint exists (optional)
     this.logErrorToService(error, errorInfo);
 
-    // Auto-reload once for chunk errors (stale cache after deploy)
-    if (isChunkError(error)) {
-      const last = parseInt(sessionStorage.getItem('_eb_auto_reload_at') || '0', 10);
-      const now = Date.now();
-      if (now - last > 15000) {
-        sessionStorage.setItem('_eb_auto_reload_at', String(now));
-        setTimeout(async () => {
-          if ('caches' in window) {
-            try {
-              const names = await caches.keys();
-              await Promise.all(names.map(n => caches.delete(n)));
-            } catch (_) {}
-          }
-          window.location.reload();
-        }, 1500);
-      }
+    // Auto-reload once for any error (throttled to once per 15 seconds)
+    // This handles transient errors like race conditions during navigation
+    const last = parseInt(sessionStorage.getItem('_eb_auto_reload_at') || '0', 10);
+    const now = Date.now();
+    if (now - last > 15000) {
+      sessionStorage.setItem('_eb_auto_reload_at', String(now));
+      setTimeout(async () => {
+        if ('caches' in window) {
+          try {
+            const names = await caches.keys();
+            await Promise.all(names.map(n => caches.delete(n)));
+          } catch (_) {}
+        }
+        window.location.reload();
+      }, 1500);
     }
   }
 
@@ -164,7 +163,7 @@ class ErrorBoundary extends React.Component {
                   )}
                 </div>
 
-                {process.env.NODE_ENV === 'development' && error && (
+                {error && (
                   <div className="mt-4 p-3 bg-muted rounded-md">
                     <p className="text-xs font-mono text-muted-foreground break-all">
                       <strong>Error:</strong> {error.toString()}
