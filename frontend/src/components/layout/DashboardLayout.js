@@ -61,6 +61,18 @@ export default function DashboardLayout({ children, courseId }) {
   const subjectId = searchParams.get('subjectId');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Guard against null user (can happen during auth sync)
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Cargando...</p>
+        </div>
+      </div>
+    );
+  }
+
   const handleLogout = () => {
     logout();
     navigate('/');

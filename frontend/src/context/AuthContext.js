@@ -57,11 +57,17 @@ export function AuthProvider({ children }) {
       api.get('/auth/me').then(res => {
         sessionStorage.setItem('educando_user', JSON.stringify(res.data));
         setUser(res.data);
-      }).catch(() => {
-        // Token inválido o expirado: hacer logout silencioso
-        sessionStorage.removeItem('educando_token');
-        sessionStorage.removeItem('educando_user');
-        setUser(null);
+      }).catch((err) => {
+        // Only clear session for actual auth failures (401),
+        // not for network errors or server errors
+        if (err.response?.status === 401) {
+          sessionStorage.removeItem('educando_token');
+          sessionStorage.removeItem('educando_refresh_token');
+          sessionStorage.removeItem('educando_user');
+          setUser(null);
+        }
+        // For network errors, timeouts, 5xx, etc., keep the cached user data
+        // The user will be re-validated on next successful API call
       });
     }
     setLoading(false);
