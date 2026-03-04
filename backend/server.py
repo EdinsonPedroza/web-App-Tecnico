@@ -2315,6 +2315,16 @@ class ClassVideoCreate(BaseModel):
     description: Optional[str] = ""
     available_from: Optional[str] = None  # ISO datetime; if set, students only see this after this date
 
+    @field_validator('url')
+    @classmethod
+    def validate_youtube_url(cls, v):
+        if not v or not v.strip():
+            raise ValueError('URL requerida')
+        pattern = r'^(https?://)?(www\.)?(youtube\.com/(watch\?.*v=|embed/|shorts/)|youtu\.be/)[\w\-]{11}'
+        if not re.search(pattern, v.strip()):
+            raise ValueError('La URL debe ser un enlace válido de YouTube')
+        return v.strip()
+
 class SubmissionCreate(BaseModel):
     activity_id: str
     content: Optional[str] = ""
@@ -4195,6 +4205,18 @@ class ClassVideoUpdate(BaseModel):
     description: Optional[str] = None
     available_from: Optional[str] = None  # ISO datetime; empty string clears the restriction
 
+    @field_validator('url')
+    @classmethod
+    def validate_youtube_url(cls, v):
+        if v is None:
+            return v
+        if not v.strip():
+            return v
+        pattern = r'^(https?://)?(www\.)?(youtube\.com/(watch\?.*v=|embed/|shorts/)|youtu\.be/)[\w\-]{11}'
+        if not re.search(pattern, v.strip()):
+            raise ValueError('La URL debe ser un enlace válido de YouTube')
+        return v.strip()
+
 @api_router.put("/class-videos/{video_id}")
 async def update_class_video(video_id: str, req: ClassVideoUpdate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
@@ -4595,7 +4617,11 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
     due_date = datetime.fromisoformat(activity["due_date"].replace("Z", "+00:00"))
     if now > due_date:
         raise HTTPException(status_code=400, detail="La fecha límite ha pasado. No se puede entregar.")
-    
+
+    # Validar máximo 3 archivos por entrega
+    if req.files and len(req.files) > 3:
+        raise HTTPException(status_code=400, detail="Máximo 3 archivos por entrega")
+
     # Check module restriction: activity's subject module must match student's current module
     if activity.get("subject_id"):
         subject = await db.subjects.find_one({"id": activity["subject_id"]}, {"_id": 0, "module_number": 1})
@@ -6765,24 +6791,38 @@ async def get_stats(user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
 
-    # Run most count queries in parallel for better performance
-    students, teachers, programs, courses_count, existing_courses = await asyncio.gather(
-        db.users.count_documents({"role": "estudiante", "active": True}),
-        db.users.count_documents({"role": "profesor", "active": True}),
-        db.programs.count_documents({"active": True}),
-        db.courses.count_documents({"active": True}),
+    # Conteo de estudiantes por estado en una sola aggregation query
+    student_status_agg = await db.users.aggregate([
+        {"$match": {"role": "estudiante"}},
+        {"$group": {
+            "_id": {"$ifNull": ["$estado", "activo"]},
+            "count": {"$sum": 1}
+        }}
+    ]).to_list(20)
+
+    students_by_status = {doc["_id"]: doc["count"] for doc in student_status_agg}
+    total_students = sum(students_by_status.values())
+
+    teachers, programs_count, courses_count, existing_courses = await asyncio.gather(
+        db.users.count_documents({"role": "profesor"}),
+        db.programs.count_documents({}),
+        db.courses.count_documents({}),
         db.courses.find({}, {"_id": 0, "id": 1}).to_list(5000),
     )
-    # Count activities that belong to existing courses
     existing_course_ids = [c["id"] for c in existing_courses]
     activities = await db.activities.count_documents({"course_id": {"$in": existing_course_ids}}) if existing_course_ids else 0
 
     return {
-        "students": students,
+        "students": total_students,
         "teachers": teachers,
-        "programs": programs,
+        "programs": programs_count,
         "courses": courses_count,
-        "activities": activities
+        "activities": activities,
+        "students_activo": students_by_status.get("activo", 0),
+        "students_pendiente_recuperacion": students_by_status.get("pendiente_recuperacion", 0),
+        "students_egresado": students_by_status.get("egresado", 0),
+        "students_retirado": students_by_status.get("retirado", 0),
+        "students_reprobado": students_by_status.get("reprobado", 0),
     }
 
 @api_router.get("/health")

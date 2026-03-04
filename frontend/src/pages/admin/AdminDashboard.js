@@ -63,6 +63,32 @@ export default function AdminDashboardHome() {
               })}
             </div>
 
+            {/* Solo mostrar si hay datos de estados */}
+            {stats && (stats.students_pendiente_recuperacion > 0 || stats.students_egresado > 0 || stats.students_retirado > 0 || stats.students_reprobado > 0) && (
+              <Card className="shadow-card">
+                <CardContent className="p-4">
+                  <p className="text-sm font-medium text-muted-foreground mb-3">Desglose de estudiantes por estado</p>
+                  <div className="flex flex-wrap gap-2">
+                    {stats.students_activo > 0 && (
+                      <Badge variant="success" className="text-sm">{stats.students_activo} Activos</Badge>
+                    )}
+                    {stats.students_pendiente_recuperacion > 0 && (
+                      <Badge variant="warning" className="text-sm">{stats.students_pendiente_recuperacion} En Recuperación</Badge>
+                    )}
+                    {stats.students_egresado > 0 && (
+                      <Badge variant="secondary" className="text-sm">{stats.students_egresado} Egresados</Badge>
+                    )}
+                    {stats.students_retirado > 0 && (
+                      <Badge variant="outline" className="text-sm">{stats.students_retirado} Retirados</Badge>
+                    )}
+                    {stats.students_reprobado > 0 && (
+                      <Badge variant="destructive" className="text-sm">{stats.students_reprobado} Reprobados</Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
               <Card className="shadow-card">
                 <CardHeader>
