@@ -42,6 +42,8 @@ async def create_indexes(db):
         ("submissions", [("student_id", 1)], {"name": "submissions_student_id"}),
         ("submissions", [("activity_id", 1)], {"name": "submissions_activity_id"}),
         ("submissions", [("activity_id", 1), ("student_id", 1)], {"unique": True, "name": "submissions_activity_student_unique"}),
+        ("submissions", [("activity_id", 1), ("submitted_at", -1)], {"name": "submissions_activity_submitted"}),
+        ("submissions", [("student_id", 1), ("activity_id", 1)], {"name": "submissions_student_activity"}),
         # activities
         ("activities", [("course_id", 1)], {"name": "activities_course_id"}),
         ("activities", [("course_id", 1), ("subject_id", 1)], {"name": "activities_course_subject"}),

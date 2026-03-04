@@ -38,7 +38,7 @@ export default function StudentActivities() {
       if (params.length > 0) url += '?' + params.join('&');
       const [aRes, sRes] = await Promise.all([
         api.get(url),
-        api.get(`/submissions?student_id=${user.id}`)
+        api.get(`/submissions?student_id=${user.id}&limit=500`)
       ]);
       setActivities(aRes.data);
       setSubmissions(sRes.data);

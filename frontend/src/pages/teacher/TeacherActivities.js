@@ -59,11 +59,17 @@ export default function TeacherActivities() {
     setRecoveryEnabled([]);
     try {
       const [subsRes, studentsRes, gradesRes] = await Promise.all([
-        api.get(`/submissions?activity_id=${activity.id}`),
+        api.get(`/submissions?activity_id=${activity.id}&limit=200`),
         api.get(`/courses/${courseId}`),
         api.get(`/grades?activity_id=${activity.id}`)
       ]);
       setSubmissions(subsRes.data);
+      // Warn if there are more submissions than the loaded page
+      const hasMore = subsRes.headers['x-has-more'] === 'true';
+      const totalCount = subsRes.headers['x-total-count'];
+      if (hasMore) {
+        toast.warning(`Solo se muestran las primeras 200 entregas de ${totalCount} totales. Contacta al administrador si necesitas ver más.`);
+      }
       // Cargar notas existentes y estado de recuperación
       const gradesMap = {};
       const recoveryMap = {};

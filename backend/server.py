@@ -367,7 +367,7 @@ async def check_and_close_modules():
     Also checks recovery close dates: students who haven't passed recovery by the deadline are removed.
     """
     # Distributed lock: only one worker across all instances should run this job
-    if not await acquire_scheduler_lock("auto_close_modules", ttl_seconds=600):
+    if not await acquire_scheduler_lock("auto_close_modules", ttl_seconds=1800):
         logger.info("Module closure already running on another worker, skipping.")
         return
     try:
@@ -435,7 +435,12 @@ async def check_and_close_modules():
         removed_count = 0
         promoted_recovery_count = 0
         skipped_no_grades_recovery = 0
-        for course in all_courses:
+        total_courses = len(all_courses)
+        for i, course in enumerate(all_courses):
+            # Log progress and yield to event loop periodically to avoid blocking other requests
+            if i % 10 == 0:
+                logger.info(f"Scheduler progress: processing course {i + 1}/{total_courses}")
+                await asyncio.sleep(0)
             module_dates = course.get("module_dates") or {}
             prog_id_for_course = course.get("program_id", "")
 
@@ -4527,7 +4532,7 @@ async def get_file(filename: str, user=Depends(get_current_user)):
 
 # --- Submissions Routes ---
 @api_router.get("/submissions")
-async def get_submissions(activity_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 1000, user=Depends(get_current_user)):
+async def get_submissions(activity_id: Optional[str] = None, student_id: Optional[str] = None, skip: int = 0, limit: int = 200, user=Depends(get_current_user)):
     # IDOR guard: students can only access their own data
     if user["role"] == "estudiante":
         student_id = user["id"]
@@ -4536,10 +4541,16 @@ async def get_submissions(activity_id: Optional[str] = None, student_id: Optiona
         query["activity_id"] = safe_object_id(activity_id, "activity_id")
     if student_id:
         query["student_id"] = safe_object_id(student_id, "student_id")
-    limit = max(1, min(limit, 1000))
+    # Cap limit: 200 per page for activity view (teacher), 500 for student view
+    max_limit = 200 if activity_id else 500
+    limit = max(1, min(limit, max_limit))
     skip = max(0, skip)
-    submissions = await db.submissions.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
-    return submissions
+    total_count = await db.submissions.count_documents(query)
+    submissions = await db.submissions.find(query, {"_id": 0}).sort("submitted_at", -1).skip(skip).limit(limit).to_list(limit)
+    response = JSONResponse(content=submissions)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Has-More"] = str((skip + limit) < total_count).lower()
+    return response
 
 @api_router.post("/submissions")
 async def create_submission(req: SubmissionCreate, user=Depends(get_current_user)):
