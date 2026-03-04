@@ -52,8 +52,17 @@ export default function TeacherVideos() {
     setDialogOpen(true);
   };
 
+  const isValidYoutubeUrl = (url) => {
+    // Acepta youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID, youtube.com/shorts/ID
+    return /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)[\w\-]{11}/.test(url.trim());
+  };
+
   const handleSave = async () => {
     if (!form.title.trim() || !form.url.trim()) { toast.error('Título y URL requeridos'); return; }
+    if (!isValidYoutubeUrl(form.url)) {
+      toast.error('La URL debe ser un enlace válido de YouTube (youtube.com o youtu.be)');
+      return;
+    }
     setSaving(true);
     try {
       const payload = {

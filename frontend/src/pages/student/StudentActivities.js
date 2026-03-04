@@ -76,6 +76,12 @@ export default function StudentActivities() {
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
+    // Verificar límite de 3 archivos
+    if (submitFiles.length + files.length > 3) {
+      toast.error('Máximo 3 archivos por entrega');
+      e.target.value = '';
+      return;
+    }
     setUploadingFile(true);
     try {
       for (const file of files) {
@@ -296,10 +302,10 @@ export default function StudentActivities() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Adjuntar Archivos (fotos, PDF, etc.)</label>
-              <label className="flex items-center gap-2 cursor-pointer rounded-lg border border-dashed border-input px-4 py-3 w-full hover:bg-accent transition-colors">
+              <label className={`flex items-center gap-2 cursor-pointer rounded-lg border border-dashed border-input px-4 py-3 w-full hover:bg-accent transition-colors${submitFiles.length >= 3 ? ' opacity-50 cursor-not-allowed' : ''}`}>
                 <Upload className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  {uploadingFile ? 'Subiendo...' : 'Seleccionar archivos'}
+                  {submitFiles.length >= 3 ? 'Límite de 3 archivos alcanzado' : uploadingFile ? 'Subiendo...' : 'Seleccionar archivos (máx. 3)'}
                 </span>
                 <input
                   type="file"
@@ -307,10 +313,11 @@ export default function StudentActivities() {
                   accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp,.xls,.xlsx,.ppt,.pptx,.txt"
                   multiple
                   onChange={handleFileUpload}
-                  disabled={uploadingFile}
+                  disabled={uploadingFile || submitFiles.length >= 3}
                 />
                 {uploadingFile && <Loader2 className="h-4 w-4 animate-spin" />}
               </label>
+              <p className="text-xs text-muted-foreground">{submitFiles.length}/3 archivos adjuntos</p>
               {submitFiles.length > 0 && (
                 <div className="space-y-1 mt-2">
                   {submitFiles.map((f, i) => (
