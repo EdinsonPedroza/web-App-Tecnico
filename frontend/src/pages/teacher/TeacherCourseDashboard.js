@@ -18,26 +18,14 @@ export default function TeacherCourseDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      let activitiesUrl = `/activities?course_id=${courseId}`;
-      if (subjectId) activitiesUrl += `&subject_id=${subjectId}`;
-      let videosUrl = `/class-videos?course_id=${courseId}`;
-      if (subjectId) videosUrl += `&subject_id=${subjectId}`;
-      const requests = [
-        api.get(`/courses/${courseId}`),
-        api.get(activitiesUrl),
-        api.get(videosUrl)
-      ];
-      if (subjectId) {
-        requests.push(api.get('/subjects'));
-      }
-      const results = await Promise.all(requests);
-      const [cRes, aRes, vRes] = results;
-      setCourse(cRes.data);
-      setActivities(aRes.data);
-      setVideos(vRes.data);
-      if (subjectId && results[3]) {
-        const found = results[3].data.find(s => s.id === subjectId);
-        setSubject(found || null);
+      let url = `/teacher/dashboard/${courseId}`;
+      if (subjectId) url += `?subject_id=${subjectId}`;
+      const res = await api.get(url);
+      setCourse(res.data.course);
+      setActivities(res.data.activities);
+      setVideos(res.data.videos);
+      if (subjectId && res.data.subject) {
+        setSubject(res.data.subject);
       }
     } catch (err) {
       console.error(err);
