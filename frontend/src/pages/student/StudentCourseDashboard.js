@@ -23,30 +23,16 @@ export default function StudentCourseDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      let activitiesUrl = `/activities?course_id=${courseId}`;
-      if (subjectId) activitiesUrl += `&subject_id=${subjectId}`;
-      let videosUrl = `/class-videos?course_id=${courseId}`;
-      if (subjectId) videosUrl += `&subject_id=${subjectId}`;
-      let gradesUrl = `/grades?student_id=${user.id}&course_id=${courseId}`;
-      if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
-      const requests = [
-        api.get(`/courses/${courseId}`),
-        api.get(activitiesUrl),
-        api.get(videosUrl),
-        api.get(gradesUrl)
-      ];
-      if (subjectId) {
-        requests.push(api.get('/subjects'));
-      }
-      const results = await Promise.all(requests);
-      const [cRes, aRes, vRes, gRes] = results;
-      setCourse(cRes.data);
-      setActivities(aRes.data);
-      setVideos(vRes.data);
-      setGrades(gRes.data);
-      if (subjectId && results[4]) {
-        const found = results[4].data.find(s => s.id === subjectId);
-        setSubject(found || null);
+      const params = new URLSearchParams();
+      if (subjectId) params.set('subject_id', subjectId);
+      const queryStr = params.toString() ? `?${params.toString()}` : '';
+      const res = await api.get(`/student/dashboard/${courseId}${queryStr}`);
+      setCourse(res.data.course);
+      setActivities(res.data.activities);
+      setVideos(res.data.videos);
+      setGrades(res.data.grades);
+      if (subjectId && res.data.subject) {
+        setSubject(res.data.subject);
       }
     } catch (err) {
       console.error(err);
