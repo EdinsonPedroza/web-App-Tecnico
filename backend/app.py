@@ -306,6 +306,60 @@ async def create_initial_data():
             "module2_close_date": None,
             "active": True
         },
+        {
+            "id": "prog-contable",
+            "name": "Técnico en Auxiliar Contable y Financiero",
+            "description": "Formación técnica en contabilidad, finanzas y tributación",
+            "duration": "12 meses",
+            "modules": [
+                {"number": 1, "name": "MÓDULO 1", "subjects": [
+                    "Contabilidad General",
+                    "Matemática Financiera",
+                    "Legislación Comercial y Tributaria",
+                    "Informática Aplicada a la Contabilidad",
+                    "Fundamentos de Economía",
+                    "Ética Profesional Contable"
+                ]},
+                {"number": 2, "name": "MÓDULO 2", "subjects": [
+                    "Contabilidad de Costos",
+                    "Nómina y Prestaciones Sociales",
+                    "Análisis Financiero",
+                    "Presupuestos",
+                    "Impuestos y Declaraciones Tributarias",
+                    "Proyecto Integrador Contable"
+                ]}
+            ],
+            "module1_close_date": None,
+            "module2_close_date": None,
+            "active": True
+        },
+        {
+            "id": "prog-rrhh",
+            "name": "Técnico en Recursos Humanos y Gestión del Talento",
+            "description": "Formación en gestión humana, talento y desarrollo organizacional",
+            "duration": "12 meses",
+            "modules": [
+                {"number": 1, "name": "MÓDULO 1", "subjects": [
+                    "Fundamentos de Gestión Humana",
+                    "Legislación Laboral",
+                    "Psicología Organizacional",
+                    "Procesos de Selección y Contratación",
+                    "Comunicación Empresarial",
+                    "Herramientas Ofimáticas para RRHH"
+                ]},
+                {"number": 2, "name": "MÓDULO 2", "subjects": [
+                    "Capacitación y Desarrollo del Talento",
+                    "Nómina y Seguridad Social",
+                    "Bienestar Laboral y Clima Organizacional",
+                    "Evaluación de Desempeño",
+                    "Gestión Documental de RRHH",
+                    "Proyecto Integrador de Gestión Humana"
+                ]}
+            ],
+            "module1_close_date": None,
+            "module2_close_date": None,
+            "active": True
+        },
     ]
 
     programs_created = 0
