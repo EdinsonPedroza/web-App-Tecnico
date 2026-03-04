@@ -11,8 +11,8 @@ logger.info(f"Connecting to MongoDB at: {redact_mongo_url(mongo_url)}")
 try:
     client = AsyncIOMotorClient(
         mongo_url,
-        maxPoolSize=100,
-        minPoolSize=10,
+        maxPoolSize=20,
+        minPoolSize=2,
         maxIdleTimeMS=30000,
         connectTimeoutMS=5000,
         serverSelectionTimeoutMS=5000,

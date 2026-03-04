@@ -50,6 +50,13 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
 
+    # Validate grade value range (0.0 to 5.0)
+    if req.value is not None and (req.value < 0.0 or req.value > 5.0):
+        raise HTTPException(
+            status_code=400,
+            detail="La nota debe estar entre 0.0 y 5.0"
+        )
+
     course = await db.courses.find_one({"id": req.course_id}, {"_id": 0})
     if not course:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
@@ -67,6 +74,7 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             })
             raise HTTPException(status_code=403, detail="No eres el profesor asignado a este curso")
 
+    activity_doc = None
     if req.activity_id:
         activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1, "course_id": 1, "subject_id": 1})
         if activity_doc and activity_doc.get("is_recovery"):
@@ -103,9 +111,8 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     grade_value = req.value
     if req.recovery_status:
         rec_subject_id = req.subject_id
-        if req.activity_id:
-            _act = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "subject_id": 1})
-            rec_subject_id = rec_subject_id or (_act or {}).get("subject_id")
+        if req.activity_id and activity_doc:
+            rec_subject_id = rec_subject_id or activity_doc.get("subject_id")
 
         fs_filter = {
             "student_id": req.student_id,
@@ -247,6 +254,11 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
 async def update_grade(grade_id: str, req: GradeUpdate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    if req.value is not None and (req.value < 0.0 or req.value > 5.0):
+        raise HTTPException(
+            status_code=400,
+            detail="La nota debe estar entre 0.0 y 5.0"
+        )
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = await db.grades.update_one({"id": grade_id}, {"$set": update_data})
