@@ -133,11 +133,22 @@ async def get_student_recoveries(user=Depends(get_current_user)):
 
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    # Pre-load all courses needed to avoid N+1 queries inside the loop
+    course_ids = list({s["course_id"] for s in failed_subjects if s.get("course_id")})
+    if course_ids:
+        course_docs = await db.courses.find(
+            {"id": {"$in": course_ids}},
+            {"_id": 0, "id": 1, "module_dates": 1}
+        ).to_list(500)
+        course_map_for_dates = {c["id"]: c for c in course_docs}
+    else:
+        course_map_for_dates = {}
+
     for subject in failed_subjects:
         subject["program_name"] = program_map.get(subject["program_id"], "Desconocido")
         if not subject.get("subject_name") and subject.get("subject_id"):
             subject["subject_name"] = subject_name_lookup.get(subject["subject_id"], "")
-        course = await db.courses.find_one({"id": subject["course_id"]}, {"_id": 0, "module_dates": 1})
+        course = course_map_for_dates.get(subject["course_id"])
         recovery_close = None
         if course and course.get("module_dates"):
             module_key = str(subject.get("module_number", ""))
