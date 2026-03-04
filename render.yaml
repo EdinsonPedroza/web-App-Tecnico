@@ -28,9 +28,8 @@ services:
       - key: PORT
         value: 10000
       - key: WORKERS
-        value: "4"
-        # Para 1,500+ estudiantes se recomienda plan Standard (1GB RAM) con 4 workers.
-        # Si usas Starter (512MB) reduce a 2 workers.
+        value: "2"
+        # Starter (512MB): 2 workers. Para 1,500+ estudiantes con plan Standard (1GB RAM) subir a 4.
       - key: DEBUG
         value: false
       - key: ALLOW_USER_RESET
