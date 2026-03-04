@@ -91,7 +91,7 @@ export default function TeacherGrades() {
         comments: ''
       });
       toast.success('Nota guardada');
-      let gradesUrl = `/grades?course_id=${courseId}`;
+      let gradesUrl = `/grades/summary?course_id=${courseId}`;
       if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
       const gRes = await api.get(gradesUrl);
       setGrades(gRes.data);
@@ -119,7 +119,7 @@ export default function TeacherGrades() {
         recovery_status: recoveryStatus
       });
       toast.success(recoveryStatus === 'approved' ? 'Recuperación aprobada' : 'Recuperación rechazada');
-      let gradesUrl = `/grades?course_id=${courseId}`;
+      let gradesUrl = `/grades/summary?course_id=${courseId}`;
       if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
       const gRes = await api.get(gradesUrl);
       setGrades(gRes.data);

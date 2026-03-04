@@ -45,6 +45,52 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
     return response
 
 
+@router.get("/grades/summary")
+async def get_grades_summary(course_id: str, subject_id: Optional[str] = None, user=Depends(get_current_user)):
+    """Return per-student, per-activity grade summary for a course.
+    Uses a projection-only query to avoid sending unnecessary fields.
+    Returns: list of {student_id, activity_id, value, recovery_status, comments, subject_id}
+    """
+    if not course_id:
+        raise HTTPException(status_code=400, detail="course_id es requerido")
+    match_stage = {"course_id": safe_object_id(course_id, "course_id")}
+    if subject_id:
+        match_stage["subject_id"] = safe_object_id(subject_id, "subject_id")
+    grades = await db.grades.find(
+        match_stage,
+        {"_id": 0, "student_id": 1, "activity_id": 1, "value": 1, "recovery_status": 1, "comments": 1, "subject_id": 1}
+    ).to_list(50000)
+    return grades
+
+
+@router.get("/grades/averages")
+async def get_grades_averages(course_id: str, subject_id: Optional[str] = None, user=Depends(get_current_user)):
+    """Return per-student average grades computed server-side via MongoDB aggregation.
+    Avoids sending all individual grades to compute averages on the frontend.
+    """
+    if not course_id:
+        raise HTTPException(status_code=400, detail="course_id es requerido")
+    match_stage = {"course_id": safe_object_id(course_id, "course_id"), "value": {"$ne": None}}
+    if subject_id:
+        match_stage["subject_id"] = safe_object_id(subject_id, "subject_id")
+    pipeline = [
+        {"$match": match_stage},
+        {"$group": {
+            "_id": {"student_id": "$student_id"},
+            "average": {"$avg": "$value"},
+            "count": {"$sum": 1}
+        }},
+        {"$project": {
+            "_id": 0,
+            "student_id": "$_id.student_id",
+            "average": {"$round": ["$average", 2]},
+            "count": 1
+        }}
+    ]
+    results = await db.grades.aggregate(pipeline).to_list(5000)
+    return results
+
+
 @router.post("/grades")
 async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
