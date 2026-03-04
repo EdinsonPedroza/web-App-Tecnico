@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from database import db
 from utils.security import get_current_user
 from models.schemas import SubjectCreate, SubjectUpdate
+from cache import subjects_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,6 +24,17 @@ async def get_subjects(program_id: Optional[str] = None, teacher_id: Optional[st
             query["id"] = {"$in": teacher["subject_ids"]}
         else:
             return []
+
+    # Use cache for common queries (no teacher_id filter)
+    if not teacher_id:
+        cache_key = f"program:{program_id}" if program_id else "all"
+        cached = subjects_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        subjects = await db.subjects.find(query, {"_id": 0}).to_list(500)
+        subjects_cache.set(cache_key, subjects)
+        return subjects
+
     subjects = await db.subjects.find(query, {"_id": 0}).to_list(500)
     return subjects
 
@@ -56,6 +68,7 @@ async def create_subject(req: SubjectCreate, user=Depends(get_current_user)):
     }
     await db.subjects.insert_one(subject)
     del subject["_id"]
+    subjects_cache.invalidate()
     return subject
 
 
@@ -75,6 +88,7 @@ async def update_subject(subject_id: str, req: SubjectUpdate, user=Depends(get_c
     result = await db.subjects.update_one({"id": subject_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Materia no encontrada")
+    subjects_cache.invalidate()
     updated = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
     return updated
 
@@ -84,4 +98,5 @@ async def delete_subject(subject_id: str, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
     await db.subjects.delete_one({"id": subject_id})
+    subjects_cache.invalidate()
     return {"message": "Materia eliminada"}

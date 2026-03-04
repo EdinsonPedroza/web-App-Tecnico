@@ -118,19 +118,30 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             fs_filter["subject_id"] = rec_subject_id
 
         if req.recovery_status == "approved":
-            other_grades = await db.grades.find({
+            # Replace ALL grades for the failed subject with 3.0
+            subject_filter = {
                 "student_id": req.student_id,
                 "course_id": req.course_id,
-                "activity_id": {"$ne": req.activity_id}
-            }, {"_id": 0}).to_list(100)
+            }
+            if rec_subject_id:
+                subject_filter["subject_id"] = rec_subject_id
 
-            if other_grades:
-                total = sum(g["value"] for g in other_grades)
-                count = len(other_grades)
-                grade_value = 3.0 * (count + 1) - total
-                grade_value = max(0.0, min(5.0, grade_value))
-            else:
-                grade_value = 3.0
+            # Update all existing grades for this subject to 3.0
+            update_result = await db.grades.update_many(
+                subject_filter,
+                {"$set": {
+                    "value": 3.0,
+                    "recovery_status": "approved",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+
+            grade_value = 3.0
+
+            logger.info(
+                f"Recovery approved: updated {update_result.modified_count} grades to 3.0 "
+                f"for student {req.student_id}, course {req.course_id}, subject {rec_subject_id}"
+            )
 
             await db.failed_subjects.update_one(
                 fs_filter,

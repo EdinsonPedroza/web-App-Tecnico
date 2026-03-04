@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import JSONResponse
 
 from database import db
 from utils.security import get_current_user, safe_object_id
@@ -13,7 +14,7 @@ router = APIRouter()
 
 
 @router.get("/class-videos")
-async def get_class_videos(course_id: Optional[str] = None, subject_id: Optional[str] = None, user=Depends(get_current_user)):
+async def get_class_videos(course_id: Optional[str] = None, subject_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
     query = {}
     if course_id:
         query["course_id"] = safe_object_id(course_id, "course_id")
@@ -27,8 +28,14 @@ async def get_class_videos(course_id: Optional[str] = None, subject_id: Optional
             {"available_from": ""},
             {"available_from": {"$lte": now_iso}}
         ]
-    videos = await db.class_videos.find(query, {"_id": 0}).to_list(500)
-    return videos
+    total_count = await db.class_videos.count_documents(query)
+    limit = max(1, min(limit, 500))
+    skip = max(0, skip)
+    videos = await db.class_videos.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    response = JSONResponse(content=videos)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Has-More"] = str((skip + limit) < total_count).lower()
+    return response
 
 
 @router.post("/class-videos")

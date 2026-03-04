@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import JSONResponse
 
 from database import db
 from utils.security import get_current_user, safe_object_id
@@ -23,6 +24,7 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
         query["subject_id"] = safe_object_id(subject_id, "subject_id")
     limit = max(1, min(limit, MAX_LIMIT))
     skip = max(0, skip)
+    total_count = await db.activities.count_documents(query)
     activities = await db.activities.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
 
     if user["role"] == "estudiante" and course_id:
@@ -46,7 +48,10 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
                 filtered_activities.append(a)
         activities = filtered_activities
 
-    return activities
+    response = JSONResponse(content=activities)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Has-More"] = str((skip + limit) < total_count).lower()
+    return response
 
 
 @router.post("/activities")

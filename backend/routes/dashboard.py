@@ -23,6 +23,82 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/student/dashboard/{course_id}")
+async def get_student_dashboard(
+    course_id: str,
+    subject_id: Optional[str] = None,
+    user=Depends(get_current_user)
+):
+    """Consolidated endpoint that returns all data needed for the student course dashboard
+    in a single request, reducing 4-5 API calls to 1."""
+    if user["role"] != "estudiante":
+        raise HTTPException(status_code=403, detail="Solo estudiantes")
+
+    student_id = user["id"]
+
+    # Build all queries
+    course = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    if not course or student_id not in (course.get("student_ids") or []):
+        raise HTTPException(status_code=404, detail="Curso no encontrado o no inscrito")
+
+    # Activities query
+    activities_query = {"course_id": course_id}
+    if subject_id:
+        activities_query["subject_id"] = subject_id
+
+    # Videos query (with available_from filter for students)
+    videos_query = {"course_id": course_id}
+    if subject_id:
+        videos_query["subject_id"] = subject_id
+    now_iso = datetime.now(timezone.utc).isoformat()
+    videos_query["$or"] = [
+        {"available_from": {"$exists": False}},
+        {"available_from": None},
+        {"available_from": ""},
+        {"available_from": {"$lte": now_iso}}
+    ]
+
+    # Grades query
+    grades_query = {"student_id": student_id, "course_id": course_id}
+    if subject_id:
+        grades_query["subject_id"] = subject_id
+
+    # Execute all queries in parallel
+    activities, videos, grades = await asyncio.gather(
+        db.activities.find(activities_query, {"_id": 0}).to_list(500),
+        db.class_videos.find(videos_query, {"_id": 0}).to_list(500),
+        db.grades.find(grades_query, {"_id": 0}).to_list(10000)
+    )
+
+    # Filter recovery activities for students
+    if activities:
+        approved_records = await db.failed_subjects.find({
+            "student_id": student_id,
+            "course_id": course_id,
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_expired": {"$ne": True}
+        }, {"_id": 0, "subject_id": 1}).to_list(100)
+        approved_subject_ids = {r.get("subject_id") for r in approved_records}
+        activities = [
+            a for a in activities
+            if not a.get("is_recovery") or a.get("subject_id") in approved_subject_ids
+        ]
+
+    # Optionally include subject info
+    subject = None
+    if subject_id:
+        subject = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
+
+    return {
+        "course": course,
+        "activities": activities,
+        "videos": videos,
+        "grades": grades,
+        "subject": subject
+    }
+
+
 @router.get("/reports/course-results")
 async def get_course_results_report(course_id: str, subject_id: Optional[str] = None, format: Optional[str] = None, user=Depends(get_current_user)):
     """

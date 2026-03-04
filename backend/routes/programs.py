@@ -8,6 +8,7 @@ from database import db
 from utils.security import get_current_user
 from utils.audit import log_audit
 from models.schemas import ProgramCreate, ProgramUpdate
+from cache import programs_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,7 +16,11 @@ router = APIRouter()
 
 @router.get("/programs")
 async def get_programs(user=Depends(get_current_user)):
+    cached = programs_cache.get("all")
+    if cached is not None:
+        return cached
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
+    programs_cache.set("all", programs)
     return programs
 
 
@@ -34,6 +39,7 @@ async def create_program(req: ProgramCreate, user=Depends(get_current_user)):
     }
     await db.programs.insert_one(program)
     del program["_id"]
+    programs_cache.invalidate()
     await log_audit("program_created", user["id"], user["role"], {"program_id": program["id"], "program_name": req.name})
     return program
 
@@ -46,6 +52,7 @@ async def update_program(program_id: str, req: ProgramUpdate, user=Depends(get_c
     result = await db.programs.update_one({"id": program_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Programa no encontrado")
+    programs_cache.invalidate()
     updated = await db.programs.find_one({"id": program_id}, {"_id": 0})
     return updated
 
@@ -55,6 +62,7 @@ async def delete_program(program_id: str, user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
     await db.programs.delete_one({"id": program_id})
+    programs_cache.invalidate()
     await log_audit("program_deleted", user["id"], user["role"], {"program_id": program_id})
     return {"message": "Programa eliminado"}
 
