@@ -99,6 +99,144 @@ async def get_student_dashboard(
     }
 
 
+@router.get("/teacher/dashboard/{course_id}")
+async def get_teacher_dashboard(
+    course_id: str,
+    subject_id: Optional[str] = None,
+    user=Depends(get_current_user)
+):
+    """Consolidated endpoint that returns all data needed for the teacher course dashboard
+    in a single request, reducing 3-4 API calls to 1."""
+    if user["role"] not in ["profesor", "admin"]:
+        raise HTTPException(status_code=403, detail="Solo profesores o admin")
+
+    # Build all queries
+    course_fut = db.courses.find_one({"id": course_id}, {"_id": 0})
+
+    activities_query = {"course_id": course_id}
+    if subject_id:
+        activities_query["subject_id"] = subject_id
+
+    videos_query = {"course_id": course_id}
+    if subject_id:
+        videos_query["subject_id"] = subject_id
+
+    # Execute all in parallel
+    course, activities, videos = await asyncio.gather(
+        course_fut,
+        db.activities.find(activities_query, {"_id": 0}).to_list(500),
+        db.class_videos.find(videos_query, {"_id": 0}).sort("created_at", -1).to_list(500),
+    )
+
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+
+    # Optionally include subject info (only fetches 1 doc, not all subjects)
+    subject = None
+    if subject_id:
+        subject = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
+
+    return {
+        "course": course,
+        "activities": activities,
+        "videos": videos,
+        "subject": subject
+    }
+
+
+@router.get("/teacher/grades-data/{course_id}")
+async def get_teacher_grades_data(
+    course_id: str,
+    subject_id: Optional[str] = None,
+    user=Depends(get_current_user)
+):
+    """Consolidated endpoint that returns all data needed for the teacher grades page
+    in a single request, reducing 5 API calls to 1."""
+    if user["role"] not in ["profesor", "admin"]:
+        raise HTTPException(status_code=403, detail="Solo profesores o admin")
+
+    course = await db.courses.find_one({"id": course_id}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+
+    # Build queries
+    activities_query = {"course_id": course_id}
+    if subject_id:
+        activities_query["subject_id"] = subject_id
+
+    grades_query = {"course_id": course_id}
+    if subject_id:
+        grades_query["subject_id"] = subject_id
+
+    # All student IDs (enrolled + removed)
+    student_ids = list(set(
+        (course.get("student_ids") or []) +
+        (course.get("removed_student_ids") or [])
+    ))
+
+    # Recovery enabled query
+    fs_query = {
+        "recovery_approved": True,
+        "recovery_completed": {"$ne": True},
+        "recovery_processed": {"$ne": True},
+        "recovery_rejected": {"$ne": True},
+        "course_id": course_id,
+    }
+
+    # Build futures before gather
+    activities_fut = db.activities.find(activities_query, {"_id": 0}).to_list(500)
+    grades_fut = db.grades.find(grades_query, {"_id": 0}).to_list(10000)
+
+    async def _empty_list():
+        return []
+
+    students_fut = (
+        db.users.find(
+            {"id": {"$in": student_ids}, "role": "estudiante"},
+            {"_id": 0, "password_hash": 0}
+        ).to_list(5000)
+        if student_ids else _empty_list()
+    )
+    recovery_fut = db.failed_subjects.find(
+        fs_query, {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1}
+    ).to_list(1000)
+
+    results = await asyncio.gather(activities_fut, grades_fut, students_fut, recovery_fut)
+    activities = results[0]
+    grades = results[1]
+    students_docs = results[2] if student_ids else []
+    recovery_records = results[3]
+
+    # Mark removed students
+    removed_set = set(course.get("removed_student_ids") or []) - set(course.get("student_ids") or [])
+    for s in students_docs:
+        if s["id"] in removed_set:
+            s["_removed_from_group"] = True
+
+    # Deduplicate recovery enabled
+    seen = set()
+    recovery_enabled = []
+    for r in recovery_records:
+        key = (r.get("student_id"), r.get("course_id"), r.get("subject_id"))
+        if key not in seen:
+            seen.add(key)
+            recovery_enabled.append({
+                "student_id": r.get("student_id"),
+                "course_id": r.get("course_id"),
+                "subject_id": r.get("subject_id"),
+                "enabled": True,
+                "source": "failed_subjects"
+            })
+
+    return {
+        "course": course,
+        "activities": activities,
+        "grades": grades,
+        "students": students_docs,
+        "recovery_enabled": recovery_enabled
+    }
+
+
 @router.get("/reports/course-results")
 async def get_course_results_report(course_id: str, subject_id: Optional[str] = None, format: Optional[str] = None, user=Depends(get_current_user)):
     """

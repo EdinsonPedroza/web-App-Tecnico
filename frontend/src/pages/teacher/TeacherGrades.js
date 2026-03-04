@@ -26,28 +26,20 @@ export default function TeacherGrades() {
 
   const fetchData = useCallback(async () => {
     try {
-      let activitiesUrl = `/activities?course_id=${courseId}`;
-      if (subjectId) activitiesUrl += `&subject_id=${subjectId}`;
-      let gradesUrl = `/grades?course_id=${courseId}`;
-      if (subjectId) gradesUrl += `&subject_id=${subjectId}`;
-      const [cRes, aRes, gRes, uRes, rRes] = await Promise.all([
-        api.get(`/courses/${courseId}`),
-        api.get(activitiesUrl),
-        api.get(gradesUrl),
-        api.get(`/courses/${courseId}/students?include_removed=true`),
-        api.get(`/recovery/enabled?course_id=${courseId}`)
-      ]);
-      setCourse(cRes.data);
+      let url = `/teacher/grades-data/${courseId}`;
+      if (subjectId) url += `?subject_id=${subjectId}`;
+      const res = await api.get(url);
+      setCourse(res.data.course);
       // Sort: regular activities first (by activity_number), recovery activities last
-      const sorted = [...aRes.data].sort((a, b) => {
+      const sorted = [...res.data.activities].sort((a, b) => {
         if (a.is_recovery && !b.is_recovery) return 1;
         if (!a.is_recovery && b.is_recovery) return -1;
         return (a.activity_number || 0) - (b.activity_number || 0);
       });
       setActivities(sorted);
-      setGrades(gRes.data);
-      setStudents(uRes.data);
-      setRecoveryEnabled(rRes.data || []);
+      setGrades(res.data.grades);
+      setStudents(res.data.students);
+      setRecoveryEnabled(res.data.recovery_enabled || []);
     } catch (err) {
       toast.error('Error cargando datos');
     } finally {

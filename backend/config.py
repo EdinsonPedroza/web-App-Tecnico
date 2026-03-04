@@ -54,6 +54,9 @@ def validate_module_number(module_num, field_name="module"):
 MAX_LIMIT = 500
 MAX_LIMIT_GRADES = 1000
 
+# Academic rules
+MAX_ACTIVITIES_PER_WEEK_PER_SUBJECT = 3
+
 # File upload
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)

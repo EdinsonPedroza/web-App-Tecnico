@@ -1,6 +1,6 @@
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
@@ -9,7 +9,7 @@ from database import db
 from utils.security import get_current_user, safe_object_id
 from utils.audit import log_audit, log_security_event
 from models.schemas import ActivityCreate, ActivityUpdate
-from config import MAX_LIMIT
+from config import MAX_LIMIT, MAX_ACTIVITIES_PER_WEEK_PER_SUBJECT
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -83,6 +83,34 @@ async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
                 status_code=400,
                 detail="Ya existe una actividad de recuperación para esta materia. Solo se permite una por materia."
             )
+    # Validate max activities per week per subject (3 entregas semanales por materia)
+    if not req.is_recovery and req.subject_id and req.due_date:
+        try:
+            due = datetime.fromisoformat(req.due_date.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            due = None
+        if due:
+            # Normalize to UTC date for consistent week boundary calculation
+            due_date_only = due.astimezone(timezone.utc).date()
+            week_start_date = due_date_only - timedelta(days=due_date_only.weekday())
+            week_end_date = week_start_date + timedelta(days=7)
+            week_start_str = f"{week_start_date.isoformat()}T00:00:00"
+            week_end_str = f"{week_end_date.isoformat()}T00:00:00"
+            # Count existing non-recovery activities in the same week for this course+subject
+            week_count = await db.activities.count_documents({
+                "course_id": req.course_id,
+                "subject_id": req.subject_id,
+                "is_recovery": {"$ne": True},
+                "due_date": {
+                    "$gte": week_start_str,
+                    "$lt": week_end_str
+                }
+            })
+            if week_count >= MAX_ACTIVITIES_PER_WEEK_PER_SUBJECT:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Se ha alcanzado el máximo de {MAX_ACTIVITIES_PER_WEEK_PER_SUBJECT} entregas por semana para esta materia. Elija otra fecha."
+                )
     activity_number_query = {"course_id": req.course_id}
     if req.subject_id:
         activity_number_query["subject_id"] = req.subject_id
