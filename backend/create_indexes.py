@@ -86,6 +86,10 @@ async def create_indexes(db):
         ("grade_changes", [("changed_at", 1)], {"expireAfterSeconds": 365 * 24 * 3600, "name": "grade_changes_ttl"}),
         # module_closures — compound index for scheduler lookup query
         ("module_closures", [("program_id", 1), ("module_number", 1), ("closed_date", 1)], {"name": "module_closures_lookup", "unique": True}),
+        # class_videos
+        ("class_videos", [("course_id", 1)], {"name": "class_videos_course_id"}),
+        ("class_videos", [("course_id", 1), ("subject_id", 1)], {"name": "class_videos_course_subject"}),
+        ("class_videos", [("created_by", 1)], {"name": "class_videos_created_by"}),
     ]
 
     created = 0
