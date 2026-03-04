@@ -28,9 +28,9 @@ worker_class = "uvicorn.workers.UvicornWorker"
 # Bind al puerto configurado
 bind = f"0.0.0.0:{os.environ.get('PORT', '8001')}"
 
-# Timeouts — aumentado a 180s para cierre de módulos (operación larga con 3000 estudiantes)
-timeout = 180
-graceful_timeout = 30
+# Timeouts — aumentado a 300s para cierre de módulos (operación larga con 3000 estudiantes)
+timeout = 300
+graceful_timeout = 60
 keepalive = 5
 
 # Logging
