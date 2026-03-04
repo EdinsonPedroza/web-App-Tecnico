@@ -1,4 +1,6 @@
+import re
 import uuid
+import json
 import logging
 from datetime import datetime, timezone, timedelta
 from database import db
@@ -6,13 +8,12 @@ from database import db
 logger = logging.getLogger(__name__)
 
 
-def sanitize_string(input_str: str, max_length: int = 500) -> str:
-    """Sanitize string input to prevent injection attacks"""
-    import re
-    if not input_str or not isinstance(input_str, str):
+def _sanitize_for_log(value: str, max_length: int = 200) -> str:
+    """Minimal sanitization for log entries - not exported; use utils.helpers.sanitize_string externally."""
+    if not value or not isinstance(value, str):
         return ""
-    sanitized = re.sub(r'[<>{}()\'"\[\]\\;`]', '', input_str)
-    sanitized = ''.join(char for char in sanitized if char.isprintable())
+    sanitized = re.sub(r'[<>{}()\'"\[\]\\;`]', '', value)
+    sanitized = ''.join(c for c in sanitized if c.isprintable())
     return sanitized[:max_length]
 
 
@@ -41,11 +42,10 @@ async def log_audit(action: str, user_id: str, user_role: str, details: dict):
 
 def log_security_event(event_type: str, details: dict):
     """Log security-related events with sanitized details"""
-    import json
     sanitized_details = {}
     for key, value in details.items():
         if isinstance(value, str):
-            sanitized_details[key] = sanitize_string(value, 200)
+            sanitized_details[key] = _sanitize_for_log(value)
         else:
             sanitized_details[key] = str(value)[:200]
     logger.warning(f"SECURITY: {event_type} - {json.dumps(sanitized_details)}")
