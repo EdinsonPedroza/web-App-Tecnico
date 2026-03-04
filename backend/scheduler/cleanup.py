@@ -8,7 +8,20 @@ logger = logging.getLogger(__name__)
 
 
 async def acquire_scheduler_lock(lock_name: str, ttl_seconds: int = 300) -> bool:
-    """Try to acquire a distributed lock using MongoDB."""
+    """Try to acquire a distributed lock using MongoDB.
+
+    Args:
+        lock_name: Unique name identifying the lock.
+        ttl_seconds: How long (in seconds) before the lock auto-expires.
+
+    Returns:
+        True if the lock was acquired, False if another worker holds it.
+
+    Atomicity is guaranteed by the unique index on lock_name: when two workers
+    race to upsert a new lock, the second gets a DuplicateKeyError (caught here)
+    and returns False. For expired lock takeovers, only one update_one will report
+    modified_count > 0; the other gets 0 and returns False.
+    """
     try:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(seconds=ttl_seconds)
@@ -37,7 +50,11 @@ async def acquire_scheduler_lock(lock_name: str, ttl_seconds: int = 300) -> bool
 
 
 async def release_scheduler_lock(lock_name: str):
-    """Release a distributed lock."""
+    """Release a distributed lock.
+
+    Args:
+        lock_name: The name of the lock to release.
+    """
     try:
         await db.scheduler_locks.delete_one({"lock_name": lock_name})
     except Exception as e:

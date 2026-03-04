@@ -182,7 +182,16 @@ async def _unenroll_student_from_course(
 
 
 async def _check_and_update_recovery_completion(student_id: str, course_id: str):
-    """Check if all recovery subjects for a student in a course are now completed and approved."""
+    """Check if all recovery subjects for a student in a course are approved and update status.
+
+    When all pending recovery subjects for the student have been graded as approved,
+    this function promotes the student's program status from 'pendiente_recuperacion'
+    to either 'egresado' (if last module) or 'activo' (otherwise).
+
+    Args:
+        student_id: The ID of the student.
+        course_id: The ID of the course containing the recovery activities.
+    """
     course = await db.courses.find_one({"id": course_id}, {"_id": 0})
     if not course:
         return
@@ -254,7 +263,18 @@ async def _check_and_update_recovery_completion(student_id: str, course_id: str)
 
 
 async def _check_and_update_recovery_rejection(student_id: str, course_id: str):
-    """Mark recovery records as rejected when a teacher rejects a recovery subject."""
+    """Handle teacher rejection of a recovery subject and apply deferred expulsion logic.
+
+    When a teacher rejects a recovery grade, this function checks if any subjects
+    are still pending approval. If all recovery subjects are now rejected/expired,
+    the student is marked for expulsion (estado='retirado' or program status updated).
+    Students with deferred expulsion (recovery_close deadline) are expelled only
+    after the recovery window closes.
+
+    Args:
+        student_id: The ID of the student.
+        course_id: The ID of the course containing the recovery activities.
+    """
     course = await db.courses.find_one({"id": course_id}, {"_id": 0})
     if not course:
         return
