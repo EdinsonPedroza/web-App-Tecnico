@@ -94,7 +94,7 @@ export default function StudentActivities() {
       }
       toast.success(`${files.length} archivo(s) subido(s)`);
     } catch (err) {
-      toast.error('Error subiendo archivo');
+      toast.error(err.response?.data?.detail || 'Error subiendo archivo');
     } finally {
       setUploadingFile(false);
       e.target.value = '';

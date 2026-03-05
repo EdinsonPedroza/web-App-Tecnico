@@ -201,7 +201,7 @@ export default function TeacherActivities() {
       }));
       toast.success(`Archivo "${file.name}" subido`);
     } catch (err) {
-      toast.error('Error subiendo archivo');
+      toast.error(err.response?.data?.detail || 'Error subiendo archivo');
     } finally {
       setUploading(false);
     }
