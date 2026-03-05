@@ -48,10 +48,24 @@ async def lifespan(app):
             logger.warning(f"rate_limits_ttl index could not be created: {idx_err}")
         try:
             await db.rate_limits.create_index(
-                [("key", 1), ("timestamp", 1)], name="rate_limits_key_timestamp"
+                [("key", 1), ("timestamp", -1)], name="rate_limits_key_timestamp"
             )
         except Exception as idx_err:
-            logger.warning(f"rate_limits_key_timestamp index could not be created: {idx_err}")
+            # If there is an IndexKeySpecsConflict (code 86), the old index was created
+            # with a different sort direction. Drop and recreate it — this is safe because
+            # rate_limits is a performance-only index with no unique data; no documents
+            # are deleted when dropping an index.
+            if "IndexKeySpecsConflict" in str(idx_err) or getattr(idx_err, "code", None) == 86:
+                try:
+                    await db.rate_limits.drop_index("rate_limits_key_timestamp")
+                    await db.rate_limits.create_index(
+                        [("key", 1), ("timestamp", -1)], name="rate_limits_key_timestamp"
+                    )
+                    logger.info("rate_limits_key_timestamp index recreated with correct sort direction")
+                except Exception as recreate_err:
+                    logger.warning(f"rate_limits_key_timestamp index could not be recreated: {recreate_err}")
+            else:
+                logger.warning(f"rate_limits_key_timestamp index could not be created: {idx_err}")
         try:
             await db.scheduler_locks.create_index("expires_at", expireAfterSeconds=0, name="scheduler_locks_ttl")
         except Exception as idx_err:

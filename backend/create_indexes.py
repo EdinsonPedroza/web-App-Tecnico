@@ -104,9 +104,11 @@ async def create_indexes(db):
             logger.info(f"Índice creado/verificado: {collection_name}.{options.get('name', str(keys))}")
             created += 1
         except Exception as e:
-            if "IndexOptionsConflict" in type(e).__name__ or "IndexOptionsConflict" in str(e):
-                # Index exists with different options — drop and recreate so the new
-                # options (e.g. partialFilterExpression) take effect.
+            if "IndexOptionsConflict" in type(e).__name__ or "IndexOptionsConflict" in str(e) \
+                    or "IndexKeySpecsConflict" in str(e) or getattr(e, "code", None) == 86:
+                # Index exists with different options or key specs — drop and recreate so the
+                # new definition takes effect. Dropping an index does NOT delete any documents;
+                # only the index metadata changes. Data is fully preserved.
                 index_name = options.get("name")
                 try:
                     if index_name:
