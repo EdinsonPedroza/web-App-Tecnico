@@ -88,13 +88,13 @@ export default function StudentActivities() {
         const formData = new FormData();
         formData.append('file', file);
         const res = await api.post('/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
+          timeout: 300000
         });
         setSubmitFiles(prev => [...prev, { name: res.data.filename, url: res.data.url.startsWith('http') ? res.data.url : `${BACKEND_URL}${res.data.url}` }]);
       }
       toast.success(`${files.length} archivo(s) subido(s)`);
     } catch (err) {
-      toast.error('Error subiendo archivo');
+      toast.error(err.response?.data?.detail || 'Error subiendo archivo');
     } finally {
       setUploadingFile(false);
       e.target.value = '';

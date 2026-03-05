@@ -150,7 +150,11 @@ async def upload_file(request: Request, file: UploadFile = File(...), user=Depen
 
     _safe_basename = re.sub(r'[^\w\-]', '_', Path(original_name).stem)[:100]
 
-    file_content, original_name = compress_image(file_content, original_name)
+    try:
+        file_content, original_name = compress_image(file_content, original_name)
+    except Exception as compress_err:
+        _safe_log_name = original_name.replace('\n', '\\n').replace('\r', '\\r') if isinstance(original_name, str) else repr(original_name)
+        logger.warning(f"Image compression failed for '{_safe_log_name}', using original: {compress_err}")
     _ext = Path(original_name).suffix.lower().lstrip(".")
     file_size = len(file_content)
 
@@ -235,12 +239,19 @@ async def upload_file(request: Request, file: UploadFile = File(...), user=Depen
         else:
             _resource_type = "raw"
         _public_id = f"educando/uploads/{_safe_basename}_{_unique_suffix}.{_ext}"
-        result = cloudinary.uploader.upload(
-            _io.BytesIO(file_content),
-            public_id=_public_id,
-            resource_type=_resource_type,
-            overwrite=False,
-        )
+        try:
+            result = cloudinary.uploader.upload(
+                _io.BytesIO(file_content),
+                public_id=_public_id,
+                resource_type=_resource_type,
+                overwrite=False,
+            )
+        except Exception as e:
+            logger.error(f"Cloudinary upload failed for public_id={_public_id}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail="Error al subir el archivo a Cloudinary. Intente de nuevo más tarde."
+            )
         return {
             "filename": original_name,
             "stored_name": result["public_id"],
@@ -254,8 +265,15 @@ async def upload_file(request: Request, file: UploadFile = File(...), user=Depen
     _ext_with_dot = Path(original_name).suffix
     safe_name = f"{_file_id}{_ext_with_dot}"
     file_path = UPLOAD_DIR / safe_name
-    with open(file_path, "wb") as f:
-        f.write(file_content)
+    try:
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+    except OSError as e:
+        logger.error(f"Local file write failed for path={file_path}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Error al guardar el archivo en el servidor. Intente de nuevo más tarde."
+        )
     return {
         "filename": original_name,
         "stored_name": safe_name,
