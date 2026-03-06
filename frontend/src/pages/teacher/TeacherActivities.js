@@ -13,6 +13,7 @@ import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock,
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 import { ensureProtocol } from '@/utils/url';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 
@@ -139,7 +140,7 @@ export default function TeacherActivities() {
         setRecoveryStatuses(prev => ({ ...prev, [studentId]: recoveryStatus }));
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error guardando nota');
+      toast.error(getErrorMessage(err, 'Error guardando nota'));
     } finally {
       setSavingGrade(null);
     }
@@ -199,7 +200,7 @@ export default function TeacherActivities() {
       }));
       toast.success(`Archivo "${file.name}" subido`);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error subiendo archivo');
+      toast.error(getErrorMessage(err, 'Error subiendo archivo'));
     } finally {
       setUploading(false);
     }
