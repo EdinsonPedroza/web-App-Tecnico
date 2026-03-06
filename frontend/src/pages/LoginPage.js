@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { GraduationCap, User, Eye, EyeOff, Loader2, Facebook, Shield } from 'lucide-react';
 import api from '@/lib/api';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -40,7 +41,7 @@ export default function LoginPage() {
       else if (userData.role === 'profesor') navigate('/teacher');
       else navigate('/student');
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Error de autenticación';
+      const msg = getErrorMessage(err, 'Error de autenticación');
       toast.error(msg);
     } finally {
       setLoading(false);

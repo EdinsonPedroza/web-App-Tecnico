@@ -10,6 +10,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { Loader2, ClipboardList, Save, CheckCircle, XCircle, Clock, Download } from 'lucide-react';
 import api from '@/lib/api';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 export default function TeacherGrades() {
   const { courseId } = useParams();
@@ -124,7 +125,7 @@ export default function TeacherGrades() {
       const gRes = await api.get(gradesUrl);
       setGrades(gRes.data);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error guardando estado de recuperación');
+      toast.error(getErrorMessage(err, 'Error guardando estado de recuperación'));
     } finally {
       setSavingGrades(prev => ({ ...prev, [key]: false }));
     }

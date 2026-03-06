@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { Loader2, FileText, Calendar, Clock, Lock, Unlock, Send, Download, File, TimerOff, Upload, Trash2, Image } from 'lucide-react';
 import api from '@/lib/api';
 import { ensureProtocol } from '@/utils/url';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 
@@ -92,7 +93,7 @@ export default function StudentActivities() {
       }
       toast.success(`${files.length} archivo(s) subido(s)`);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error subiendo archivo');
+      toast.error(getErrorMessage(err, 'Error subiendo archivo'));
     } finally {
       setUploadingFile(false);
       e.target.value = '';
@@ -124,7 +125,7 @@ export default function StudentActivities() {
       setSubmitFiles([]);
       fetchData();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error entregando actividad');
+      toast.error(getErrorMessage(err, 'Error entregando actividad'));
     } finally {
       setSubmitting(false);
     }

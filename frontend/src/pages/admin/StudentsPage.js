@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, GraduationCap, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 const DEFAULT_MODULE = 1;
 
@@ -392,7 +393,7 @@ export default function StudentsPage() {
         });
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error guardando estudiante');
+      toast.error(getErrorMessage(err, 'Error guardando estudiante'));
     } finally {
       setSaving(false);
     }

@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, ClipboardList, Users, BookOpen, Search, Wand2, UserMinus } from 'lucide-react';
 import api from '@/lib/api';
 import { getProgramColorClasses } from '@/utils/programColors';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 export default function CoursesPage() {
   const [courses, setCourses] = useState([]);
@@ -287,7 +288,7 @@ export default function CoursesPage() {
       setDialogOpen(false);
       fetchData();
     } catch (err) {
-      toast.error('Error guardando curso: ' + (err.response?.data?.detail || err.message));
+      toast.error('Error guardando curso: ' + getErrorMessage(err, err.message || 'Error desconocido'));
     } finally {
       setSaving(false);
     }
@@ -300,10 +301,11 @@ export default function CoursesPage() {
       toast.success('Grupo eliminado');
       fetchData();
     } catch (err) {
-      if (err.response?.status === 400 && err.response?.data?.detail?.includes('No se puede eliminar el grupo')) {
-        const detail = err.response.data.detail;
+      const detail = err.response?.data?.detail;
+      const detailStr = typeof detail === 'string' ? detail : null;
+      if (err.response?.status === 400 && detailStr?.includes('No se puede eliminar el grupo')) {
         const choice = window.confirm(
-          `⚠️ ADVERTENCIA: ${detail}\n\n` +
+          `⚠️ ADVERTENCIA: ${detailStr}\n\n` +
           'Opciones:\n' +
           '• Aceptar → Eliminar SOLO el grupo (los estudiantes quedan en el sistema)\n' +
           '• Cancelar → Cancelar la eliminación\n\n' +
@@ -315,11 +317,11 @@ export default function CoursesPage() {
             toast.success('Grupo eliminado (estudiantes desmatriculados pero no borrados)');
             fetchData();
           } catch (err2) {
-            toast.error(err2.response?.data?.detail || 'Error eliminando grupo');
+            toast.error(getErrorMessage(err2, 'Error eliminando grupo'));
           }
         }
       } else {
-        toast.error(err.response?.data?.detail || 'Error eliminando grupo');
+        toast.error(getErrorMessage(err, 'Error eliminando grupo'));
       }
     }
   };
@@ -339,7 +341,7 @@ export default function CoursesPage() {
       toast.success('Grupo y cuentas de estudiantes eliminados permanentemente');
       fetchData();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error eliminando grupo con estudiantes');
+      toast.error(getErrorMessage(err, 'Error eliminando grupo con estudiantes'));
     }
   };
 

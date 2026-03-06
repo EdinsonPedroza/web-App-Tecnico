@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Loader2, Users, Search, BookOpen } from 'lucide-react';
 import api from '@/lib/api';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 export default function TeachersPage() {
   const [teachers, setTeachers] = useState([]);
@@ -107,7 +108,7 @@ export default function TeachersPage() {
       setDialogOpen(false);
       fetchTeachers();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error guardando profesor');
+      toast.error(getErrorMessage(err, 'Error guardando profesor'));
     } finally {
       setSaving(false);
     }

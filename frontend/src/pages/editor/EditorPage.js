@@ -9,6 +9,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { toast } from 'sonner';
 import { Plus, UserCog, Loader2, LogOut, Pencil, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 export default function EditorPage() {
   const { user, logout } = useAuth();
@@ -55,7 +56,7 @@ export default function EditorPage() {
       setForm({ name: '', email: '', password: '' });
       fetchAdmins();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error creando administrador');
+      toast.error(getErrorMessage(err, 'Error creando administrador'));
     } finally {
       setSaving(false);
     }
@@ -101,7 +102,7 @@ export default function EditorPage() {
       setEditForm({ id: '', name: '', email: '', password: '' });
       fetchAdmins();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error actualizando administrador');
+      toast.error(getErrorMessage(err, 'Error actualizando administrador'));
     } finally {
       setSaving(false);
     }
@@ -123,7 +124,7 @@ export default function EditorPage() {
       setAdminToDelete(null);
       fetchAdmins();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error eliminando administrador');
+      toast.error(getErrorMessage(err, 'Error eliminando administrador'));
     } finally {
       setSaving(false);
     }
