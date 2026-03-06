@@ -107,6 +107,16 @@ export default function StudentActivities() {
 
   const handleSubmit = async () => {
     if (!submitContent.trim() && submitFiles.length === 0) { toast.error('Escribe una respuesta o adjunta archivos'); return; }
+
+    // Si ya existe una entrega, confirmar que el estudiante realmente quiere editar
+    const existingSubmission = submissions.find(s => s.activity_id === submitDialog?.id);
+    if (existingSubmission && !existingSubmission.edited) {
+      const confirmed = window.confirm(
+        '⚠️ Ya tienes una actividad entregada.\n\nSi continúas, esto contará como tu ÚNICA edición permitida y no podrás modificarla de nuevo.\n\n¿Estás seguro de que quieres reemplazar tu entrega actual?'
+      );
+      if (!confirmed) return;
+    }
+
     setSubmitting(true);
     try {
       await api.post('/submissions', { activity_id: submitDialog.id, content: submitContent, files: submitFiles });
