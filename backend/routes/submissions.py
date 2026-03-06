@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
 
 from database import db
-from utils.security import get_current_user, safe_object_id
+from utils.security import get_current_user
 from models.schemas import SubmissionCreate
 
 logger = logging.getLogger(__name__)
@@ -19,9 +19,9 @@ async def get_submissions(activity_id: Optional[str] = None, student_id: Optiona
         student_id = user["id"]
     query = {}
     if activity_id:
-        query["activity_id"] = safe_object_id(activity_id, "activity_id")
+        query["activity_id"] = activity_id
     if student_id:
-        query["student_id"] = safe_object_id(student_id, "student_id")
+        query["student_id"] = student_id
     max_limit = 200 if activity_id else 500
     limit = max(1, min(limit, max_limit))
     skip = max(0, skip)
