@@ -70,3 +70,4 @@ backend/uploads/*
 # Tool artifacts
 .emergent/
 memory/
+frontend/package-lock.json
