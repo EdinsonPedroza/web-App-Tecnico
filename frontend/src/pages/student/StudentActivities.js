@@ -280,12 +280,12 @@ export default function StudentActivities() {
       </div>
 
       <Dialog open={!!submitDialog} onOpenChange={() => setSubmitDialog(null)}>
-        <DialogContent>
+        <DialogContent className="flex flex-col max-h-[90vh] sm:max-h-[85vh]">
           <DialogHeader>
             <DialogTitle>Entregar Actividad</DialogTitle>
             <DialogDescription>{submitDialog?.title}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
             {/* Show warning if editing an already submitted activity */}
             {submissions.find(s => s.activity_id === submitDialog?.id) && (
               <div className="rounded-lg bg-warning/15 border-2 border-warning p-4">
@@ -298,8 +298,8 @@ export default function StudentActivities() {
                 </p>
               </div>
             )}
-            <div className="rounded-lg bg-muted/50 p-3">
-              <p className="text-sm text-muted-foreground">{submitDialog?.description}</p>
+            <div className="rounded-lg bg-muted/50 p-3 max-h-40 overflow-y-auto">
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{submitDialog?.description}</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Tu Respuesta (opcional si adjuntas archivos)</label>
@@ -345,7 +345,7 @@ export default function StudentActivities() {
               )}
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="border-t pt-4 mt-0 shrink-0">
             <Button variant="outline" onClick={() => setSubmitDialog(null)}>Cancelar</Button>
             <Button onClick={handleSubmit} disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
