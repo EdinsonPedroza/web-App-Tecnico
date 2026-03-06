@@ -1,5 +1,7 @@
 import os
+import types
 import logging
+from pymongo import UpdateOne
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -495,8 +497,43 @@ async def create_initial_data():
     if migrated_count > 0:
         logger.info(f"Migrated {migrated_count} students: initialized program_statuses field")
 
+    logger.info("Migrating submissions without course_id field...")
+    # Build a lookup map of activity_id -> course_id to avoid N+1 queries
+    all_activities_for_migration = await db.activities.find(
+        {}, {"_id": 0, "id": 1, "course_id": 1}
+    ).to_list(50000)
+    activity_course_map = {
+        a["id"]: a["course_id"] for a in all_activities_for_migration if a.get("course_id")
+    }
+
+    migrated_submissions = 0
+    batch_size = 1000
+    skip = 0
+    while True:
+        batch = await db.submissions.find(
+            {"course_id": {"$exists": False}},
+            {"_id": 0, "id": 1, "activity_id": 1}
+        ).skip(skip).limit(batch_size).to_list(batch_size)
+        if not batch:
+            break
+        bulk_ops = []
+        for sub in batch:
+            course_id = activity_course_map.get(sub.get("activity_id"))
+            if course_id:
+                bulk_ops.append(UpdateOne({"id": sub["id"]}, {"$set": {"course_id": course_id}}))
+        if bulk_ops:
+            result = await db.submissions.bulk_write(bulk_ops, ordered=False)
+            migrated_submissions += result.modified_count
+        if len(batch) < batch_size:
+            break
+        skip += batch_size
+
+    if migrated_submissions > 0:
+        logger.info(f"Migrated {migrated_submissions} submissions: added course_id field")
+
     logger.info("Checking for orphaned group/course data...")
     existing_course_ids = [c["id"] for c in await db.courses.find({}, {"_id": 0, "id": 1}).to_list(5000)]
+
     if not existing_course_ids:
         logger.warning(
             "Orphan purge skipped: no courses found in DB. "
@@ -504,13 +541,37 @@ async def create_initial_data():
             "check MongoDB connectivity."
         )
     else:
-        orphan_filter = {"course_id": {"$nin": existing_course_ids}}
-        orphan_activities = await db.activities.delete_many(orphan_filter)
-        orphan_grades = await db.grades.delete_many(orphan_filter)
-        orphan_submissions = await db.submissions.delete_many(orphan_filter)
-        orphan_videos = await db.class_videos.delete_many(orphan_filter)
-        orphan_recovery = await db.recovery_enabled.delete_many(orphan_filter)
-        orphan_failed = await db.failed_subjects.delete_many(orphan_filter)
+        # Purge activities and course-level records orphaned from deleted courses
+        course_orphan_filter = {"course_id": {"$nin": existing_course_ids}}
+        orphan_activities = await db.activities.delete_many(course_orphan_filter)
+        orphan_recovery = await db.recovery_enabled.delete_many(course_orphan_filter)
+        orphan_failed = await db.failed_subjects.delete_many(course_orphan_filter)
+
+        # Purge grades orphaned from deleted courses (grades DO have course_id)
+        orphan_grades = await db.grades.delete_many(course_orphan_filter)
+
+        # Purge videos orphaned from deleted courses
+        orphan_videos = await db.class_videos.delete_many(course_orphan_filter)
+
+        # Recalculate activity IDs after purging orphan activities
+        # (some activities may have just been deleted above)
+        remaining_activity_ids = [a["id"] for a in await db.activities.find({}, {"_id": 0, "id": 1}).to_list(50000)]
+
+        # Purge submissions orphaned from deleted activities
+        # IMPORTANT: submissions do NOT have course_id — they must be filtered by activity_id
+        if remaining_activity_ids:
+            orphan_submissions = await db.submissions.delete_many(
+                {"activity_id": {"$nin": remaining_activity_ids}}
+            )
+        else:
+            # No activities exist — skip submission purge to avoid wiping everything
+            # (this can happen on first startup or if DB is temporarily unavailable)
+            orphan_submissions = types.SimpleNamespace(deleted_count=0)
+            logger.warning(
+                "Submission orphan purge skipped: no activities found. "
+                "This protects submissions from accidental deletion on startup issues."
+            )
+
         total_purged = (orphan_activities.deleted_count + orphan_grades.deleted_count +
                         orphan_submissions.deleted_count + orphan_videos.deleted_count +
                         orphan_recovery.deleted_count + orphan_failed.deleted_count)
@@ -519,7 +580,7 @@ async def create_initial_data():
                 f"Purged {total_purged} orphaned records: "
                 f"{orphan_activities.deleted_count} activities, "
                 f"{orphan_grades.deleted_count} grades, "
-                f"{orphan_submissions.deleted_count} submissions, "
+                f"{orphan_submissions.deleted_count} submissions (by activity_id), "
                 f"{orphan_videos.deleted_count} videos, "
                 f"{orphan_recovery.deleted_count} recovery_enabled, "
                 f"{orphan_failed.deleted_count} failed_subjects"
