@@ -100,6 +100,28 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
         if existing.get("edited", False):
             raise HTTPException(status_code=400, detail="Esta actividad ya ha sido editada. Solo se permite una edición por actividad.")
 
+        # Si el contenido y archivos son idénticos, no contar como edición
+        existing_files = existing.get("files") or []
+        new_files = req.files or []
+        existing_content = (existing.get("content") or "").strip()
+        new_content = (req.content or "").strip()
+
+        def files_equal(f1, f2):
+            if len(f1) != len(f2):
+                return False
+            for a, b in zip(f1, f2):
+                if isinstance(a, dict) and isinstance(b, dict):
+                    if a.get("url") != b.get("url") or a.get("name") != b.get("name"):
+                        return False
+                else:
+                    if a != b:
+                        return False
+            return True
+
+        if existing_content == new_content and files_equal(existing_files, new_files):
+            logger.info("Duplicate submission detected for activity %s by student %s — returning existing without modification", req.activity_id, user["id"])
+            return existing
+
         await db.submissions.update_one(
             {"id": existing["id"]},
             {"$set": {"content": req.content, "files": req.files, "submitted_at": datetime.now(timezone.utc).isoformat(), "edited": True}}
