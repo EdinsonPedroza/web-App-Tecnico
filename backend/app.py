@@ -532,13 +532,23 @@ async def create_initial_data():
         logger.info(f"Migrated {migrated_submissions} submissions: added course_id field")
 
     logger.info("Checking for orphaned group/course data...")
-    existing_course_ids = [c["id"] for c in await db.courses.find({}, {"_id": 0, "id": 1}).to_list(5000)]
+    existing_course_ids = [c["id"] for c in await db.courses.find({}, {"_id": 0, "id": 1}).to_list(None)]
+    total_submissions = await db.submissions.count_documents({})
+    # If submissions exist but only 1 course was loaded, the DB connection likely returned
+    # a partial result — skip the purge to prevent accidental data loss.
+    MIN_COURSES_FOR_PURGE = 2
 
     if not existing_course_ids:
         logger.warning(
             "Orphan purge skipped: no courses found in DB. "
             "This is safe on first startup. If courses exist and this warning persists, "
             "check MongoDB connectivity."
+        )
+    elif total_submissions > 0 and len(existing_course_ids) < MIN_COURSES_FOR_PURGE:
+        logger.warning(
+            f"Orphan purge skipped: only {len(existing_course_ids)} course(s) found but "
+            f"{total_submissions} submission(s) exist. This may indicate a DB connection issue. "
+            "Skipping purge to prevent data loss."
         )
     else:
         # Purge activities and course-level records orphaned from deleted courses
@@ -555,14 +565,24 @@ async def create_initial_data():
 
         # Recalculate activity IDs after purging orphan activities
         # (some activities may have just been deleted above)
-        remaining_activity_ids = [a["id"] for a in await db.activities.find({}, {"_id": 0, "id": 1}).to_list(50000)]
+        remaining_activity_ids = [a["id"] for a in await db.activities.find({}, {"_id": 0, "id": 1}).to_list(None)]
 
         # Purge submissions orphaned from deleted activities
         # IMPORTANT: submissions do NOT have course_id — they must be filtered by activity_id
         if remaining_activity_ids:
+            orphan_count_preview = await db.submissions.count_documents(
+                {"activity_id": {"$nin": remaining_activity_ids}}
+            )
+            if orphan_count_preview > 0:
+                logger.info(f"About to purge {orphan_count_preview} orphaned submissions...")
             orphan_submissions = await db.submissions.delete_many(
                 {"activity_id": {"$nin": remaining_activity_ids}}
             )
+            if orphan_submissions.deleted_count != orphan_count_preview:
+                logger.warning(
+                    f"Submission purge mismatch: previewed {orphan_count_preview} "
+                    f"but deleted {orphan_submissions.deleted_count}."
+                )
         else:
             # No activities exist — skip submission purge to avoid wiping everything
             # (this can happen on first startup or if DB is temporarily unavailable)
