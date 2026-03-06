@@ -39,7 +39,7 @@ export default function StudentCourseDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [courseId, subjectId, user.id]);
+  }, [courseId, subjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
