@@ -68,7 +68,7 @@ En **Render Dashboard** → selecciona el servicio `educando-backend` → **Envi
 | `CORS_ORIGINS` | `https://educando-frontend.onrender.com,https://corporacioneducando.com,https://www.corporacioneducando.com` |
 | `AWS_ACCESS_KEY_ID` | Access Key ID del usuario IAM (paso 2) |
 | `AWS_SECRET_ACCESS_KEY` | Secret Access Key del usuario IAM (paso 2) |
-| `AWS_S3_BUCKET` | Nombre del bucket S3 (p.ej. `educando-uploads`) |
+| `AWS_S3_BUCKET_NAME` | Nombre del bucket S3 (p.ej. `educando-uploads`) |
 | `AWS_S3_REGION` | Región del bucket (p.ej. `us-east-1`) |
 | `CREATE_SEED_USERS` | `true` solo en el primer deploy; cambiar a `false` después (ver paso 5) |
 | `DB_NAME` | `WebApp` |

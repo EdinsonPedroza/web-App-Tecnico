@@ -192,9 +192,7 @@ export default function TeacherActivities() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await api.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await api.post('/upload', formData);
       setForm(prev => ({
         ...prev,
         files: [...prev.files, { name: res.data.filename, url: res.data.url.startsWith('http') ? res.data.url : `${BACKEND_URL}${res.data.url}` }]
