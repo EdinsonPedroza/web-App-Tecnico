@@ -132,6 +132,7 @@ async def create_submission(req: SubmissionCreate, user=Depends(get_current_user
     submission = {
         "id": str(uuid.uuid4()),
         "activity_id": req.activity_id,
+        "course_id": activity["course_id"],
         "student_id": user["id"],
         "content": req.content,
         "files": req.files,
