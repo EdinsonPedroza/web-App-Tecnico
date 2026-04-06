@@ -54,14 +54,23 @@ async def get_courses(teacher_id: Optional[str] = None, student_id: Optional[str
     else:
         query = {"$and": conditions}
 
-    projection = {"_id": 0}
-    if fields == "summary":
-        projection["student_ids"] = 0
-        projection["removed_student_ids"] = 0
-
     limit = max(1, min(limit, MAX_LIMIT))
     skip = max(0, skip)
-    courses = await db.courses.find(query, projection).skip(skip).limit(limit).to_list(limit)
+
+    if fields == "summary":
+        # Use aggregation to compute student_count without returning the full student_ids array
+        pipeline = [
+            {"$match": query},
+            {"$skip": skip},
+            {"$limit": limit},
+            {"$addFields": {
+                "student_count": {"$size": {"$ifNull": ["$student_ids", []]}}
+            }},
+            {"$project": {"_id": 0, "student_ids": 0, "removed_student_ids": 0}},
+        ]
+        courses = await db.courses.aggregate(pipeline).to_list(limit)
+    else:
+        courses = await db.courses.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
     return courses
 
 

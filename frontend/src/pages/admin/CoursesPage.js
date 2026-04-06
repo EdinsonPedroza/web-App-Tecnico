@@ -426,7 +426,7 @@ export default function CoursesPage() {
                     )}
                     <div className="flex gap-2 flex-wrap pt-1">
                       <Badge variant="secondary">{c.year}</Badge>
-                      <Badge variant="outline">{c.student_ids?.length || 0} estudiantes</Badge>
+                      <Badge variant="outline">{c.student_count ?? c.student_ids?.length ?? 0} estudiantes</Badge>
                     </div>
                   </div>
                 </CardContent>
