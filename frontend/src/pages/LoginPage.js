@@ -66,46 +66,57 @@ export default function LoginPage() {
           animation: lp-grad 14s ease infinite;
         }
 
-        /* ── logo glow (very subtle) ── */
+        /* ── logo glow ── */
         @keyframes lp-glow {
-          0%,100% { opacity: .4; }
-          50%      { opacity: .7; }
+          0%,100% { opacity: .55; transform: scale(1);    }
+          50%      { opacity: .85; transform: scale(1.06); }
         }
-        .lp-glow { animation: lp-glow 5s ease-in-out infinite; }
+        .lp-glow { animation: lp-glow 5s ease-in-out infinite; will-change: opacity,transform; }
 
-        /* ── stat cards ── only opacity drift, no movement ── */
+        /* ── stat cards entrance ── */
         @keyframes lp-card-in {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0);   }
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0);    }
         }
-        .lp-stat { animation: lp-card-in .5s ease both; }
+        .lp-stat { animation: lp-card-in .45s ease both; }
         .lp-stat:nth-child(1) { animation-delay: .05s; }
-        .lp-stat:nth-child(2) { animation-delay: .12s; }
-        .lp-stat:nth-child(3) { animation-delay: .19s; }
-        .lp-stat:nth-child(4) { animation-delay: .26s; }
+        .lp-stat:nth-child(2) { animation-delay: .13s; }
+        .lp-stat:nth-child(3) { animation-delay: .21s; }
+        .lp-stat:nth-child(4) { animation-delay: .29s; }
         .lp-stat {
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          background: rgba(255,255,255,0.07);
-          border: 1px solid rgba(255,255,255,0.12);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          background: rgba(255,255,255,0.13);
+          border: 1px solid rgba(255,255,255,0.28);
           border-radius: 14px;
-          transition: background .2s, border-color .2s, transform .2s;
+          transition: background .2s, border-color .2s, transform .2s, box-shadow .2s;
         }
         .lp-stat:hover {
-          background: rgba(255,255,255,0.12);
-          border-color: rgba(255,255,255,0.22);
-          transform: translateY(-3px);
+          background: rgba(255,255,255,0.2);
+          border-color: rgba(255,255,255,0.45);
+          transform: translateY(-4px);
+          box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+        }
+
+        /* ── stat icon container ── */
+        .lp-stat-icon {
+          background: rgba(96,165,250,0.22);
+          border: 1px solid rgba(96,165,250,0.45);
+          border-radius: 10px;
+          width: 38px; height: 38px;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
         }
 
         /* ── twinkling particles ── */
         @keyframes lp-twink {
-          0%,100% { opacity: .1; }
-          50%      { opacity: .6; }
+          0%,100% { opacity: .15; }
+          50%      { opacity: .75; }
         }
 
         /* ── gradient text ── */
         .lp-grad-text {
-          background: linear-gradient(120deg, #93c5fd, #bfdbfe, #e0f2fe);
+          background: linear-gradient(120deg, #7dd3fc, #bfdbfe, #e0f2fe);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -124,12 +135,11 @@ export default function LoginPage() {
           background-size: 200% 100%;
           border: none; color: white; font-weight: 700;
           transition: background-position .35s ease, transform .16s ease, box-shadow .16s ease;
-          position: relative; overflow: hidden;
         }
         .lp-submit:not(:disabled):hover {
           background-position: 100% 0;
           transform: translateY(-2px);
-          box-shadow: 0 8px 28px rgba(26,95,168,.42);
+          box-shadow: 0 8px 28px rgba(26,95,168,.48);
         }
         .lp-submit:not(:disabled):active { transform: translateY(0); }
 
@@ -143,19 +153,19 @@ export default function LoginPage() {
         .lp-form-card::before {
           content: '';
           position: absolute;
-          inset: -1.5px;
-          border-radius: 21.5px;
-          background: linear-gradient(135deg,
-            rgba(45,125,210,.45) 0%,
-            rgba(147,197,253,.2) 50%,
-            rgba(45,125,210,.35) 100%);
+          inset: -2px;
+          border-radius: 22px;
+          background: linear-gradient(145deg,
+            rgba(33,118,199,.7) 0%,
+            rgba(147,197,253,.35) 50%,
+            rgba(33,118,199,.6) 100%);
           z-index: -1;
         }
 
         /* ── input focus glow ── */
         .lp-input-wrap input:focus {
           border-color: #2176c7;
-          box-shadow: 0 0 0 3px rgba(33,118,199,.14);
+          box-shadow: 0 0 0 3px rgba(33,118,199,.18);
           transition: border-color .18s, box-shadow .18s;
         }
 
@@ -166,7 +176,17 @@ export default function LoginPage() {
         .lp-fb:hover {
           background: #145dbf !important;
           transform: translateY(-2px);
-          box-shadow: 0 6px 18px rgba(24,119,242,.38);
+          box-shadow: 0 6px 18px rgba(24,119,242,.45);
+        }
+
+        /* ── form icon badge ── */
+        .lp-header-icon {
+          background: linear-gradient(135deg, rgba(14,52,96,0.12), rgba(33,118,199,0.14));
+          border: 1px solid rgba(33,118,199,0.22);
+          border-radius: 14px;
+          width: 48px; height: 48px;
+          display: inline-flex; align-items: center; justify-content: center;
+          margin-bottom: 14px;
         }
       `}</style>
 
@@ -180,63 +200,65 @@ export default function LoginPage() {
           style={{ clipPath: 'polygon(0 0, 94% 0, 100% 100%, 0 100%)' }}
         >
 
-          {/* Dot grid */}
+          {/* Dot grid — more visible */}
           <div className="absolute inset-0 pointer-events-none" style={{
-            backgroundImage: 'radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px)',
             backgroundSize: '30px 30px',
           }}/>
 
           {/* Horizontal mesh lines */}
           <div className="absolute inset-0 pointer-events-none" style={{
-            backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 44px)',
+            backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 44px)',
           }}/>
 
-          {/* Static blobs — no animation, just depth layers */}
+          {/* Depth blobs */}
           <div className="absolute rounded-full blur-3xl pointer-events-none"
-            style={{ width:420, height:420, top:-100, left:-100, background:'rgba(21,74,142,0.4)' }}/>
+            style={{ width:420, height:420, top:-100, left:-100, background:'rgba(21,74,142,0.45)' }}/>
           <div className="absolute rounded-full blur-3xl pointer-events-none"
-            style={{ width:340, height:340, bottom:-80, right:-60, background:'rgba(10,42,90,0.5)' }}/>
-          <div className="absolute rounded-full blur-2xl pointer-events-none"
-            style={{ width:240, height:240, top:'40%', left:'60%', transform:'translate(-50%,-50%)', background:'rgba(33,118,199,0.15)' }}/>
+            style={{ width:340, height:340, bottom:-80, right:-60, background:'rgba(10,42,90,0.55)' }}/>
 
-          {/* Radial center glow */}
+          {/* Radial center glow — brighter */}
           <div className="absolute pointer-events-none" style={{
-            width:500, height:500,
+            width:520, height:520,
             top:'50%', left:'50%',
-            transform:'translate(-50%,-56%)',
+            transform:'translate(-50%,-58%)',
             borderRadius:'50%',
-            background:'radial-gradient(circle, rgba(33,118,199,0.18) 0%, transparent 68%)',
+            background:'radial-gradient(circle, rgba(33,118,199,0.28) 0%, transparent 65%)',
           }}/>
 
-          {/* Sparse twinkling particles */}
+          {/* Twinkling particles — bigger, more visible */}
           {[
             [8,13,0,3.4],[17,76,0.7,4.2],[34,6,1.3,3.8],[42,90,0.2,5.1],
             [59,52,1.9,3.5],[71,22,0.5,4.6],[82,68,2.2,3.2],[90,40,1.1,4.9],
           ].map(([t,l,d,s],i) => (
             <div key={i} className="absolute rounded-full bg-white pointer-events-none"
-              style={{ top:`${t}%`, left:`${l}%`, width:2.5, height:2.5,
+              style={{ top:`${t}%`, left:`${l}%`, width:3, height:3,
                 animation:`lp-twink ${s}s ease-in-out ${d}s infinite` }}/>
           ))}
 
-          {/* Bottom illustration */}
-          <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{ opacity:.1 }}>
+          {/* Bottom illustration — más visible */}
+          <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{ opacity:.22 }}>
             <svg viewBox="0 0 900 180" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMax meet">
+              {/* Open book */}
               <rect x="50" y="70" width="100" height="100" rx="5" fill="white"/>
-              <line x1="100" y1="70" x2="100" y2="170" stroke="rgba(0,0,0,0.2)" strokeWidth="2"/>
-              <rect x="58" y="88" width="32" height="5" rx="2.5" fill="rgba(255,255,255,0.5)"/>
-              <rect x="58" y="100" width="24" height="5" rx="2.5" fill="rgba(255,255,255,0.4)"/>
-              <rect x="58" y="112" width="28" height="5" rx="2.5" fill="rgba(255,255,255,0.4)"/>
-              <rect x="108" y="88" width="32" height="5" rx="2.5" fill="rgba(255,255,255,0.5)"/>
-              <rect x="108" y="100" width="24" height="5" rx="2.5" fill="rgba(255,255,255,0.4)"/>
-              <rect x="108" y="112" width="28" height="5" rx="2.5" fill="rgba(255,255,255,0.4)"/>
+              <line x1="100" y1="70" x2="100" y2="170" stroke="rgba(0,0,0,0.15)" strokeWidth="2"/>
+              <rect x="58" y="88" width="32" height="5" rx="2.5" fill="rgba(255,255,255,0.6)"/>
+              <rect x="58" y="100" width="24" height="5" rx="2.5" fill="rgba(255,255,255,0.5)"/>
+              <rect x="58" y="112" width="28" height="5" rx="2.5" fill="rgba(255,255,255,0.5)"/>
+              <rect x="108" y="88" width="32" height="5" rx="2.5" fill="rgba(255,255,255,0.6)"/>
+              <rect x="108" y="100" width="24" height="5" rx="2.5" fill="rgba(255,255,255,0.5)"/>
+              <rect x="108" y="112" width="28" height="5" rx="2.5" fill="rgba(255,255,255,0.5)"/>
+              {/* Book stack */}
               <rect x="295" y="128" width="130" height="22" rx="4" fill="white"/>
               <rect x="303" y="106" width="114" height="22" rx="4" fill="white"/>
               <rect x="291" y="84"  width="128" height="22" rx="4" fill="white"/>
+              {/* Mortarboard */}
               <polygon points="600,50 672,76 600,102 528,76" fill="white"/>
               <rect x="596" y="76" width="8" height="46" rx="4" fill="white"/>
               <circle cx="600" cy="126" r="9" fill="white"/>
               <line x1="672" y1="76" x2="672" y2="106" stroke="white" strokeWidth="4" strokeLinecap="round"/>
               <circle cx="672" cy="113" r="7" fill="white"/>
+              {/* Pencil */}
               <rect x="800" y="28" width="14" height="128" rx="4" transform="rotate(-12 800 28)" fill="white"/>
               <polygon points="797,154 813,154 805,176" transform="rotate(-12 805 154)" fill="white"/>
             </svg>
@@ -245,37 +267,42 @@ export default function LoginPage() {
           {/* ── Content ── */}
           <div className="relative z-10 flex flex-col items-center text-center px-14 max-w-[440px]">
 
-            {/* Logo — glow only, no spinning rings */}
-            <div className="relative mb-8 flex items-center justify-center" style={{ width:164, height:164 }}>
+            {/* Logo */}
+            <div className="relative mb-8 flex items-center justify-center" style={{ width:168, height:168 }}>
+              {/* Outer static ring */}
+              <div className="absolute rounded-full pointer-events-none"
+                style={{ inset:-12, border:'1.5px solid rgba(255,255,255,0.25)', borderRadius:'50%' }}/>
+              {/* Glow */}
               <div className="lp-glow absolute rounded-full blur-2xl"
-                style={{ inset:-16, background:'rgba(255,255,255,0.16)' }}/>
+                style={{ inset:-14, background:'rgba(96,165,250,0.28)' }}/>
               <img src={LOGO} alt="Corporación Social Educando"
-                className="relative rounded-full object-cover shadow-2xl z-10"
-                style={{ width:160, height:160, border:'3px solid rgba(255,255,255,0.35)' }}
+                className="relative rounded-full object-cover z-10"
+                style={{ width:160, height:160,
+                  border:'3px solid rgba(255,255,255,0.6)',
+                  boxShadow:'0 0 0 6px rgba(255,255,255,0.08), 0 20px 48px rgba(0,0,0,0.4)' }}
                 onError={e => { e.target.style.display='none'; }}
               />
             </div>
 
             {/* Title */}
-            <h1 className="text-[1.75rem] font-extrabold font-heading text-white mb-2 leading-snug tracking-tight">
+            <h1 className="text-[1.85rem] font-extrabold font-heading text-white mb-2 leading-snug tracking-tight drop-shadow-md">
               Corporación Social<br/>
               <span className="lp-grad-text">Educando</span>
             </h1>
-            <p className="text-white/60 text-sm leading-relaxed mb-10 max-w-[280px]">
+            <p className="text-white/75 text-sm leading-relaxed mb-10 max-w-[280px]">
               Llegamos a los rincones donde la educación no llega
             </p>
 
-            {/* Stat cards — 2×2 grid, entrada suave, hover lift */}
+            {/* Stat cards — 2×2, alto contraste */}
             <div className="grid grid-cols-2 gap-3 w-full max-w-[320px]">
               {STATS.map(({ icon: Icon, value, label }) => (
                 <div key={label} className="lp-stat flex items-center gap-3 px-4 py-3.5">
-                  <div className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl"
-                    style={{ background:'rgba(255,255,255,0.1)' }}>
-                    <Icon className="h-4 w-4 text-white/80"/>
+                  <div className="lp-stat-icon">
+                    <Icon className="h-4 w-4" style={{ color:'#7dd3fc' }}/>
                   </div>
                   <div className="text-left min-w-0">
-                    <div className="text-lg font-extrabold text-white leading-none">{value}</div>
-                    <div className="text-[11px] text-white/55 mt-0.5 leading-tight">{label}</div>
+                    <div className="text-xl font-extrabold text-white leading-none tracking-tight">{value}</div>
+                    <div className="text-[11px] font-medium mt-0.5 leading-tight" style={{ color:'rgba(255,255,255,0.78)' }}>{label}</div>
                   </div>
                 </div>
               ))}
@@ -313,8 +340,7 @@ export default function LoginPage() {
               <div className="p-8">
                 {/* Header */}
                 <div className="text-center mb-6">
-                  <div className="inline-flex items-center justify-center w-11 h-11 rounded-xl mb-4"
-                    style={{ background:'linear-gradient(135deg,rgba(14,52,96,0.08),rgba(33,118,199,0.07))' }}>
+                  <div className="lp-header-icon mx-auto">
                     <GraduationCap className="h-5 w-5" style={{ color:'#1a5fa8' }}/>
                   </div>
                   <h2 className="text-[1.35rem] font-extrabold font-heading text-foreground tracking-tight">
@@ -344,7 +370,7 @@ export default function LoginPage() {
                   <div key={fieldKey} className="lp-field space-y-1.5">
                     {role === 'estudiante' ? (
                       <>
-                        <Label htmlFor="cedula" className="text-sm font-semibold text-foreground/75">Cédula</Label>
+                        <Label htmlFor="cedula" className="text-sm font-semibold text-foreground">Cédula</Label>
                         <div className="lp-input-wrap">
                           <Input id="cedula" inputMode="numeric"
                             placeholder="Ej: 12345678 (solo números)"
@@ -355,7 +381,7 @@ export default function LoginPage() {
                       </>
                     ) : (
                       <>
-                        <Label htmlFor="email" className="text-sm font-semibold text-foreground/75">Correo Electrónico</Label>
+                        <Label htmlFor="email" className="text-sm font-semibold text-foreground">Correo Electrónico</Label>
                         <div className="lp-input-wrap">
                           <Input id="email" type="email"
                             placeholder="correo@educando.com"
@@ -369,7 +395,7 @@ export default function LoginPage() {
 
                   {/* Password */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="password" className="text-sm font-semibold text-foreground/75">Contraseña</Label>
+                    <Label htmlFor="password" className="text-sm font-semibold text-foreground">Contraseña</Label>
                     <div className="lp-input-wrap relative">
                       <Input id="password"
                         type={showPass ? 'text' : 'password'}
