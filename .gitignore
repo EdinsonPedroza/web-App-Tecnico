@@ -69,5 +69,6 @@ backend/uploads/*
 
 # Tool artifacts
 .emergent/
+.claude/
 memory/
 frontend/package-lock.json

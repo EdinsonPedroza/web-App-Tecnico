@@ -13,6 +13,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _verify_video_course_ownership(video_id: str, user: dict):
+    """Raise HTTP 403/404 if professor is not assigned to the video's course.
+    Mirrors the same ownership pattern used in activities and grades."""
+    video = await db.class_videos.find_one({"id": video_id}, {"_id": 0})
+    if not video:
+        raise HTTPException(status_code=404, detail="Video no encontrado")
+    course = await db.courses.find_one({"id": video.get("course_id")}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+    teacher_ids = list(course.get("teacher_ids") or [])
+    if course.get("teacher_id"):
+        teacher_ids.append(course["teacher_id"])
+    if user["id"] not in teacher_ids:
+        user_subject_ids = set(user.get("subject_ids") or [])
+        course_subject_ids = set(course.get("subject_ids") or [])
+        if not user_subject_ids.intersection(course_subject_ids):
+            raise HTTPException(status_code=403, detail="No tienes permiso para modificar videos de este curso")
+    return video
+
+
 @router.get("/class-videos")
 async def get_class_videos(course_id: Optional[str] = None, subject_id: Optional[str] = None, skip: int = 0, limit: int = 100, user=Depends(get_current_user)):
     query = {}
@@ -42,6 +62,17 @@ async def get_class_videos(course_id: Optional[str] = None, subject_id: Optional
 async def create_class_video(req: ClassVideoCreate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    course = await db.courses.find_one({"id": req.course_id}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+    teacher_ids = list(course.get("teacher_ids") or [])
+    if course.get("teacher_id"):
+        teacher_ids.append(course["teacher_id"])
+    if user["id"] not in teacher_ids:
+        user_subject_ids = set(user.get("subject_ids") or [])
+        course_subject_ids = set(course.get("subject_ids") or [])
+        if not user_subject_ids.intersection(course_subject_ids):
+            raise HTTPException(status_code=403, detail="No tienes permiso para crear videos en este curso")
     video = {
         "id": str(uuid.uuid4()),
         "course_id": req.course_id,
@@ -62,6 +93,7 @@ async def create_class_video(req: ClassVideoCreate, user=Depends(get_current_use
 async def delete_class_video(video_id: str, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    await _verify_video_course_ownership(video_id, user)
     await db.class_videos.delete_one({"id": video_id})
     return {"message": "Video eliminado"}
 
@@ -70,6 +102,7 @@ async def delete_class_video(video_id: str, user=Depends(get_current_user)):
 async def update_class_video(video_id: str, req: ClassVideoUpdate, user=Depends(get_current_user)):
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
+    await _verify_video_course_ownership(video_id, user)
     raw = req.model_dump()
     update_data = {k: v for k, v in raw.items() if v is not None}
     if raw.get("available_from") in ("", None) and "available_from" in raw:

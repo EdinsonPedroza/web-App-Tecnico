@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -96,13 +97,19 @@ async def get_student_recoveries(user=Depends(get_current_user)):
     student_id = user["id"]
     program_modules = user.get("program_modules") or {}
 
-    failed_subjects = await db.failed_subjects.find({
-        "student_id": student_id,
-        "recovery_processed": {"$ne": True}
-    }, {"_id": 0}).to_list(100)
+    # Round 1: fetch failed_subjects, all subject module data, and programs in parallel —
+    # all three are independent of each other.
+    failed_subjects, all_subject_docs, programs = await asyncio.gather(
+        db.failed_subjects.find(
+            {"student_id": student_id, "recovery_processed": {"$ne": True}},
+            {"_id": 0}
+        ).to_list(100),
+        db.subjects.find({}, {"_id": 0, "id": 1, "module_number": 1}).to_list(1000),
+        db.programs.find({}, {"_id": 0}).to_list(100),
+    )
 
-    all_subject_docs = await db.subjects.find({}, {"_id": 0, "id": 1, "module_number": 1}).to_list(1000)
     db_subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subject_docs}
+    program_map = {p["id"]: p["name"] for p in programs}
 
     filtered = []
     for subject in failed_subjects:
@@ -122,27 +129,31 @@ async def get_student_recoveries(user=Depends(get_current_user)):
             filtered.append(subject)
     failed_subjects = filtered
 
-    programs = await db.programs.find({}, {"_id": 0}).to_list(100)
-    program_map = {p["id"]: p["name"] for p in programs}
-
     missing_subject_ids = [s["subject_id"] for s in failed_subjects if s.get("subject_id") and not s.get("subject_name")]
-    subject_name_lookup = {}
-    if missing_subject_ids:
-        subj_docs = await db.subjects.find({"id": {"$in": missing_subject_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
-        subject_name_lookup = {s["id"]: s["name"] for s in subj_docs}
+    course_ids = list({s["course_id"] for s in failed_subjects if s.get("course_id")})
+
+    # Round 2: fetch missing subject names and course date configs in parallel —
+    # both depend only on data derived from the filtered list above.
+    async def _get_missing_subject_names():
+        if missing_subject_ids:
+            return await db.subjects.find(
+                {"id": {"$in": missing_subject_ids}}, {"_id": 0, "id": 1, "name": 1}
+            ).to_list(500)
+        return []
+
+    async def _get_course_dates():
+        if course_ids:
+            return await db.courses.find(
+                {"id": {"$in": course_ids}}, {"_id": 0, "id": 1, "module_dates": 1}
+            ).to_list(500)
+        return []
+
+    subj_docs, course_docs = await asyncio.gather(_get_missing_subject_names(), _get_course_dates())
+
+    subject_name_lookup = {s["id"]: s["name"] for s in subj_docs}
+    course_map_for_dates = {c["id"]: c for c in course_docs}
 
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    # Pre-load all courses needed to avoid N+1 queries inside the loop
-    course_ids = list({s["course_id"] for s in failed_subjects if s.get("course_id")})
-    if course_ids:
-        course_docs = await db.courses.find(
-            {"id": {"$in": course_ids}},
-            {"_id": 0, "id": 1, "module_dates": 1}
-        ).to_list(500)
-        course_map_for_dates = {c["id"]: c for c in course_docs}
-    else:
-        course_map_for_dates = {}
 
     for subject in failed_subjects:
         subject["program_name"] = program_map.get(subject["program_id"], "Desconocido")

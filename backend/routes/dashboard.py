@@ -70,25 +70,30 @@ async def get_student_dashboard(
         db.grades.find(grades_query, {"_id": 0}).to_list(10000)
     )
 
-    # Filter recovery activities for students
-    if activities:
-        approved_records = await db.failed_subjects.find({
-            "student_id": student_id,
-            "course_id": course_id,
-            "recovery_approved": True,
-            "recovery_processed": {"$ne": True},
-            "recovery_expired": {"$ne": True}
-        }, {"_id": 0, "subject_id": 1}).to_list(100)
-        approved_subject_ids = {r.get("subject_id") for r in approved_records}
-        activities = [
-            a for a in activities
-            if not a.get("is_recovery") or a.get("subject_id") in approved_subject_ids
-        ]
+    # Filter recovery activities for students, and fetch subject info — both independent.
+    async def _get_approved_records():
+        if activities:
+            return await db.failed_subjects.find({
+                "student_id": student_id,
+                "course_id": course_id,
+                "recovery_approved": True,
+                "recovery_processed": {"$ne": True},
+                "recovery_expired": {"$ne": True}
+            }, {"_id": 0, "subject_id": 1}).to_list(100)
+        return []
 
-    # Optionally include subject info
-    subject = None
-    if subject_id:
-        subject = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
+    async def _get_subject():
+        if subject_id:
+            return await db.subjects.find_one({"id": subject_id}, {"_id": 0})
+        return None
+
+    approved_records, subject = await asyncio.gather(_get_approved_records(), _get_subject())
+
+    approved_subject_ids = {r.get("subject_id") for r in approved_records}
+    activities = [
+        a for a in activities
+        if not a.get("is_recovery") or a.get("subject_id") in approved_subject_ids
+    ]
 
     return {
         "course": course,
@@ -121,20 +126,21 @@ async def get_teacher_dashboard(
     if subject_id:
         videos_query["subject_id"] = subject_id
 
-    # Execute all in parallel
-    course, activities, videos = await asyncio.gather(
+    async def _get_teacher_subject():
+        if subject_id:
+            return await db.subjects.find_one({"id": subject_id}, {"_id": 0})
+        return None
+
+    # Execute all in parallel — subject fetch is independent of course/activities/videos
+    course, activities, videos, subject = await asyncio.gather(
         course_fut,
         db.activities.find(activities_query, {"_id": 0}).to_list(500),
         db.class_videos.find(videos_query, {"_id": 0}).sort("created_at", -1).to_list(500),
+        _get_teacher_subject(),
     )
 
     if not course:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
-
-    # Optionally include subject info (only fetches 1 doc, not all subjects)
-    subject = None
-    if subject_id:
-        subject = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
 
     return {
         "course": course,
@@ -466,10 +472,16 @@ async def get_recovery_results_report(format: Optional[str] = None, user=Depends
     program_ids_set = list({r.get("program_id") for r in all_failed if r.get("program_id")})
     subject_ids_set = list({r.get("subject_id") for r in all_failed if r.get("subject_id")})
 
-    students_list = await db.users.find({"id": {"$in": student_ids_set}}, {"_id": 0, "id": 1, "name": 1, "cedula": 1}).to_list(5000) if student_ids_set else []
-    courses_list = await db.courses.find({"id": {"$in": course_ids_set}}, {"_id": 0, "id": 1, "name": 1, "module_dates": 1}).to_list(1000) if course_ids_set else []
-    programs_list = await db.programs.find({"id": {"$in": program_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(100) if program_ids_set else []
-    subjects_list = await db.subjects.find({"id": {"$in": subject_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(500) if subject_ids_set else []
+    # All four lookup queries are independent — run in parallel.
+    async def _empty():
+        return []
+
+    students_list, courses_list, programs_list, subjects_list = await asyncio.gather(
+        db.users.find({"id": {"$in": student_ids_set}}, {"_id": 0, "id": 1, "name": 1, "cedula": 1}).to_list(5000) if student_ids_set else _empty(),
+        db.courses.find({"id": {"$in": course_ids_set}}, {"_id": 0, "id": 1, "name": 1, "module_dates": 1}).to_list(1000) if course_ids_set else _empty(),
+        db.programs.find({"id": {"$in": program_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(100) if program_ids_set else _empty(),
+        db.subjects.find({"id": {"$in": subject_ids_set}}, {"_id": 0, "id": 1, "name": 1}).to_list(500) if subject_ids_set else _empty(),
+    )
 
     student_map = {s["id"]: s for s in students_list}
     course_map = {c["id"]: c for c in courses_list}

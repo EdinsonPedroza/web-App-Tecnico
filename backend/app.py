@@ -338,6 +338,7 @@ async def create_initial_data():
     else:
         logger.info("Todos los programas ya existen - no se sobrescribieron")
 
+    subject_ops = []
     for prog in programs:
         for module in prog["modules"]:
             for subj_name in module["subjects"]:
@@ -349,11 +350,13 @@ async def create_initial_data():
                     "description": "",
                     "active": True
                 }
-                await db.subjects.update_one(
+                subject_ops.append(UpdateOne(
                     {"name": subj_name, "program_id": prog["id"], "module_number": module["number"]},
                     {"$setOnInsert": subject_data},
                     upsert=True
-                )
+                ))
+    if subject_ops:
+        await db.subjects.bulk_write(subject_ops, ordered=False)
 
     legacy_id_map = {
         "user-editor-1": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-editor-1")),

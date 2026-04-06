@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
@@ -52,7 +52,14 @@ export default function StudentActivities() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const hasSubmission = (actId) => submissions.find(s => s.activity_id === actId);
+  // O(1) lookup rebuilt only when submissions array changes
+  const submissionsMap = useMemo(() => {
+    const map = {};
+    submissions.forEach(s => { map[s.activity_id] = s; });
+    return map;
+  }, [submissions]);
+
+  const hasSubmission = (actId) => submissionsMap[actId];
 
   const getActivityStatus = (act) => {
     const now = new Date();
@@ -108,7 +115,7 @@ export default function StudentActivities() {
     if (!submitContent.trim() && submitFiles.length === 0) { toast.error('Escribe una respuesta o adjunta archivos'); return; }
 
     // Si ya existe una entrega, confirmar que el estudiante realmente quiere editar
-    const existingSubmission = submissions.find(s => s.activity_id === submitDialog?.id);
+    const existingSubmission = submissionsMap[submitDialog?.id];
     if (existingSubmission && !existingSubmission.edited) {
       const confirmed = window.confirm(
         '⚠️ Ya tienes una actividad entregada.\n\nSi continúas, esto contará como tu ÚNICA edición permitida y no podrás modificarla de nuevo.\n\n¿Estás seguro de que quieres reemplazar tu entrega actual?'
@@ -286,7 +293,7 @@ export default function StudentActivities() {
           </DialogHeader>
           <div className="flex-1 overflow-y-auto space-y-4 pr-1">
             {/* Show warning if editing an already submitted activity */}
-            {submissions.find(s => s.activity_id === submitDialog?.id) && (
+            {submissionsMap[submitDialog?.id] && (
               <div className="rounded-lg bg-warning/15 border-2 border-warning p-4">
                 <p className="text-sm font-bold text-warning flex items-center gap-2">
                   <span className="text-xl">⚠️</span>

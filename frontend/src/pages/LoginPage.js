@@ -100,7 +100,7 @@ export default function LoginPage() {
 
           <Card className="shadow-elegant border-border/50">
             <CardHeader className="text-center pb-4">
-              <CardTitle className="text-2xl font-heading">Iniciar Sesión</CardTitle>
+className="text-2xl font-heading font-bold">Iniciar Sesión
               <CardDescription>Accede a tu plataforma educativa</CardDescription>
             </CardHeader>
             <CardContent>

@@ -14,6 +14,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const inactivityTimer = useRef(null);
   const warningTimer = useRef(null);
+  const lastResetRef = useRef(0);
 
   const logout = useCallback(async (reason) => {
     try {
@@ -31,8 +32,12 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // Reset inactivity timer on user activity
+  // Reset inactivity timer on user activity — throttled to once per second to avoid
+  // clearTimeout/setTimeout thrash from high-frequency events like mousemove.
   const resetInactivityTimer = useCallback(() => {
+    const now = Date.now();
+    if (now - lastResetRef.current < 1000) return;
+    lastResetRef.current = now;
     if (warningTimer.current) clearTimeout(warningTimer.current);
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     warningTimer.current = setTimeout(() => {

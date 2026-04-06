@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -25,8 +26,10 @@ async def get_submissions(activity_id: Optional[str] = None, student_id: Optiona
     max_limit = 200 if activity_id else 500
     limit = max(1, min(limit, max_limit))
     skip = max(0, skip)
-    total_count = await db.submissions.count_documents(query)
-    submissions = await db.submissions.find(query, {"_id": 0}).sort("submitted_at", -1).skip(skip).limit(limit).to_list(limit)
+    total_count, submissions = await asyncio.gather(
+        db.submissions.count_documents(query),
+        db.submissions.find(query, {"_id": 0}).sort("submitted_at", -1).skip(skip).limit(limit).to_list(limit)
+    )
     response = JSONResponse(content=submissions)
     response.headers["X-Total-Count"] = str(total_count)
     response.headers["X-Has-More"] = str((skip + limit) < total_count).lower()

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { Toaster } from '@/components/ui/sonner';
@@ -6,30 +6,41 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import EnvironmentCheck from '@/components/EnvironmentCheck';
 import '@/App.css';
 
-// Pages
-import LoginPage from '@/pages/LoginPage';
-import NotFoundPage from '@/pages/NotFoundPage';
-import EditorPage from '@/pages/editor/EditorPage';
-import AdminDashboard from '@/pages/admin/AdminDashboard';
-import ProgramsPage from '@/pages/admin/ProgramsPage';
-import SubjectsPage from '@/pages/admin/SubjectsPage';
-import TeachersPage from '@/pages/admin/TeachersPage';
-import StudentsPage from '@/pages/admin/StudentsPage';
-import CoursesPage from '@/pages/admin/CoursesPage';
-import RecoveriesPage from '@/pages/admin/RecoveriesPage';
-import TeacherCourseSelector from '@/pages/teacher/TeacherCourseSelector';
-import TeacherCourseDashboard from '@/pages/teacher/TeacherCourseDashboard';
-import TeacherActivities from '@/pages/teacher/TeacherActivities';
-import TeacherGrades from '@/pages/teacher/TeacherGrades';
-import TeacherVideos from '@/pages/teacher/TeacherVideos';
-import TeacherStudents from '@/pages/teacher/TeacherStudents';
-import StudentProgramSelector from '@/pages/student/StudentProgramSelector';
-import StudentCourseSelector from '@/pages/student/StudentCourseSelector';
-import StudentCourseDashboard from '@/pages/student/StudentCourseDashboard';
-import StudentActivities from '@/pages/student/StudentActivities';
-import StudentGrades from '@/pages/student/StudentGrades';
-import StudentVideos from '@/pages/student/StudentVideos';
-import StudentRecoveriesPage from '@/pages/student/StudentRecoveriesPage';
+// Pages - lazy loaded to reduce initial bundle size
+const LoginPage = lazy(() => import('@/pages/LoginPage'));
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
+const EditorPage = lazy(() => import('@/pages/editor/EditorPage'));
+const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard'));
+const ProgramsPage = lazy(() => import('@/pages/admin/ProgramsPage'));
+const SubjectsPage = lazy(() => import('@/pages/admin/SubjectsPage'));
+const TeachersPage = lazy(() => import('@/pages/admin/TeachersPage'));
+const StudentsPage = lazy(() => import('@/pages/admin/StudentsPage'));
+const CoursesPage = lazy(() => import('@/pages/admin/CoursesPage'));
+const RecoveriesPage = lazy(() => import('@/pages/admin/RecoveriesPage'));
+const TeacherCourseSelector = lazy(() => import('@/pages/teacher/TeacherCourseSelector'));
+const TeacherCourseDashboard = lazy(() => import('@/pages/teacher/TeacherCourseDashboard'));
+const TeacherActivities = lazy(() => import('@/pages/teacher/TeacherActivities'));
+const TeacherGrades = lazy(() => import('@/pages/teacher/TeacherGrades'));
+const TeacherVideos = lazy(() => import('@/pages/teacher/TeacherVideos'));
+const TeacherStudents = lazy(() => import('@/pages/teacher/TeacherStudents'));
+const StudentProgramSelector = lazy(() => import('@/pages/student/StudentProgramSelector'));
+const StudentCourseSelector = lazy(() => import('@/pages/student/StudentCourseSelector'));
+const StudentCourseDashboard = lazy(() => import('@/pages/student/StudentCourseDashboard'));
+const StudentActivities = lazy(() => import('@/pages/student/StudentActivities'));
+const StudentGrades = lazy(() => import('@/pages/student/StudentGrades'));
+const StudentVideos = lazy(() => import('@/pages/student/StudentVideos'));
+const StudentRecoveriesPage = lazy(() => import('@/pages/student/StudentRecoveriesPage'));
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-sm text-muted-foreground">Cargando...</p>
+      </div>
+    </div>
+  );
+}
 
 // Protected Route wrapper
 function ProtectedRoute({ children, allowedRoles }) {
@@ -76,6 +87,7 @@ function App() {
       <EnvironmentCheck>
         <AuthProvider>
           <BrowserRouter>
+            <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* Public */}
               <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
@@ -117,6 +129,7 @@ function App() {
               {/* Catch all - Show 404 page instead of redirecting */}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
+            </Suspense>
           </BrowserRouter>
           <Toaster position="top-right" richColors />
         </AuthProvider>

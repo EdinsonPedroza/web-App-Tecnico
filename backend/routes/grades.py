@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -37,8 +38,10 @@ async def get_grades(course_id: Optional[str] = None, student_id: Optional[str] 
     effective_max = MAX_LIMIT_GRADES if course_id else MAX_LIMIT
     limit = max(1, min(limit, effective_max))
     skip = max(0, skip)
-    total_count = await db.grades.count_documents(query)
-    grades = await db.grades.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
+    total_count, grades = await asyncio.gather(
+        db.grades.count_documents(query),
+        db.grades.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
+    )
     response = JSONResponse(content=grades)
     response.headers["X-Total-Count"] = str(total_count)
     response.headers["X-Has-More"] = str((skip + limit) < total_count).lower()
@@ -120,39 +123,47 @@ async def create_grade(req: GradeCreate, user=Depends(get_current_user)):
             })
             raise HTTPException(status_code=403, detail="No eres el profesor asignado a este curso")
 
-    activity_doc = None
-    if req.activity_id:
-        activity_doc = await db.activities.find_one({"id": req.activity_id}, {"_id": 0, "is_recovery": 1, "course_id": 1, "subject_id": 1})
-        if activity_doc and activity_doc.get("is_recovery"):
-            if req.value is not None and not req.recovery_status:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Las actividades de recuperación no admiten nota numérica. Use Aprobar o Rechazar."
-                )
-            if req.recovery_status not in ("approved", "rejected", None):
-                raise HTTPException(status_code=400, detail="Estado de recuperación inválido")
-            rec_subject_id = req.subject_id or activity_doc.get("subject_id")
-            failed_filter = {
-                "student_id": req.student_id,
-                "course_id": req.course_id,
-                "recovery_approved": True,
-                "recovery_processed": {"$ne": True},
-                "recovery_rejected": {"$ne": True},
-            }
-            if rec_subject_id:
-                failed_filter["subject_id"] = rec_subject_id
-            failed_record = await db.failed_subjects.find_one(failed_filter)
-            if not failed_record:
-                raise HTTPException(
-                    status_code=400,
-                    detail="La recuperación debe ser aprobada por el administrador antes de poder calificar"
-                )
+    async def _fetch_activity():
+        if req.activity_id:
+            return await db.activities.find_one(
+                {"id": req.activity_id},
+                {"_id": 0, "is_recovery": 1, "course_id": 1, "subject_id": 1}
+            )
+        return None
 
-    existing = await db.grades.find_one({
-        "student_id": req.student_id,
-        "course_id": req.course_id,
-        "activity_id": req.activity_id
-    })
+    activity_doc, existing = await asyncio.gather(
+        _fetch_activity(),
+        db.grades.find_one({
+            "student_id": req.student_id,
+            "course_id": req.course_id,
+            "activity_id": req.activity_id,
+        }),
+    )
+
+    if activity_doc and activity_doc.get("is_recovery"):
+        if req.value is not None and not req.recovery_status:
+            raise HTTPException(
+                status_code=400,
+                detail="Las actividades de recuperación no admiten nota numérica. Use Aprobar o Rechazar."
+            )
+        if req.recovery_status not in ("approved", "rejected", None):
+            raise HTTPException(status_code=400, detail="Estado de recuperación inválido")
+        rec_subject_id = req.subject_id or activity_doc.get("subject_id")
+        failed_filter = {
+            "student_id": req.student_id,
+            "course_id": req.course_id,
+            "recovery_approved": True,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        }
+        if rec_subject_id:
+            failed_filter["subject_id"] = rec_subject_id
+        failed_record = await db.failed_subjects.find_one(failed_filter)
+        if not failed_record:
+            raise HTTPException(
+                status_code=400,
+                detail="La recuperación debe ser aprobada por el administrador antes de poder calificar"
+            )
 
     grade_value = req.value
     if req.recovery_status:
@@ -305,6 +316,21 @@ async def update_grade(grade_id: str, req: GradeUpdate, user=Depends(get_current
             status_code=400,
             detail="La nota debe estar entre 0.0 y 5.0"
         )
+    # Verify the professor owns the course this grade belongs to (IDOR prevention).
+    grade_doc = await db.grades.find_one({"id": grade_id}, {"_id": 0, "course_id": 1})
+    if not grade_doc:
+        raise HTTPException(status_code=404, detail="Nota no encontrada")
+    course = await db.courses.find_one({"id": grade_doc["course_id"]}, {"_id": 0})
+    if not course:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+    teacher_ids = list(course.get("teacher_ids") or [])
+    if course.get("teacher_id"):
+        teacher_ids.append(course["teacher_id"])
+    if user["id"] not in teacher_ids:
+        user_subject_ids = set(user.get("subject_ids") or [])
+        course_subject_ids = set(course.get("subject_ids") or [])
+        if not user_subject_ids.intersection(course_subject_ids):
+            raise HTTPException(status_code=403, detail="No tienes permiso para modificar notas de este curso")
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = await db.grades.update_one({"id": grade_id}, {"$set": update_data})

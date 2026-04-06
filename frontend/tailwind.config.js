@@ -8,7 +8,7 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        heading: ['Work Sans', 'sans-serif'],
+heading: ['Work Sans', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
       },
       borderRadius: {

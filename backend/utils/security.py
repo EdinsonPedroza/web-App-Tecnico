@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import hashlib
 import jwt
@@ -11,6 +12,9 @@ from config import (
     JWT_SECRET, JWT_ALGORITHM,
     MAX_LOGIN_ATTEMPTS_PER_IP, MAX_LOGIN_ATTEMPTS_PER_USER, LOGIN_ATTEMPT_WINDOW
 )
+from cache import TTLCache
+
+_user_cache: TTLCache = TTLCache(ttl_seconds=60)
 
 logger = logging.getLogger(__name__)
 
@@ -58,25 +62,24 @@ def create_token(user_id: str, role: str) -> str:
 
 
 async def check_rate_limit(ip_address: str, identifier: str = None) -> bool:
-    """Verifica límite por IP (50) y por identificador de usuario (5)."""
+    """Verifica límite por IP (50) y por identificador de usuario (5).
+    Runs both DB queries in parallel when identifier is provided."""
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(seconds=LOGIN_ATTEMPT_WINDOW)
     ip_key = f"login_ip:{ip_address}"
-    ip_count = await db.rate_limits.count_documents({
-        "key": ip_key,
-        "timestamp": {"$gte": window_start}
-    })
-    if ip_count >= MAX_LOGIN_ATTEMPTS_PER_IP:
-        return False
+    ip_query = {"key": ip_key, "timestamp": {"$gte": window_start}}
+
     if identifier:
         id_key = f"login_id:{identifier}"
-        id_count = await db.rate_limits.count_documents({
-            "key": id_key,
-            "timestamp": {"$gte": window_start}
-        })
-        if id_count >= MAX_LOGIN_ATTEMPTS_PER_USER:
-            return False
-    return True
+        id_query = {"key": id_key, "timestamp": {"$gte": window_start}}
+        ip_count, id_count = await asyncio.gather(
+            db.rate_limits.count_documents(ip_query),
+            db.rate_limits.count_documents(id_query)
+        )
+        return ip_count < MAX_LOGIN_ATTEMPTS_PER_IP and id_count < MAX_LOGIN_ATTEMPTS_PER_USER
+
+    ip_count = await db.rate_limits.count_documents(ip_query)
+    return ip_count < MAX_LOGIN_ATTEMPTS_PER_IP
 
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
@@ -88,11 +91,17 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         user_id = payload.get("user_id", "")
         if not isinstance(user_id, str) or not user_id or user_id.startswith('$'):
             raise HTTPException(status_code=401, detail="Token inválido")
+        cached = _user_cache.get(user_id)
+        if cached is not None:
+            if not cached.get("active", True):
+                raise HTTPException(status_code=403, detail="Cuenta desactivada")
+            return cached
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
         if not user.get("active", True):
             raise HTTPException(status_code=403, detail="Cuenta desactivada")
+        _user_cache.set(user_id, user)
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")

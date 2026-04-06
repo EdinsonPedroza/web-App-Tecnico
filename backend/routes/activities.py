@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import logging
 from datetime import datetime, timedelta, timezone
@@ -24,8 +25,10 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
         query["subject_id"] = safe_object_id(subject_id, "subject_id")
     limit = max(1, min(limit, MAX_LIMIT))
     skip = max(0, skip)
-    total_count = await db.activities.count_documents(query)
-    activities = await db.activities.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
+    total_count, activities = await asyncio.gather(
+        db.activities.count_documents(query),
+        db.activities.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
+    )
 
     if user["role"] == "estudiante" and course_id:
         approved_records = await db.failed_subjects.find({
@@ -187,8 +190,10 @@ async def delete_activity(activity_id: str, user=Depends(get_current_user)):
         if not activity:
             raise HTTPException(status_code=404, detail="Actividad no encontrada")
 
-    await db.grades.delete_many({"activity_id": activity_id})
-    await db.submissions.delete_many({"activity_id": activity_id})
-    await db.activities.delete_one({"id": activity_id})
+    await asyncio.gather(
+        db.grades.delete_many({"activity_id": activity_id}),
+        db.submissions.delete_many({"activity_id": activity_id}),
+        db.activities.delete_one({"id": activity_id}),
+    )
     await log_audit("activity_deleted", user["id"], user["role"], {"activity_id": activity_id})
     return {"message": "Actividad eliminada con sus notas y entregas"}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
@@ -110,6 +110,13 @@ export default function TeacherActivities() {
   };
 
 
+
+  // O(1) lookup for submissions by student — rebuilt only when submissions list changes
+  const submissionsByStudent = useMemo(() => {
+    const map = {};
+    submissions.forEach(s => { map[s.student_id] = s; });
+    return map;
+  }, [submissions]);
 
   const isRecoveryEnabledFor = (studentId) => {
     if (!submissionsDialog) return false;
@@ -458,7 +465,7 @@ export default function TeacherActivities() {
               {students.length === 0 ? (
                 <p className="text-center text-muted-foreground py-6">No hay estudiantes inscritos en este curso</p>
               ) : students.map((student) => {
-                const sub = submissions.find(s => s.student_id === student.id);
+                const sub = submissionsByStudent[student.id];
                 const currentGrade = grades[student.id] !== undefined ? grades[student.id] : '';
                 const recoveryStatus = recoveryStatuses[student.id] || null;
                 return (

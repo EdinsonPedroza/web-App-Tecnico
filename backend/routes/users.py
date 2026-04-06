@@ -1,3 +1,4 @@
+import re
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -50,7 +51,8 @@ async def get_users(
             query["$or"] = [{"program_id": program_id}, {"program_ids": program_id}]
 
     if search and search.strip():
-        search_regex = {"$regex": search.strip(), "$options": "i"}
+        # Escape regex metacharacters to prevent ReDoS (CWE-943).
+        search_regex = {"$regex": re.escape(search.strip()), "$options": "i"}
         search_cond = {"$or": [{"name": search_regex}, {"cedula": search_regex}]}
         if "$and" in query:
             query["$and"].append(search_cond)

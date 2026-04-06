@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -50,17 +50,23 @@ export default function TeacherGrades() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // O(1) lookup map rebuilt only when grades array changes
+  const gradesMap = useMemo(() => {
+    const map = {};
+    grades.forEach(g => { map[`${g.student_id}-${g.activity_id}`] = g; });
+    return map;
+  }, [grades]);
+
   // Key format: "studentId-activityId"
   const getGradeValue = (studentId, activityId) => {
     const key = `${studentId}-${activityId}`;
     if (editedGrades[key] !== undefined) return editedGrades[key];
-    const grade = grades.find(g => g.student_id === studentId && g.activity_id === activityId);
+    const grade = gradesMap[key];
     return grade ? String(grade.value) : '';
   };
 
   const getRecoveryStatus = (studentId, activityId) => {
-    const grade = grades.find(g => g.student_id === studentId && g.activity_id === activityId);
-    return grade?.recovery_status || null;
+    return gradesMap[`${studentId}-${activityId}`]?.recovery_status || null;
   };
 
   const handleGradeChange = (studentId, activityId, value) => {
@@ -152,19 +158,26 @@ export default function TeacherGrades() {
     return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 2).toUpperCase();
   };
 
-  const getStudentAverage = (studentId) => {
-    // Only count grades for regular (non-recovery) activities
-    const regularActivityIds = new Set(regularActivities.map(a => a.id));
-    const studentGrades = grades.filter(g => g.student_id === studentId && regularActivityIds.has(g.activity_id));
-    if (studentGrades.length === 0) return null;
-    return studentGrades.reduce((sum, g) => sum + g.value, 0) / studentGrades.length;
-  };
-
   const editedCount = Object.keys(editedGrades).length;
   // Separate regular and recovery activities
-  const regularActivities = activities.filter(a => !a.is_recovery);
-  const recoveryActivities = activities.filter(a => a.is_recovery);
+  const regularActivities = useMemo(() => activities.filter(a => !a.is_recovery), [activities]);
+  const recoveryActivities = useMemo(() => activities.filter(a => a.is_recovery), [activities]);
 
+  // Per-student averages computed once over grades instead of O(n) per student per render.
+  // Null values are treated as 0 and counted in the denominator — same as original behavior.
+  const studentAverages = useMemo(() => {
+    const regularIds = new Set(regularActivities.map(a => a.id));
+    const sums = {};
+    const counts = {};
+    grades.forEach(g => {
+      if (!regularIds.has(g.activity_id)) return;
+      sums[g.student_id] = (sums[g.student_id] || 0) + (g.value ?? 0);
+      counts[g.student_id] = (counts[g.student_id] || 0) + 1;
+    });
+    const result = {};
+    Object.keys(sums).forEach(sid => { result[sid] = sums[sid] / counts[sid]; });
+    return result;
+  }, [grades, regularActivities]);
 
   const isRecoveryEnabledFor = (studentId, activity) => {
     return recoveryEnabled.some((r) =>
@@ -257,7 +270,7 @@ export default function TeacherGrades() {
                   </thead>
                   <tbody>
                     {students.map((student, idx) => {
-                      const avg = getStudentAverage(student.id);
+                      const avg = studentAverages[student.id] ?? null;
                       return (
                         <tr key={student.id} className={`border-b hover:bg-muted/20 transition-colors ${idx % 2 === 0 ? '' : 'bg-muted/10'}`}>
                           <td className="sticky left-0 z-10 bg-card backdrop-blur-sm px-4 py-3 border-r">
