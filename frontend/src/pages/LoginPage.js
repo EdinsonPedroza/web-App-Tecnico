@@ -162,11 +162,33 @@ export default function LoginPage() {
           z-index: -1;
         }
 
-        /* ── input focus glow ── */
+        /* ── input background + focus glow ── */
+        .lp-input-wrap input {
+          background: rgba(255,255,255,0.92);
+          border-color: rgba(33,118,199,0.25);
+        }
         .lp-input-wrap input:focus {
+          background: #ffffff;
           border-color: #2176c7;
           box-shadow: 0 0 0 3px rgba(33,118,199,.18);
-          transition: border-color .18s, box-shadow .18s;
+          transition: border-color .18s, box-shadow .18s, background .18s;
+        }
+
+        /* ── role tabs ── */
+        .lp-tabs-list {
+          background: rgba(14,52,96,0.10);
+          border: 1px solid rgba(14,52,96,0.14);
+          padding: 3px;
+        }
+        .lp-tabs-list [data-state="inactive"] {
+          color: #374151;
+          font-weight: 600;
+          opacity: 1;
+        }
+        .lp-tabs-list [data-state="active"] {
+          background: #1a5fa8;
+          color: #ffffff;
+          box-shadow: 0 2px 8px rgba(26,95,168,0.35);
         }
 
         /* ── fb hover ── */
@@ -334,9 +356,6 @@ export default function LoginPage() {
             <div className="lp-form-card"
               style={{ boxShadow:'0 24px 64px -12px rgba(0,0,0,0.1), 0 6px 20px -6px rgba(14,68,138,0.09)' }}>
 
-              {/* Top accent bar */}
-              <div className="lp-bg h-[3px] rounded-t-[20px]"/>
-
               <div className="p-8">
                 {/* Header */}
                 <div className="text-center mb-6">
@@ -353,8 +372,7 @@ export default function LoginPage() {
 
                 {/* Role tabs */}
                 <Tabs value={role} onValueChange={handleRoleChange} className="mb-5">
-                  <TabsList className="grid w-full grid-cols-2 rounded-xl h-11"
-                    style={{ background:'rgba(14,52,96,0.05)' }}>
+                  <TabsList className="lp-tabs-list grid w-full grid-cols-2 rounded-xl h-11">
                     <TabsTrigger value="estudiante" className="rounded-xl text-sm gap-1.5 font-semibold">
                       <GraduationCap className="h-3.5 w-3.5"/>Estudiante
                     </TabsTrigger>
