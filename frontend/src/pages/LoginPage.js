@@ -162,11 +162,16 @@ export default function LoginPage() {
           z-index: -1;
         }
 
-        /* ── input focus glow ── */
+        /* ── input background & focus glow ── */
+        .lp-input-wrap input {
+          background-color: #f8fafd;
+          border-color: rgba(33,118,199,0.2);
+        }
         .lp-input-wrap input:focus {
+          background-color: #ffffff;
           border-color: #2176c7;
           box-shadow: 0 0 0 3px rgba(33,118,199,.18);
-          transition: border-color .18s, box-shadow .18s;
+          transition: border-color .18s, box-shadow .18s, background-color .18s;
         }
 
         /* ── fb hover ── */
@@ -179,7 +184,18 @@ export default function LoginPage() {
           box-shadow: 0 6px 18px rgba(24,119,242,.45);
         }
 
-        /* ── form icon badge ── */
+        /* ── role tabs contrast ── */
+        .lp-role-tabs [data-state="active"] {
+          background: #1a5fa8 !important;
+          color: #ffffff !important;
+          box-shadow: 0 2px 8px rgba(26,95,168,0.35) !important;
+        }
+        .lp-role-tabs [data-state="inactive"] {
+          color: #374151 !important;
+          background: transparent !important;
+        }
+
+
         .lp-header-icon {
           background: linear-gradient(135deg, rgba(14,52,96,0.12), rgba(33,118,199,0.14));
           border: 1px solid rgba(33,118,199,0.22);
@@ -334,9 +350,6 @@ export default function LoginPage() {
             <div className="lp-form-card"
               style={{ boxShadow:'0 24px 64px -12px rgba(0,0,0,0.1), 0 6px 20px -6px rgba(14,68,138,0.09)' }}>
 
-              {/* Top accent bar */}
-              <div className="lp-bg h-[3px] rounded-t-[20px]"/>
-
               <div className="p-8">
                 {/* Header */}
                 <div className="text-center mb-6">
@@ -353,7 +366,7 @@ export default function LoginPage() {
 
                 {/* Role tabs */}
                 <Tabs value={role} onValueChange={handleRoleChange} className="mb-5">
-                  <TabsList className="grid w-full grid-cols-2 rounded-xl h-11"
+                  <TabsList className="lp-role-tabs grid w-full grid-cols-2 rounded-xl h-11"
                     style={{ background:'rgba(14,52,96,0.05)' }}>
                     <TabsTrigger value="estudiante" className="rounded-xl text-sm gap-1.5 font-semibold">
                       <GraduationCap className="h-3.5 w-3.5"/>Estudiante
