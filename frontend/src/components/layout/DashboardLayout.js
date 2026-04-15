@@ -155,7 +155,7 @@ export default function DashboardLayout({ children, courseId }) {
             <Button
               variant="ghost"
               className="w-full justify-start gap-2 mb-3 text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent text-xs"
-              onClick={() => navigate('/teacher')}
+              onClick={() => navigate(subjectId ? `/teacher?subjectId=${subjectId}` : '/teacher')}
             >
               <ChevronRight className="h-3 w-3 rotate-180" />
               Volver a mis cursos
