@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import { getProgramColorClasses } from '@/utils/programColors';
 export default function TeacherCourseSelector() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [courses, setCourses] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -39,6 +40,15 @@ export default function TeacherCourseSelector() {
   }, [user.id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Auto-select subject when subjectId is in query params (e.g. coming back from a group)
+  useEffect(() => {
+    const subjectIdParam = searchParams.get('subjectId');
+    if (subjectIdParam && subjects.length > 0 && !selectedSubject) {
+      const found = subjects.find(s => s.id === subjectIdParam);
+      if (found) setSelectedSubject(found);
+    }
+  }, [searchParams, subjects, selectedSubject]);
 
   const getName = (arr, id) => arr.find(i => i.id === id)?.name || '-';
 
