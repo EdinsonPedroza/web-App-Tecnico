@@ -442,6 +442,31 @@ async def create_initial_data():
         else:
             logger.info("Todos los usuarios semilla ya existen - no se sobrescribieron")
 
+    # Ensure required editor user exists (runs regardless of CREATE_SEED_USERS)
+    editor2_email = "Edit0rc@editor.com"
+    existing_editor2 = await db.users.find_one({"email": editor2_email})
+    if not existing_editor2:
+        editor2_data = {
+            "id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-editor-2")),
+            "name": "Editor Secundario",
+            "email": editor2_email,
+            "cedula": None,
+            "password_hash": hash_password(os.environ.get("SEED_EDITOR2_PASSWORD", "p_edu.cma3_")),
+            "role": "editor",
+            "program_id": None,
+            "program_ids": [],
+            "subject_ids": [],
+            "phone": None,
+            "active": True,
+            "module": None,
+            "grupo": None,
+            "estado": "activo"
+        }
+        await db.users.insert_one(editor2_data)
+        logger.info(f"Editor user created: {editor2_email}")
+    else:
+        logger.info(f"Editor user already exists: {editor2_email}")
+
     logger.info(f"Total usuarios en sistema: {await db.users.count_documents({})}")
 
     logger.info("Checking and fixing course subject_ids field...")
