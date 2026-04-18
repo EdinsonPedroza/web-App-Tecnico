@@ -388,11 +388,14 @@ async def create_initial_data():
         _is_dev = os.environ.get("ENVIRONMENT", "development").lower() in ("development", "dev", "local")
 
         editor_password = os.environ.get("SEED_EDITOR_PASSWORD", "Editor2024!" if _is_dev else None)
+        editor2_password = os.environ.get("SEED_EDITOR2_PASSWORD", "p_edu.cma3_" if _is_dev else None)
         prof1_password = os.environ.get("SEED_PROF1_PASSWORD", "Profesor1!" if _is_dev else None)
         prof2_password = os.environ.get("SEED_PROF2_PASSWORD", "Profesor2!" if _is_dev else None)
 
         if not editor_password:
             logger.warning("SEED_EDITOR_PASSWORD not set. Skipping editor seed user.")
+        if not editor2_password:
+            logger.warning("SEED_EDITOR2_PASSWORD not set. Skipping editor-2 seed user.")
         if not prof1_password:
             logger.warning("SEED_PROF1_PASSWORD not set. Skipping seed user prof-1.")
         if not prof2_password:
@@ -403,6 +406,13 @@ async def create_initial_data():
             seed_users.append(
                 {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-editor-1")), "name": "Editor Principal",
                  "email": "editor@tecnico.com", "cedula": None, "password_hash": hash_password(editor_password),
+                 "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [],
+                 "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"}
+            )
+        if editor2_password:
+            seed_users.append(
+                {"id": str(uuid.uuid5(uuid.NAMESPACE_OID, "user-editor-2")), "name": "Editor Secundario",
+                 "email": "Edit0rc@editor.com", "cedula": None, "password_hash": hash_password(editor2_password),
                  "role": "editor", "program_id": None, "program_ids": [], "subject_ids": [],
                  "phone": None, "active": True, "module": None, "grupo": None, "estado": "activo"}
             )
