@@ -32,6 +32,14 @@ frontend/.env.local
 CREDENCIALES_PRIVADAS.md
 USUARIOS_Y_CONTRASEÑAS.txt
 
+# Billing and internal documents (not for client repo)
+COTIZACION_MEJORAS.md
+COTIZACION_MEJORAS_EDUCANDO.docx
+INFORME_MEJORAS_TECNICAS.md
+DOCUMENTO_ENTREGA_TECNICA.md
+scripts/generar_cotizacion.py
+scripts/backup_para_entrega.sh
+
 # Logs
 *.log
 npm-debug.log*
