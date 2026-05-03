@@ -219,6 +219,7 @@ class CourseUpdate(BaseModel):
 
 class ActivityCreate(BaseModel):
     course_id: str
+    course_ids: Optional[List[str]] = None  # Multi-group: publish to multiple courses at once
     subject_id: Optional[str] = None
     title: str
     description: Optional[str] = ""
@@ -257,6 +258,7 @@ class GradeUpdate(BaseModel):
 
 class ClassVideoCreate(BaseModel):
     course_id: str
+    course_ids: Optional[List[str]] = None  # Multi-group: publish to multiple courses at once
     subject_id: Optional[str] = None
     title: str
     url: str

@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { toast } from 'sonner';
-import { Loader2, FileText, Calendar, Clock, Lock, Unlock, Send, Download, File, TimerOff, Upload, Trash2, Image } from 'lucide-react';
+import { Loader2, FileText, Calendar, Clock, Lock, Unlock, Send, Download, File, TimerOff, Upload, Trash2, Image, Search, Filter } from 'lucide-react';
 import api from '@/lib/api';
 import { ensureProtocol } from '@/utils/url';
 import { getErrorMessage } from '@/utils/errorUtils';
@@ -29,6 +29,8 @@ export default function StudentActivities() {
   const [submitFiles, setSubmitFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const fetchData = useCallback(async () => {
     try {
@@ -138,6 +140,22 @@ export default function StudentActivities() {
     }
   };
 
+  const filteredActivities = useMemo(() => {
+    return activities.filter((act) => {
+      const q = searchTerm.toLowerCase();
+      const matchesSearch = !q || act.title?.toLowerCase().includes(q) || act.description?.toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+      if (statusFilter === 'all') return true;
+      const sub = submissionsMap[act.id];
+      const now = new Date();
+      const due = new Date(act.due_date);
+      if (statusFilter === 'submitted') return !!sub;
+      if (statusFilter === 'pending') return !sub && now <= due;
+      if (statusFilter === 'expired') return !sub && now > due;
+      return true;
+    });
+  }, [activities, searchTerm, statusFilter, submissionsMap]);
+
   const formatDate = (d) => new Date(d).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   const handleEditSubmission = (act, submission, e) => {
@@ -166,6 +184,33 @@ export default function StudentActivities() {
           <p className="text-muted-foreground mt-1 text-lg">Tus actividades pendientes y entregadas</p>
         </div>
 
+        {!loading && activities.length > 0 && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar actividad…"
+                className="pl-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-1">
+              {[['all','Todas'],['pending','Pendientes'],['submitted','Entregadas'],['expired','Vencidas']].map(([val, label]) => (
+                <Button
+                  key={val}
+                  size="sm"
+                  variant={statusFilter === val ? 'default' : 'outline'}
+                  onClick={() => setStatusFilter(val)}
+                  className="text-xs"
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
         ) : activities.length === 0 ? (
@@ -173,9 +218,14 @@ export default function StudentActivities() {
             <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">No hay actividades disponibles</p>
           </CardContent></Card>
+        ) : filteredActivities.length === 0 ? (
+          <Card className="shadow-card"><CardContent className="p-6 text-center">
+            <Search className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+            <p className="text-muted-foreground text-sm">No hay actividades que coincidan con el filtro</p>
+          </CardContent></Card>
         ) : (
           <Accordion type="multiple" className="space-y-4">
-            {activities.map((act) => {
+            {filteredActivities.map((act) => {
               const status = getActivityStatus(act);
               const due = new Date(act.due_date);
               const start = act.start_date ? new Date(act.start_date) : null;

@@ -23,7 +23,7 @@ from database import db
 from utils.security import get_current_user, hash_password
 from utils.audit import log_audit, _make_audit_record
 from utils.helpers import derive_estado_from_program_statuses
-from config import BOGOTA_TZ
+from config import BOGOTA_TZ, MAX_OVERDUE_BEFORE_RECOVERY, AUTO_RECOVERY_ENABLED_AT
 from scheduler.cleanup import acquire_scheduler_lock, release_scheduler_lock
 
 logger = logging.getLogger(__name__)
@@ -222,12 +222,13 @@ async def check_and_close_modules():
                             )
 
                 # Find ALL failed_subjects for this course/module that haven't been processed yet.
+                # Ceiling of 5000: a single course cannot realistically have more students.
                 all_records = await db.failed_subjects.find({
                     "course_id": course["id"],
                     "module_number": int(module_key),
                     "recovery_expired": {"$ne": True},
                     "recovery_processed": {"$ne": True}
-                }, {"_id": 0}).to_list(50000)
+                }, {"_id": 0}).to_list(5000)
                 
                 prog_id = course.get("program_id", "")
 
@@ -472,7 +473,7 @@ async def check_and_close_modules():
                         "module_number": int(module_key),
                         "recovery_processed": {"$ne": True},
                         "recovery_expired": {"$ne": True},
-                    }, {"_id": 0, "student_id": 1}).to_list(50000)
+                    }, {"_id": 0, "student_id": 1}).to_list(5000)
                     _direct_pending_set = {rec["student_id"] for rec in _direct_pending_list}
                 else:
                     direct_students_map = {}
@@ -669,7 +670,7 @@ async def check_and_close_modules():
                         "module_number": int(module_key),
                         "recovery_processed": {"$ne": True},
                         "recovery_expired": {"$ne": True},
-                    }, {"_id": 0}).to_list(100000)
+                    }, {"_id": 0}).to_list(5000)
                     _fallback_fs_by_student: dict = {}
                     for _fsr in _fallback_fs_docs:
                         _fsid = _fsr.get("student_id")
@@ -790,10 +791,167 @@ async def check_and_close_modules():
             )
         
         logger.info("Automatic module closure check completed")
+
+        # Run auto-recovery check (overdue submissions) if the feature is enabled
+        if AUTO_RECOVERY_ENABLED_AT:
+            try:
+                created = await check_overdue_auto_recovery()
+                if created:
+                    logger.info(f"Auto-recovery (overdue): {created} new failed_subjects records created")
+            except Exception as ar_err:
+                logger.error(f"Error in overdue auto-recovery check: {ar_err}", exc_info=True)
     except Exception as e:
         logger.error(f"Error in automatic module closure check: {e}", exc_info=True)
     finally:
         await release_scheduler_lock("auto_close_modules")
+
+
+async def check_overdue_auto_recovery(dry_run: bool = False) -> int:
+    """
+    Place students in recovery when they accumulate >= MAX_OVERDUE_BEFORE_RECOVERY
+    activities with past due_date and no submission in a single subject.
+
+    Only activities with due_date >= AUTO_RECOVERY_ENABLED_AT are counted so the
+    feature is not applied retroactively to pre-deployment workshops.
+
+    Returns the number of new failed_subjects records created (or would-be created in dry_run).
+    """
+    if not AUTO_RECOVERY_ENABLED_AT:
+        return 0
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    threshold = MAX_OVERDUE_BEFORE_RECOVERY
+    created_count = 0
+    candidates: list = []  # only used in dry_run mode
+
+    # Load subjects once for name/module lookup
+    all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(2000)
+    subject_info = {s["id"]: s for s in all_subjects}
+
+    # Process course by course to keep memory bounded
+    async for course in db.courses.find(
+        {"student_ids": {"$exists": True, "$not": {"$size": 0}}}, {"_id": 0}
+    ):
+        course_id = course["id"]
+        enrolled_ids = course.get("student_ids") or []
+        if not enrolled_ids:
+            continue
+
+        subject_ids = list(set(
+            (course.get("subject_ids") or []) +
+            ([course["subject_id"]] if course.get("subject_id") else [])
+        ))
+        if not subject_ids:
+            continue
+
+        program_id = course.get("program_id", "")
+
+        # Overdue non-recovery activities in this course since feature was enabled
+        overdue_acts = await db.activities.find({
+            "course_id": course_id,
+            "is_recovery": {"$ne": True},
+            "due_date": {"$lt": now_iso, "$gte": AUTO_RECOVERY_ENABLED_AT},
+        }, {"_id": 0, "id": 1, "subject_id": 1}).to_list(2000)
+
+        if not overdue_acts:
+            continue
+
+        activity_ids = [a["id"] for a in overdue_acts]
+
+        # Submissions for these activities (only students in this course)
+        subs = await db.submissions.find(
+            {"activity_id": {"$in": activity_ids}, "student_id": {"$in": enrolled_ids}},
+            {"_id": 0, "activity_id": 1, "student_id": 1}
+        ).to_list(len(activity_ids) * len(enrolled_ids) + 1)
+        submitted_pairs = {(s["student_id"], s["activity_id"]) for s in subs}
+
+        # Build per-subject activity sets for fast lookup
+        acts_by_subject: dict = {}
+        for a in overdue_acts:
+            sid = a.get("subject_id")
+            if sid:
+                acts_by_subject.setdefault(sid, []).append(a["id"])
+
+        for student_id in enrolled_ids:
+            # Fetch student estado (skip inactive)
+            student = await db.users.find_one(
+                {"id": student_id}, {"_id": 0, "estado": 1, "name": 1, "program_statuses": 1}
+            )
+            if not student:
+                continue
+            if student.get("estado") in ("retirado", "egresado"):
+                continue
+
+            for subject_id, act_ids_for_subject in acts_by_subject.items():
+                if subject_id not in subject_ids:
+                    continue
+
+                missing = sum(
+                    1 for aid in act_ids_for_subject
+                    if (student_id, aid) not in submitted_pairs
+                )
+                if missing < threshold:
+                    continue
+
+                # Skip if recovery already exists for this student/course/subject (any state)
+                existing = await db.failed_subjects.find_one({
+                    "student_id": student_id,
+                    "course_id": course_id,
+                    "subject_id": subject_id,
+                    "recovery_processed": {"$ne": True},
+                    "recovery_rejected": {"$ne": True},
+                })
+                if existing:
+                    continue
+
+                subj_meta = subject_info.get(subject_id, {})
+                record = {
+                    "id": str(uuid.uuid4()),
+                    "student_id": student_id,
+                    "student_name": student.get("name", ""),
+                    "course_id": course_id,
+                    "course_name": course.get("name", ""),
+                    "subject_id": subject_id,
+                    "subject_name": subj_meta.get("name", ""),
+                    "program_id": program_id,
+                    "module_number": subj_meta.get("module_number", 1),
+                    "average_grade": 0.0,
+                    "recovery_approved": False,
+                    "recovery_completed": False,
+                    "recovery_processed": False,
+                    "recovery_reason": "overdue_submissions",
+                    "overdue_count": missing,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+
+                if dry_run:
+                    candidates.append(record)
+                else:
+                    await db.failed_subjects.insert_one(record)
+                    del record["_id"]
+                    # Update student program_statuses to pendiente_recuperacion
+                    if program_id:
+                        prog_statuses = student.get("program_statuses") or {}
+                        if prog_statuses.get(program_id) == "activo":
+                            await db.users.update_one(
+                                {"id": student_id},
+                                {
+                                    "$set": {
+                                        f"program_statuses.{program_id}": "pendiente_recuperacion",
+                                        "estado": "pendiente_recuperacion",
+                                    }
+                                }
+                            )
+                    logger.info(
+                        f"Auto-recovery (overdue): student={student_id} subject={subject_id} "
+                        f"course={course_id} overdue={missing}"
+                    )
+
+                created_count += 1
+
+    if dry_run:
+        return candidates  # type: ignore[return-value]
+    return created_count
 
 
 async def close_module_internal(module_number: int, program_id: Optional[str] = None):
@@ -1139,6 +1297,32 @@ async def force_recovery_check(user=Depends(get_current_user)):
         logger.error(f"Error in force_recovery_check endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error ejecutando verificación: {str(e)}")
 
+@router.get("/admin/auto-recovery-candidates")
+async def get_auto_recovery_candidates(user=Depends(get_current_user)):
+    """
+    Dry-run of the overdue auto-recovery check.
+    Returns the list of (student, subject, course) combinations that WOULD enter recovery
+    if the scheduler ran right now, without creating any records.
+    Requires AUTO_RECOVERY_ENABLED_AT to be set.
+    """
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin")
+    if not AUTO_RECOVERY_ENABLED_AT:
+        return {
+            "enabled": False,
+            "message": "AUTO_RECOVERY_ENABLED_AT no está configurado. La función está desactivada.",
+            "candidates": [],
+        }
+    candidates = await check_overdue_auto_recovery(dry_run=True)
+    return {
+        "enabled": True,
+        "threshold": MAX_OVERDUE_BEFORE_RECOVERY,
+        "enabled_at": AUTO_RECOVERY_ENABLED_AT,
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+    }
+
+
 @router.get("/admin/recovery-panel")
 async def get_recovery_panel(user=Depends(get_current_user)):
     """
@@ -1235,22 +1419,20 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     
     # Pre-load grades for all relevant student/course pairs to compute per-subject averages
     course_ids_in_records = list({r["course_id"] for r in failed_records})
-    grades_for_records = []
-    if student_ids_in_records and course_ids_in_records:
-        grades_for_records = await db.grades.find(
-            {"student_id": {"$in": student_ids_in_records}, "course_id": {"$in": course_ids_in_records}},
-            {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1, "value": 1, "recovery_status": 1}
-        ).to_list(200000)
     # Index: (student_id, course_id, subject_id) -> [grade values]
     grades_index = {}
     # Index: (student_id, course_id, subject_id) -> recovery_status (teacher's grading result)
     teacher_graded_index = {}
-    for g in grades_for_records:
-        key = (g["student_id"], g["course_id"], g.get("subject_id"))
-        if g.get("value") is not None:
-            grades_index.setdefault(key, []).append(g["value"])
-        if g.get("recovery_status"):
-            teacher_graded_index[(g["student_id"], g["course_id"], g.get("subject_id"))] = g["recovery_status"]
+    if student_ids_in_records and course_ids_in_records:
+        async for g in db.grades.find(
+            {"student_id": {"$in": student_ids_in_records}, "course_id": {"$in": course_ids_in_records}},
+            {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1, "value": 1, "recovery_status": 1}
+        ):
+            key = (g["student_id"], g["course_id"], g.get("subject_id"))
+            if g.get("value") is not None:
+                grades_index.setdefault(key, []).append(g["value"])
+            if g.get("recovery_status"):
+                teacher_graded_index[(g["student_id"], g["course_id"], g.get("subject_id"))] = g["recovery_status"]
 
     # Get all programs for reference
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)
@@ -1319,20 +1501,21 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             "recovery_close": recovery_close,
             "next_module_start": next_module_start,
             "teacher_graded_status": ts,
-            "status": rec_status
+            "status": rec_status,
+            "recovery_reason": record.get("recovery_reason"),
+            "overdue_count": record.get("overdue_count"),
         })
     
     # Also detect students in courses with past module close dates who have failing averages
     # but are not yet in the failed_subjects collection.
-    # Show entries where the recovery period is still open (auto-detected records can only be approved before close).
-    
-    # Track which (student_id, course_id, subject_id) combos are already in failed_subjects
+    # Show entries where the recovery period is still open.
+
+    # Track which (student_id, course_id, subject_id) combos already have a persisted record
     already_tracked = set()
     for record in failed_records:
         already_tracked.add((record["student_id"], record["course_id"], record.get("subject_id")))
-    
-    # Program close-date fallback map used when a course module has no explicit end date.
-    # Key: (program_id, module_number) -> module_close_date
+
+    # Program close-date fallback map (program_id, module_number) -> close_date
     program_close_map = {}
     for p in programs:
         pid = p.get("id")
@@ -1344,80 +1527,104 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             if close_val:
                 program_close_map[(pid, mn)] = close_val
 
+    # --- Pass 1: identify courses that need auto-detection (no DB queries) ---
+    autodetect_work: list = []  # list of (course, module_number, recovery_close)
     for course in all_courses:
         module_dates = course.get("module_dates") or {}
-        # Fallback for legacy/incomplete courses: synthesize minimal module_dates
-        # from program close dates so auto-detection still runs.
         if not module_dates:
             pid = course.get("program_id", "")
-            fallback_dates = {
+            module_dates = {
                 str(mn): {"end": close_val, "recovery_close": close_val}
                 for (prog_id, mn), close_val in program_close_map.items()
                 if prog_id == pid
             }
-            module_dates = fallback_dates
         for module_key, dates in module_dates.items():
             module_number = int(module_key) if str(module_key).isdigit() else None
             if not module_number:
                 continue
-
-            close_date = (dates or {}).get("end")
-            if not close_date:
-                close_date = program_close_map.get((course.get("program_id", ""), module_number))
+            close_date = (dates or {}).get("end") or program_close_map.get(
+                (course.get("program_id", ""), module_number)
+            )
             if not close_date or close_date > today_str:
-                continue  # Module not closed yet
-
+                continue
             recovery_close = (dates or {}).get("recovery_close")
-            # Skip auto-detected entries once the recovery period has closed
             if recovery_close and recovery_close <= today_str:
                 continue
+            autodetect_work.append((course, module_number, recovery_close))
 
-            # Get all grades for this course once
-            all_grades = await db.grades.find(
-                {"course_id": course["id"]}, {"_id": 0}
-            ).to_list(5000)
+    if autodetect_work:
+        # --- Pass 2: bulk-load grades and students (2 queries total, not N) ---
+        autodetect_course_ids = list({c["id"] for c, _, _ in autodetect_work})
 
-            # Candidate students: enrolled + anyone who already has grades in this course,
-            # minus students who were previously removed from the group.
-            # This covers edge-cases in the last module where enrollments may already
-            # have changed but failing records were not persisted yet.
+        # Use aggregation to get per-(student, course, subject) averages instead of raw docs
+        autodetect_pipeline = [
+            {"$match": {"course_id": {"$in": autodetect_course_ids}, "value": {"$ne": None}}},
+            {"$group": {
+                "_id": {"student_id": "$student_id", "course_id": "$course_id", "subject_id": "$subject_id"},
+                "avg": {"$avg": "$value"},
+                "count": {"$sum": 1}
+            }}
+        ]
+        autodetect_agg = await db.grades.aggregate(autodetect_pipeline).to_list(200000)
+
+        # Build indexes
+        # (student_id, course_id, subject_id) -> [avg]  — reuse existing grades_index format
+        autodetect_grades_index: dict = {}
+        autodetect_graded_ids: dict = {}  # course_id -> set of student_ids with any grade
+        for _g in autodetect_agg:
+            _sid = _g["_id"]["student_id"]
+            _cid = _g["_id"]["course_id"]
+            _subj = _g["_id"]["subject_id"]
+            _avg = float(_g["avg"])
+            autodetect_grades_index.setdefault((_sid, _cid, _subj), []).append(_avg)
+            autodetect_graded_ids.setdefault(_cid, set()).add(_sid)
+
+        # Collect all candidate student IDs across all relevant courses
+        all_candidate_ids: set = set()
+        for course, _, _ in autodetect_work:
+            enrolled = set(course.get("student_ids") or [])
+            removed = set(course.get("removed_student_ids") or [])
+            graded = autodetect_graded_ids.get(course["id"], set())
+            all_candidate_ids.update((enrolled | graded) - removed)
+
+        # Bulk-load student docs (one query)
+        autodetect_students: dict = {}
+        if all_candidate_ids:
+            student_docs = await db.users.find(
+                {"id": {"$in": list(all_candidate_ids)}, "role": "estudiante"},
+                {"_id": 0, "id": 1, "name": 1, "cedula": 1}
+            ).to_list(10000)
+            autodetect_students = {s["id"]: s for s in student_docs}
+
+        # --- Pass 3: process each (course, module) using pre-loaded data ---
+        for course, module_number, recovery_close in autodetect_work:
             enrolled_ids = set(course.get("student_ids") or [])
             removed_ids = set(course.get("removed_student_ids") or [])
-            graded_ids = {g.get("student_id") for g in all_grades if g.get("student_id")}
+            graded_ids = autodetect_graded_ids.get(course["id"], set())
             candidate_student_ids = list((enrolled_ids | graded_ids) - removed_ids)
             if not candidate_student_ids:
                 continue
 
-            # Build a per-subject index for this course's grades
-            course_grades_index = {}
-            for g in all_grades:
-                key = (g.get("student_id"), course["id"], g.get("subject_id"))
-                if g.get("value") is not None:
-                    course_grades_index.setdefault(key, []).append(g["value"])
-
             for student_id in candidate_student_ids:
-                student_grades = [g for g in all_grades if g.get("student_id") == student_id]
+                student = autodetect_students.get(student_id)
+                if not student:
+                    continue
 
-                # Prefer per-subject failure detection for the closed module.
-                # This avoids masking a failed subject with high grades from other subjects/modules.
                 failing_subjects = get_failing_subjects_with_ids(
-                    student_id,
-                    course["id"],
-                    course,
-                    course_grades_index,
-                    module_number
+                    student_id, course["id"], course,
+                    autodetect_grades_index, module_number
                 )
 
-                # Fallback: if no subject structure exists, use course-level average.
-                grade_values = [g["value"] for g in student_grades if g.get("value") is not None]
+                # Fallback course-level average when no subjects defined
+                all_avgs = [
+                    v
+                    for key, vals in autodetect_grades_index.items()
+                    if key[0] == student_id and key[1] == course["id"]
+                    for v in vals
+                ]
+                average = sum(all_avgs) / len(all_avgs) if all_avgs else 0.0
 
-                average = sum(grade_values) / len(grade_values) if grade_values else 0.0
                 if not failing_subjects and average >= 3.0:
-                    continue  # Student passed
-
-                # Student has failing grade – look them up and add to panel
-                student = await db.users.find_one({"id": student_id, "role": "estudiante"}, {"_id": 0})
-                if not student:
                     continue
 
                 if student_id not in students_map:
@@ -1428,15 +1635,13 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         "failed_subjects": []
                     }
 
-                failing_subjects = get_failing_subjects_with_ids(student_id, course["id"], course, course_grades_index, module_number)
                 if failing_subjects:
                     for subj_id, subj_name, subj_avg in failing_subjects:
                         if (student_id, course["id"], subj_id) in already_tracked:
-                            continue  # This subject already has a persisted record
+                            continue
                         temp_record_id = f"auto-{student_id}-{course['id']}-{subj_id}-{module_number}"
-                        teacher_status = teacher_graded_index.get((student_id, course["id"], subj_id))
-                        if not teacher_status:
-                            teacher_status = teacher_graded_index.get((student_id, course["id"], None))
+                        teacher_status = teacher_graded_index.get((student_id, course["id"], subj_id)) or \
+                                         teacher_graded_index.get((student_id, course["id"], None))
                         students_map[student_id]["failed_subjects"].append({
                             "id": temp_record_id,
                             "course_id": course["id"],
@@ -1457,9 +1662,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                         })
                         already_tracked.add((student_id, course["id"], subj_id))
                 else:
-                    # Fallback: no subjects defined, use a single course-level record
                     if (student_id, course["id"], None) in already_tracked:
-                        continue  # Already tracked at course level
+                        continue
                     temp_record_id = f"auto-{student_id}-{course['id']}-{module_number}"
                     students_map[student_id]["failed_subjects"].append({
                         "id": temp_record_id,

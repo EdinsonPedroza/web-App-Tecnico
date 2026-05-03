@@ -62,7 +62,7 @@ async def get_grades_summary(course_id: str, subject_id: Optional[str] = None, u
     grades = await db.grades.find(
         match_stage,
         {"_id": 0, "student_id": 1, "activity_id": 1, "value": 1, "recovery_status": 1, "comments": 1, "subject_id": 1}
-    ).to_list(50000)
+    ).to_list(10000)
     return grades
 
 

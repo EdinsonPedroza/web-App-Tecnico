@@ -56,6 +56,12 @@ MAX_LIMIT_GRADES = 1000
 
 # Academic rules
 MAX_ACTIVITIES_PER_WEEK_PER_SUBJECT = 3
+# Auto-recovery: students with >= this many overdue unsubmitted activities in a subject
+# are automatically placed in recovery for that subject.
+MAX_OVERDUE_BEFORE_RECOVERY = int(os.environ.get('MAX_OVERDUE_BEFORE_RECOVERY', '4'))
+# ISO datetime string (e.g. "2026-04-27T00:00:00+00:00"). Only activities with due_date
+# >= this value count toward auto-recovery. Set in env to enable the feature; None = disabled.
+AUTO_RECOVERY_ENABLED_AT = os.environ.get('AUTO_RECOVERY_ENABLED_AT')
 
 # File upload
 UPLOAD_DIR = ROOT_DIR / "uploads"

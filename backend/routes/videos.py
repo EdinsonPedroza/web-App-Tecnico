@@ -73,20 +73,55 @@ async def create_class_video(req: ClassVideoCreate, user=Depends(get_current_use
         course_subject_ids = set(course.get("subject_ids") or [])
         if not user_subject_ids.intersection(course_subject_ids):
             raise HTTPException(status_code=403, detail="No tienes permiso para crear videos en este curso")
-    video = {
-        "id": str(uuid.uuid4()),
-        "course_id": req.course_id,
-        "subject_id": req.subject_id,
-        "title": req.title,
-        "url": req.url,
-        "description": req.description,
-        "available_from": req.available_from or None,
-        "created_by": user["id"],
-        "created_at": datetime.now(timezone.utc).isoformat()
+
+    # Multi-group: publish to multiple courses at once
+    target_course_ids = list(dict.fromkeys(req.course_ids)) if req.course_ids else [req.course_id]
+    if req.course_id not in target_course_ids:
+        target_course_ids.insert(0, req.course_id)
+
+    group_id = str(uuid.uuid4()) if len(target_course_ids) > 1 else None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    created_videos = []
+
+    for cid in target_course_ids:
+        video = {
+            "id": str(uuid.uuid4()),
+            "course_id": cid,
+            "subject_id": req.subject_id,
+            "title": req.title,
+            "url": req.url,
+            "description": req.description,
+            "available_from": req.available_from or None,
+            "created_by": user["id"],
+            "created_at": now_iso,
+        }
+        if group_id:
+            video["video_group_id"] = group_id
+        await db.class_videos.insert_one(video)
+        del video["_id"]
+        created_videos.append(video)
+
+    if len(created_videos) == 1:
+        return created_videos[0]
+    return {
+        "video_group_id": group_id,
+        "course_count": len(created_videos),
+        "videos": created_videos,
     }
-    await db.class_videos.insert_one(video)
-    del video["_id"]
-    return video
+
+
+@router.delete("/class-videos/group/{group_id}")
+async def delete_class_video_group(group_id: str, user=Depends(get_current_user)):
+    """Delete all videos that share the same video_group_id."""
+    if user["role"] != "profesor":
+        raise HTTPException(status_code=403, detail="Solo profesores")
+    videos_in_group = await db.class_videos.find(
+        {"video_group_id": group_id}, {"_id": 0, "id": 1}
+    ).to_list(500)
+    if not videos_in_group:
+        raise HTTPException(status_code=404, detail="Grupo de videos no encontrado")
+    await db.class_videos.delete_many({"video_group_id": group_id})
+    return {"message": f"Grupo eliminado: {len(videos_in_group)} videos"}
 
 
 @router.delete("/class-videos/{video_id}")

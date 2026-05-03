@@ -31,6 +31,8 @@ async def create_indexes(db):
         ("courses", [("teacher_id", 1)], {"name": "courses_teacher_id"}),
         ("courses", [("program_id", 1)], {"name": "courses_program_id"}),
         ("courses", [("student_ids", 1)], {"name": "courses_student_ids"}),
+        # compound for enrollment conflict check (was missing, caused slow scans)
+        ("courses", [("program_id", 1), ("student_ids", 1)], {"name": "courses_program_students"}),
         # grades
         ("grades", [("student_id", 1)], {"name": "grades_student_id"}),
         ("grades", [("course_id", 1)], {"name": "grades_course_id"}),
@@ -50,6 +52,10 @@ async def create_indexes(db):
         ("activities", [("course_id", 1)], {"name": "activities_course_id"}),
         ("activities", [("course_id", 1), ("subject_id", 1)], {"name": "activities_course_subject"}),
         ("activities", [("due_date", 1)], {"name": "activities_due_date"}),
+        # compound for overdue-submissions query (auto-recovery feature)
+        ("activities", [("course_id", 1), ("subject_id", 1), ("due_date", 1), ("is_recovery", 1)], {"name": "activities_overdue_lookup"}),
+        # compound for start_date filtering (scheduled activities hidden from students)
+        ("activities", [("course_id", 1), ("subject_id", 1), ("start_date", 1)], {"name": "activities_course_subject_start"}),
         # programs
         ("programs", [("active", 1)], {"name": "programs_active"}),
         # subjects
@@ -92,6 +98,9 @@ async def create_indexes(db):
         ("class_videos", [("course_id", 1)], {"name": "class_videos_course_id"}),
         ("class_videos", [("course_id", 1), ("subject_id", 1)], {"name": "class_videos_course_subject"}),
         ("class_videos", [("created_by", 1)], {"name": "class_videos_created_by"}),
+        ("class_videos", [("video_group_id", 1)], {"sparse": True, "name": "class_videos_group_id"}),
+        # activity groups
+        ("activities", [("activity_group_id", 1)], {"sparse": True, "name": "activities_group_id"}),
     ]
 
     created = 0

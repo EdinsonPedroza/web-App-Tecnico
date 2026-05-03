@@ -41,16 +41,22 @@ async def get_student_dashboard(
     if not course or student_id not in (course.get("student_ids") or []):
         raise HTTPException(status_code=404, detail="Curso no encontrado o no inscrito")
 
-    # Activities query
+    # Activities query — students only see activities whose start_date has passed
+    now_iso = datetime.now(timezone.utc).isoformat()
     activities_query = {"course_id": course_id}
     if subject_id:
         activities_query["subject_id"] = subject_id
+    activities_query["$or"] = [
+        {"start_date": {"$exists": False}},
+        {"start_date": None},
+        {"start_date": ""},
+        {"start_date": {"$lte": now_iso}},
+    ]
 
     # Videos query (with available_from filter for students)
     videos_query = {"course_id": course_id}
     if subject_id:
         videos_query["subject_id"] = subject_id
-    now_iso = datetime.now(timezone.utc).isoformat()
     videos_query["$or"] = [
         {"available_from": {"$exists": False}},
         {"available_from": None},
@@ -67,7 +73,7 @@ async def get_student_dashboard(
     activities, videos, grades = await asyncio.gather(
         db.activities.find(activities_query, {"_id": 0}).to_list(500),
         db.class_videos.find(videos_query, {"_id": 0}).to_list(500),
-        db.grades.find(grades_query, {"_id": 0}).to_list(10000)
+        db.grades.find(grades_query, {"_id": 0}).to_list(2000)
     )
 
     # Filter recovery activities for students, and fetch subject info — both independent.
@@ -275,9 +281,12 @@ async def get_course_results_report(course_id: str, subject_id: Optional[str] = 
     ).to_list(5000) if student_ids else []
     
     # Load grades for this course and build an index: (student_id, subject_id) -> [values]
-    grades = await db.grades.find({"course_id": course_id}, {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}).to_list(200000)
+    # Use cursor iteration instead of to_list(200000) to avoid loading all grades into RAM.
     grades_index = {}
-    for g in grades:
+    async for g in db.grades.find(
+        {"course_id": course_id},
+        {"_id": 0, "student_id": 1, "subject_id": 1, "value": 1}
+    ):
         if g.get("value") is not None:
             key = (g["student_id"], g.get("subject_id"))
             grades_index.setdefault(key, []).append(g["value"])
@@ -364,62 +373,68 @@ async def get_course_results_report(course_id: str, subject_id: Optional[str] = 
                 headers={"Content-Disposition": f"attachment; filename={filename}"}
             )
         else:
-            # XLSX with professional formatting
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Resultados"
-
-            # Title row
+            # XLSX — write-only mode keeps memory bounded even for 1000+ students
+            from openpyxl.cell.cell import WriteOnlyCell
             title_label = course_name
             if subject_id and subject_id in subject_map:
                 title_label = f"{course_name} – {subject_map[subject_id]}"
-            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(all_headers))
-            title_cell = ws.cell(row=1, column=1, value=f"Reporte de Resultados – {title_label}")
-            title_cell.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-            title_cell.font = Font(bold=True, size=13, color="FFFFFF")
-            title_cell.alignment = Alignment(horizontal="center", vertical="center")
-            ws.row_dimensions[1].height = 22
 
-            # Header row (row 2)
-            header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
-            header_font = Font(bold=True, color="FFFFFF")
+            wb = openpyxl.Workbook(write_only=True)
+            ws = wb.create_sheet(title="Resultados")
+
+            # Column widths: Nombre=30, Cédula=14, Módulo=10, subjects=14 each, Promedio=12, Estado=18
+            ws.column_dimensions["A"].width = 30
+            ws.column_dimensions["B"].width = 14
+            ws.column_dimensions["C"].width = 10
+            for col_idx in range(4, len(all_headers) + 1):
+                col_letter = get_column_letter(col_idx)
+                header_text = all_headers[col_idx - 1]
+                ws.column_dimensions[col_letter].width = min(max(len(header_text) + 3, 14), 35)
+
             thin = Side(border_style="thin", color="000000")
             header_border = Border(left=thin, right=thin, top=thin, bottom=thin)
-            for col_idx, header in enumerate(all_headers, start=1):
-                cell = ws.cell(row=2, column=col_idx, value=header)
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.border = header_border
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            ws.row_dimensions[2].height = 18
-
-            # Data rows (starting row 3)
+            header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF")
             green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
             red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
             data_border = Border(left=thin, right=thin, top=thin, bottom=thin)
-            for row_idx, row in enumerate(rows, start=3):
+            center = Alignment(horizontal="center", vertical="center")
+            left_align = Alignment(horizontal="left", vertical="center")
+
+            # Title row (write-only: no merge, single styled cell)
+            title_wc = WriteOnlyCell(ws, value=f"Reporte de Resultados – {title_label}")
+            title_wc.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+            title_wc.font = Font(bold=True, size=13, color="FFFFFF")
+            title_wc.alignment = center
+            ws.append([title_wc] + [None] * (len(all_headers) - 1))
+
+            # Header row
+            header_row = []
+            for h in all_headers:
+                wc = WriteOnlyCell(ws, value=h)
+                wc.fill = header_fill
+                wc.font = header_font
+                wc.border = header_border
+                wc.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                header_row.append(wc)
+            ws.append(header_row)
+
+            # Data rows — written one at a time, no RAM accumulation
+            for row in rows:
                 avg = row["general_average"]
                 row_fill = green_fill if avg >= 3.0 else red_fill
-                data = [row["student_name"], row["student_cedula"], row.get("module", "")]
+                values = [row["student_name"], row["student_cedula"], row.get("module", "")]
                 for subj_id in subject_ids:
-                    data.append(row.get(f"subject_{subj_id}", 0.0))
-                data.extend([avg, row["status"]])
-                for col_idx, value in enumerate(data, start=1):
-                    cell = ws.cell(row=row_idx, column=col_idx, value=value)
-                    cell.fill = row_fill
-                    cell.border = data_border
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-                    if col_idx == 1:
-                        cell.alignment = Alignment(horizontal="left", vertical="center")
-
-            # Auto-adjust column widths
-            for col_idx, header in enumerate(all_headers, start=1):
-                col_letter = get_column_letter(col_idx)
-                max_len = max(len(str(header)), 10)
-                ws.column_dimensions[col_letter].width = min(max_len + 4, 35)
-            # Fixed widths for known columns
-            ws.column_dimensions["A"].width = 30  # Nombre
-            ws.column_dimensions["B"].width = 14  # Cédula
+                    values.append(row.get(f"subject_{subj_id}", 0.0))
+                values.extend([avg, row["status"]])
+                data_row = []
+                for i, value in enumerate(values):
+                    wc = WriteOnlyCell(ws, value=value)
+                    wc.fill = row_fill
+                    wc.border = data_border
+                    wc.alignment = left_align if i == 0 else center
+                    data_row.append(wc)
+                ws.append(data_row)
 
             output_bytes = io.BytesIO()
             wb.save(output_bytes)
@@ -457,14 +472,14 @@ async def get_recovery_results_report(format: Optional[str] = None, user=Depends
 
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # Fetch all unprocessed failed subjects
-    all_failed = await db.failed_subjects.find(
+    # Fetch all unprocessed failed subjects using a cursor to avoid loading
+    # tens of thousands of documents into memory at once.
+    all_failed = []
+    async for doc in db.failed_subjects.find(
         {"recovery_processed": {"$ne": True}},
         {"_id": 0}
-    ).to_list(50000)
-
-    if not all_failed:
-        all_failed = []
+    ):
+        all_failed.append(doc)
 
     # Build lookup maps
     student_ids_set = list({r["student_id"] for r in all_failed})
@@ -521,63 +536,61 @@ async def get_recovery_results_report(format: Optional[str] = None, user=Depends
         })
 
     if format and format.lower() == "xlsx":
+        from openpyxl.cell.cell import WriteOnlyCell
         all_headers = ["Nombre", "Cédula", "Materia reprobada", "Grupo/Curso", "Programa", "Módulo", "Promedio anterior", "Estado de recuperación"]
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Recuperaciones"
+        col_widths = [30, 14, 25, 25, 20, 10, 16, 32]
 
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(all_headers))
-        title_cell = ws.cell(row=1, column=1, value="Reporte de Recuperaciones")
-        title_cell.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-        title_cell.font = Font(bold=True, size=13, color="FFFFFF")
-        title_cell.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[1].height = 22
+        wb = openpyxl.Workbook(write_only=True)
+        ws = wb.create_sheet(title="Recuperaciones")
+        for i, w in enumerate(col_widths):
+            ws.column_dimensions[get_column_letter(i + 1)].width = w
 
-        header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
-        header_font = Font(bold=True, color="FFFFFF")
         thin = Side(border_style="thin", color="000000")
         header_border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        for col_idx, header in enumerate(all_headers, start=1):
-            cell = ws.cell(row=2, column=col_idx, value=header)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.border = header_border
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ws.row_dimensions[2].height = 18
-
+        header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
         yellow_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
         data_border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        for row_idx, row in enumerate(rows, start=3):
+        center = Alignment(horizontal="center", vertical="center")
+        left = Alignment(horizontal="left", vertical="center")
+
+        # Title row (write-only can't merge cells — use a single styled cell)
+        title_wc = WriteOnlyCell(ws, value="Reporte de Recuperaciones")
+        title_wc.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+        title_wc.font = Font(bold=True, size=13, color="FFFFFF")
+        title_wc.alignment = center
+        ws.append([title_wc] + [None] * (len(all_headers) - 1))
+
+        # Header row
+        header_row = []
+        for h in all_headers:
+            wc = WriteOnlyCell(ws, value=h)
+            wc.fill = header_fill
+            wc.font = header_font
+            wc.border = header_border
+            wc.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            header_row.append(wc)
+        ws.append(header_row)
+
+        # Data rows
+        for row in rows:
             status = row["status"]
-            if "Aprobado" in status:
-                row_fill = green_fill
-            elif "Reprobado" in status or "vencido" in status:
-                row_fill = red_fill
-            else:
-                row_fill = yellow_fill
-            data = [
+            row_fill = green_fill if "Aprobado" in status else (red_fill if ("Reprobado" in status or "vencido" in status) else yellow_fill)
+            values = [
                 row["student_name"], row["student_cedula"], row["subject_name"],
                 row["course_name"], row["program_name"], row["module_number"],
                 row["average_grade"], row["status"]
             ]
-            for col_idx, value in enumerate(data, start=1):
-                cell = ws.cell(row=row_idx, column=col_idx, value=value)
-                cell.fill = row_fill
-                cell.border = data_border
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                if col_idx == 1:
-                    cell.alignment = Alignment(horizontal="left", vertical="center")
-
-        ws.column_dimensions["A"].width = 30
-        ws.column_dimensions["B"].width = 14
-        ws.column_dimensions["C"].width = 25
-        ws.column_dimensions["D"].width = 25
-        ws.column_dimensions["E"].width = 20
-        ws.column_dimensions["F"].width = 10
-        ws.column_dimensions["G"].width = 16
-        ws.column_dimensions["H"].width = 32
+            data_row = []
+            for i, value in enumerate(values):
+                wc = WriteOnlyCell(ws, value=value)
+                wc.fill = row_fill
+                wc.border = data_border
+                wc.alignment = left if i == 0 else center
+                data_row.append(wc)
+            ws.append(data_row)
 
         output_bytes = io.BytesIO()
         wb.save(output_bytes)

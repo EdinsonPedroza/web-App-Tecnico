@@ -9,11 +9,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock, Upload, Download, File, Eye, Image, Check, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileText, Calendar, Clock, Lock, Unlock, Upload, Download, File, Eye, Image, Check, CheckCircle, XCircle, Users } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 import { ensureProtocol } from '@/utils/url';
 import { getErrorMessage } from '@/utils/errorUtils';
+import { useAuth } from '@/context/AuthContext';
 
 const BACKEND_URL = ensureProtocol(process.env.REACT_APP_BACKEND_URL);
 
@@ -21,6 +22,7 @@ export default function TeacherActivities() {
   const { courseId } = useParams();
   const [searchParams] = useSearchParams();
   const subjectId = searchParams.get('subjectId');
+  const { user } = useAuth();
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -36,6 +38,10 @@ export default function TeacherActivities() {
   const [recoveryStatuses, setRecoveryStatuses] = useState({});
   const [savingGrade, setSavingGrade] = useState(null);
   const [recoveryEnabled, setRecoveryEnabled] = useState([]);
+  // Multi-group state
+  const [availableCourses, setAvailableCourses] = useState([]);
+  const [selectedCourseIds, setSelectedCourseIds] = useState([]);
+  const [groupConfirmDialog, setGroupConfirmDialog] = useState(null); // { type: 'edit'|'delete', act, resolve }
 
   const fetchActivities = useCallback(async () => {
     try {
@@ -153,7 +159,7 @@ export default function TeacherActivities() {
     }
   };
 
-  const openCreate = () => {
+  const openCreate = async () => {
     setEditing(null);
     const now = new Date();
     const defaultStart = new Date(now);
@@ -167,6 +173,17 @@ export default function TeacherActivities() {
       files: [],
       is_recovery: false
     });
+    setSelectedCourseIds([courseId]);
+    // Fetch teacher's other courses that share the same subject
+    try {
+      const res = await api.get(`/courses?teacher_id=${user.id}&fields=summary&limit=100`);
+      const courses = (res.data?.courses || res.data || []).filter(c =>
+        !subjectId || (c.subject_ids || []).includes(subjectId) || c.subject_id === subjectId
+      );
+      setAvailableCourses(courses.length > 0 ? courses : []);
+    } catch {
+      setAvailableCourses([]);
+    }
     setDialogOpen(true);
   };
 
@@ -227,18 +244,30 @@ export default function TeacherActivities() {
       const startDate = form.start_date ? new Date(form.start_date).toISOString() : null;
       const dueDate = new Date(form.due_date).toISOString();
       if (editing) {
-        await api.put(`/activities/${editing.id}`, {
-          title: form.title,
-          description: form.description,
-          start_date: startDate,
-          due_date: dueDate,
-          files: form.files,
-          is_recovery: form.is_recovery
-        });
-        toast.success('Actividad actualizada');
+        // Editing: ask if group or single
+        const applyToGroup = editing.activity_group_id
+          ? await askGroupAction('edit')
+          : false;
+        if (applyToGroup) {
+          await api.put(`/activities/group/${editing.activity_group_id}`, {
+            title: form.title, description: form.description,
+            start_date: startDate, due_date: dueDate,
+            files: form.files, is_recovery: form.is_recovery
+          });
+          toast.success(`Actividad actualizada en todos los grupos`);
+        } else {
+          await api.put(`/activities/${editing.id}`, {
+            title: form.title, description: form.description,
+            start_date: startDate, due_date: dueDate,
+            files: form.files, is_recovery: form.is_recovery
+          });
+          toast.success('Actividad actualizada');
+        }
       } else {
+        const targetIds = selectedCourseIds.length > 0 ? selectedCourseIds : [courseId];
         await api.post('/activities', {
           course_id: courseId,
+          course_ids: targetIds,
           subject_id: subjectId,
           title: form.title,
           description: form.description,
@@ -247,21 +276,39 @@ export default function TeacherActivities() {
           files: form.files,
           is_recovery: form.is_recovery
         });
-        toast.success('Actividad creada');
+        toast.success(
+          targetIds.length > 1
+            ? `Actividad publicada en ${targetIds.length} grupos`
+            : 'Actividad creada'
+        );
       }
       setDialogOpen(false);
       fetchActivities();
     } catch (err) {
-      toast.error('Error guardando actividad');
+      toast.error(getErrorMessage(err, 'Error guardando actividad'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (id) => {
+  // Returns a promise: true = apply to group, false = apply to single, null = cancelled
+  const askGroupAction = (type) =>
+    new Promise((resolve) => setGroupConfirmDialog({ type, resolve }));
+
+  const handleDelete = async (act) => {
     if (!window.confirm('¿Eliminar esta actividad?')) return;
-    try { await api.delete(`/activities/${id}`); toast.success('Actividad eliminada'); fetchActivities(); }
-    catch (err) { toast.error('Error eliminando actividad'); }
+    try {
+      const applyToGroup = act.activity_group_id ? await askGroupAction('delete') : false;
+      if (applyToGroup === null) return; // cancelled
+      if (applyToGroup) {
+        await api.delete(`/activities/group/${act.activity_group_id}`);
+        toast.success('Grupo de actividades eliminado');
+      } else {
+        await api.delete(`/activities/${act.id}`);
+        toast.success('Actividad eliminada');
+      }
+      fetchActivities();
+    } catch (err) { toast.error('Error eliminando actividad'); }
   };
 
   const formatDate = (d) => new Date(d).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -312,6 +359,11 @@ export default function TeacherActivities() {
                         <div className="flex items-center gap-2 mb-1">
                           <Badge variant="outline" className="shrink-0 text-xs font-mono">Act {actNum}</Badge>
                           {act.is_recovery && <Badge variant="warning" className="shrink-0 text-xs">Recuperación</Badge>}
+                          {act.activity_group_id && (
+                            <Badge variant="secondary" className="shrink-0 text-xs gap-1">
+                              <Users className="h-3 w-3" /> Multi-grupo
+                            </Badge>
+                          )}
                           <StatusIcon className={`h-4 w-4 shrink-0 ${status.variant === 'destructive' ? 'text-destructive' : status.variant === 'success' ? 'text-success' : 'text-muted-foreground'}`} />
                           <h3 className="text-sm font-semibold text-foreground truncate">{act.title}</h3>
                         </div>
@@ -348,7 +400,7 @@ export default function TeacherActivities() {
                         <Badge variant={status.variant}>{status.label}</Badge>
                         <Button variant="outline" size="sm" onClick={() => openSubmissions(act)}><Eye className="h-4 w-4" /> Entregas</Button>
                         <Button variant="ghost" size="icon" onClick={() => openEdit(act)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(act.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(act)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </div>
                     </div>
                   </CardContent>
@@ -421,12 +473,45 @@ export default function TeacherActivities() {
               )}
             </div>
 
+            {/* Multi-group selector (only on create) */}
+            {!editing && availableCourses.length > 1 && (
+              <div className="space-y-2 rounded-lg border p-3">
+                <Label className="flex items-center gap-2 text-sm font-medium">
+                  <Users className="h-4 w-4" /> Publicar en grupos
+                </Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Selecciona los grupos que recibirán esta actividad
+                </p>
+                <div className="space-y-1 max-h-36 overflow-y-auto">
+                  {availableCourses.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-accent text-sm">
+                      <Checkbox
+                        checked={selectedCourseIds.includes(c.id)}
+                        onCheckedChange={(checked) =>
+                          setSelectedCourseIds(prev =>
+                            checked ? [...prev, c.id] : prev.filter(id => id !== c.id)
+                          )
+                        }
+                      />
+                      {c.name || c.id}
+                      {c.id === courseId && <span className="text-xs text-muted-foreground">(este grupo)</span>}
+                    </label>
+                  ))}
+                </div>
+                {selectedCourseIds.length > 1 && (
+                  <p className="text-xs text-primary font-medium">
+                    Se publicará en {selectedCourseIds.length} grupos
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Recovery Activity Checkbox */}
             <div className="flex items-center space-x-2 rounded-lg border p-3">
-              <Checkbox 
-                id="is_recovery" 
-                checked={form.is_recovery} 
-                onCheckedChange={(checked) => setForm({ ...form, is_recovery: checked })} 
+              <Checkbox
+                id="is_recovery"
+                checked={form.is_recovery}
+                onCheckedChange={(checked) => setForm({ ...form, is_recovery: checked })}
               />
               <div className="grid gap-1.5 leading-none">
                 <label
@@ -586,6 +671,42 @@ export default function TeacherActivities() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setSubmissionsDialog(null)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Group action confirmation dialog */}
+      <Dialog open={!!groupConfirmDialog} onOpenChange={() => {
+        groupConfirmDialog?.resolve(null);
+        setGroupConfirmDialog(null);
+      }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {groupConfirmDialog?.type === 'delete' ? 'Eliminar actividad' : 'Editar actividad'}
+            </DialogTitle>
+            <DialogDescription>
+              Esta actividad fue publicada en varios grupos. ¿Cómo quieres aplicar el cambio?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                groupConfirmDialog?.resolve(false);
+                setGroupConfirmDialog(null);
+              }}
+            >
+              Solo este grupo
+            </Button>
+            <Button
+              variant={groupConfirmDialog?.type === 'delete' ? 'destructive' : 'default'}
+              onClick={() => {
+                groupConfirmDialog?.resolve(true);
+                setGroupConfirmDialog(null);
+              }}
+            >
+              Todos los grupos
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

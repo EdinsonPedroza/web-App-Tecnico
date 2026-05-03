@@ -34,6 +34,12 @@ services:
         value: false
       - key: ALLOW_USER_RESET
         value: false
+      - key: AUTO_RECOVERY_ENABLED_AT
+        value: "2026-05-05T00:00:00+00:00"
+        # Fecha desde la que se cuentan talleres vencidos para auto-recuperación.
+        # Solo talleres con due_date >= este valor acumulan hacia el umbral de 4.
+      - key: MAX_OVERDUE_BEFORE_RECOVERY
+        value: "4"
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY

@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, AlertCircle, Download } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, AlertCircle, Download, Zap } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function RecoveriesPage() {
@@ -279,7 +279,15 @@ export default function RecoveriesPage() {
                         return (
                         <TableRow key={subject.id}>
                           <TableCell className="font-medium">
-                            {subject.subject_name || subject.course_name}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span>{subject.subject_name || subject.course_name}</span>
+                              {subject.recovery_reason === 'overdue_submissions' && (
+                                <Badge variant="outline" className="text-xs gap-1 border-orange-400 text-orange-600 dark:text-orange-400 dark:border-orange-500 shrink-0">
+                                  <Zap className="h-3 w-3" />
+                                  Auto ({subject.overdue_count ?? '?'} talleres)
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate" title={subject.course_name}>
                             {subject.course_name || 'Sin nombre'}

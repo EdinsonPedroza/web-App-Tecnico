@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Loader2, ClipboardList, Save, CheckCircle, XCircle, Clock, Download } from 'lucide-react';
+import { Loader2, ClipboardList, Save, CheckCircle, XCircle, Clock, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { getErrorMessage } from '@/utils/errorUtils';
 
@@ -24,6 +25,9 @@ export default function TeacherGrades() {
   const [editedGrades, setEditedGrades] = useState({});
   const [savingGrades, setSavingGrades] = useState({});
   const [recoveryEnabled, setRecoveryEnabled] = useState([]); // entries with student/course/subject approved by admin
+  const [searchTerm, setSearchTerm] = useState('');
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(0);
 
   const fetchData = useCallback(async () => {
     try {
@@ -179,6 +183,25 @@ export default function TeacherGrades() {
     return result;
   }, [grades, regularActivities]);
 
+  // Filtered + paginated students
+  const filteredStudents = useMemo(() => {
+    if (!searchTerm.trim()) return students;
+    const q = searchTerm.toLowerCase();
+    return students.filter(s =>
+      s.name?.toLowerCase().includes(q) || s.cedula?.toLowerCase().includes(q)
+    );
+  }, [students, searchTerm]);
+
+  const totalPages = Math.ceil(filteredStudents.length / pageSize);
+  const paginatedStudents = useMemo(
+    () => filteredStudents.slice(currentPage * pageSize, (currentPage + 1) * pageSize),
+    [filteredStudents, currentPage, pageSize]
+  );
+
+  // Reset to page 0 when search changes
+  const handleSearch = (v) => { setSearchTerm(v); setCurrentPage(0); };
+  const handlePageSize = (v) => { setPageSize(Number(v)); setCurrentPage(0); };
+
   const isRecoveryEnabledFor = (studentId, activity) => {
     return recoveryEnabled.some((r) =>
       r.student_id === studentId &&
@@ -238,6 +261,40 @@ export default function TeacherGrades() {
             <p className="text-muted-foreground">No hay estudiantes inscritos en este curso</p>
           </CardContent></Card>
         ) : (
+          <>
+          {/* Search + pagination controls */}
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar estudiante o cédula…"
+                className="pl-9"
+                value={searchTerm}
+                onChange={(e) => handleSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Filas por página:</span>
+              <Select value={String(pageSize)} onValueChange={handlePageSize}>
+                <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="whitespace-nowrap">
+                {filteredStudents.length === 0 ? '0' : `${currentPage * pageSize + 1}–${Math.min((currentPage + 1) * pageSize, filteredStudents.length)}`} de {filteredStudents.length}
+              </span>
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage === 0} onClick={() => setCurrentPage(p => p - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage >= totalPages - 1} onClick={() => setCurrentPage(p => p + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
           <Card className="shadow-card overflow-hidden">
             <ScrollArea className="w-full">
               <div className="min-w-max">
@@ -269,7 +326,7 @@ export default function TeacherGrades() {
                     </tr>
                   </thead>
                   <tbody>
-                    {students.map((student, idx) => {
+                    {paginatedStudents.map((student, idx) => {
                       const avg = studentAverages[student.id] ?? null;
                       return (
                         <tr key={student.id} className={`border-b hover:bg-muted/20 transition-colors ${idx % 2 === 0 ? '' : 'bg-muted/10'}`}>
@@ -412,6 +469,7 @@ export default function TeacherGrades() {
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
           </Card>
+          </>
         )}
 
         {activities.length === 0 && students.length > 0 && (

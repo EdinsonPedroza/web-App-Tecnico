@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, CheckCircle, BookOpen, RefreshCw, CalendarX, Clock } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, BookOpen, RefreshCw, CalendarX, Clock, Zap } from 'lucide-react';
 import api from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 
@@ -152,6 +152,16 @@ export default function StudentRecoveriesPage() {
                           <span className={`text-xs font-medium ${isClosed ? 'text-destructive' : 'text-foreground'}`}>
                             {recovery.recovery_close_date}
                           </span>
+                        </div>
+                      )}
+                      {recovery.recovery_reason === 'overdue_submissions' && (
+                        <div className="flex items-start gap-2 rounded-md bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800 px-3 py-2">
+                          <Zap className="h-3.5 w-3.5 text-orange-500 mt-0.5 shrink-0" />
+                          <p className="text-xs text-orange-700 dark:text-orange-300">
+                            Entraste a recuperación porque tienes{' '}
+                            <strong>{recovery.overdue_count ?? 'varios'} talleres vencidos</strong>{' '}
+                            sin entregar en esta materia.
+                          </p>
                         </div>
                       )}
                       <div className="pt-2 border-t">

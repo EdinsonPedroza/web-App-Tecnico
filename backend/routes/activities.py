@@ -23,6 +23,15 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
         query["course_id"] = safe_object_id(course_id, "course_id")
     if subject_id:
         query["subject_id"] = safe_object_id(subject_id, "subject_id")
+    # Students only see activities whose start_date has already passed
+    if user["role"] == "estudiante":
+        now_iso = datetime.now(timezone.utc).isoformat()
+        query["$or"] = [
+            {"start_date": {"$exists": False}},
+            {"start_date": None},
+            {"start_date": ""},
+            {"start_date": {"$lte": now_iso}},
+        ]
     limit = max(1, min(limit, MAX_LIMIT))
     skip = max(0, skip)
     total_count, activities = await asyncio.gather(
@@ -37,7 +46,7 @@ async def get_activities(course_id: Optional[str] = None, subject_id: Optional[s
             "recovery_approved": True,
             "recovery_processed": {"$ne": True},
             "recovery_rejected": {"$ne": True},
-        }, {"_id": 0, "subject_id": 1}).to_list(50000)
+        }, {"_id": 0, "subject_id": 1}).to_list(100)
         approved_subject_ids = {r.get("subject_id") for r in approved_records if r.get("subject_id")}
         has_course_level_approval = any(not r.get("subject_id") for r in approved_records)
 
@@ -76,6 +85,16 @@ async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
                 "course_id": req.course_id,
             })
             raise HTTPException(status_code=403, detail="No tienes permiso para crear actividades en este curso")
+    # Validate start_date < due_date when both are present
+    if req.start_date and req.due_date:
+        try:
+            _start = datetime.fromisoformat(req.start_date.replace("Z", "+00:00"))
+            _due = datetime.fromisoformat(req.due_date.replace("Z", "+00:00"))
+            if _start >= _due:
+                raise HTTPException(status_code=400, detail="La fecha de inicio debe ser anterior a la fecha de entrega")
+        except ValueError:
+            pass  # Invalid date format handled elsewhere
+
     if req.is_recovery:
         recovery_query = {"course_id": req.course_id, "is_recovery": True}
         if req.subject_id:
@@ -114,34 +133,108 @@ async def create_activity(req: ActivityCreate, user=Depends(get_current_user)):
                     status_code=400,
                     detail=f"Se ha alcanzado el máximo de {MAX_ACTIVITIES_PER_WEEK_PER_SUBJECT} entregas por semana para esta materia. Elija otra fecha."
                 )
-    activity_number_query = {"course_id": req.course_id}
-    if req.subject_id:
-        activity_number_query["subject_id"] = req.subject_id
-    agg_result = await db.activities.aggregate([
-        {"$match": activity_number_query},
-        {"$group": {"_id": None, "max_num": {"$max": "$activity_number"}}}
-    ]).to_list(1)
-    max_num = agg_result[0]["max_num"] if agg_result else 0
-    activity_number = (max_num or 0) + 1
-    activity = {
-        "id": str(uuid.uuid4()),
-        "course_id": req.course_id,
-        "subject_id": req.subject_id,
-        "activity_number": activity_number,
+    # Determine target courses: use course_ids if provided (multi-group), else single course_id
+    target_course_ids = list(dict.fromkeys(req.course_ids)) if req.course_ids else [req.course_id]
+    if req.course_id not in target_course_ids:
+        target_course_ids.insert(0, req.course_id)
+
+    group_id = str(uuid.uuid4()) if len(target_course_ids) > 1 else None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    created_activities = []
+
+    for cid in target_course_ids:
+        act_num_agg = await db.activities.aggregate([
+            {"$match": {"course_id": cid, **({"subject_id": req.subject_id} if req.subject_id else {})}},
+            {"$group": {"_id": None, "max_num": {"$max": "$activity_number"}}}
+        ]).to_list(1)
+        activity_number = ((act_num_agg[0]["max_num"] if act_num_agg else 0) or 0) + 1
+        activity = {
+            "id": str(uuid.uuid4()),
+            "course_id": cid,
+            "subject_id": req.subject_id,
+            "activity_number": activity_number,
+            "title": req.title,
+            "description": req.description,
+            "start_date": req.start_date,
+            "due_date": req.due_date,
+            "files": req.files,
+            "is_recovery": req.is_recovery or False,
+            "active": True,
+            "created_by": user["id"],
+            "created_at": now_iso,
+        }
+        if group_id:
+            activity["activity_group_id"] = group_id
+        await db.activities.insert_one(activity)
+        del activity["_id"]
+        created_activities.append(activity)
+
+    await log_audit("activity_created", user["id"], user["role"], {
+        "activity_ids": [a["id"] for a in created_activities],
+        "course_ids": target_course_ids,
         "title": req.title,
-        "description": req.description,
-        "start_date": req.start_date,
-        "due_date": req.due_date,
-        "files": req.files,
-        "is_recovery": req.is_recovery or False,
-        "active": True,
-        "created_by": user["id"],
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "group_id": group_id,
+    })
+    # Return the activity for the requested course_id (first in list)
+    return created_activities[0] if len(created_activities) == 1 else {
+        "activity_group_id": group_id,
+        "course_count": len(created_activities),
+        "activities": created_activities,
     }
-    await db.activities.insert_one(activity)
-    del activity["_id"]
-    await log_audit("activity_created", user["id"], user["role"], {"activity_id": activity["id"], "course_id": req.course_id, "title": req.title})
-    return activity
+
+
+@router.put("/activities/group/{group_id}")
+async def update_activity_group(group_id: str, req: ActivityUpdate, user=Depends(get_current_user)):
+    """Update all activities that share the same activity_group_id."""
+    if user["role"] != "profesor":
+        raise HTTPException(status_code=403, detail="Solo profesores")
+    activities_in_group = await db.activities.find(
+        {"activity_group_id": group_id}, {"_id": 0, "id": 1, "course_id": 1}
+    ).to_list(500)
+    if not activities_in_group:
+        raise HTTPException(status_code=404, detail="Grupo de actividades no encontrado")
+    update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    # Validate dates on the first activity as a representative
+    if update_data:
+        sample = await db.activities.find_one({"activity_group_id": group_id}, {"_id": 0})
+        if sample:
+            merged_start = update_data.get("start_date") or sample.get("start_date")
+            merged_due = update_data.get("due_date") or sample.get("due_date")
+            if merged_start and merged_due:
+                try:
+                    if datetime.fromisoformat(merged_start.replace("Z", "+00:00")) >= \
+                       datetime.fromisoformat(merged_due.replace("Z", "+00:00")):
+                        raise HTTPException(status_code=400, detail="La fecha de inicio debe ser anterior a la fecha de entrega")
+                except ValueError:
+                    pass
+        await db.activities.update_many({"activity_group_id": group_id}, {"$set": update_data})
+    await log_audit("activity_group_updated", user["id"], user["role"], {
+        "group_id": group_id, "course_count": len(activities_in_group)
+    })
+    updated = await db.activities.find({"activity_group_id": group_id}, {"_id": 0}).to_list(500)
+    return {"activity_group_id": group_id, "updated": len(updated), "activities": updated}
+
+
+@router.delete("/activities/group/{group_id}")
+async def delete_activity_group(group_id: str, user=Depends(get_current_user)):
+    """Delete all activities that share the same activity_group_id."""
+    if user["role"] not in ["profesor", "admin"]:
+        raise HTTPException(status_code=403, detail="Solo profesores o admin")
+    activities_in_group = await db.activities.find(
+        {"activity_group_id": group_id}, {"_id": 0, "id": 1}
+    ).to_list(500)
+    if not activities_in_group:
+        raise HTTPException(status_code=404, detail="Grupo de actividades no encontrado")
+    activity_ids = [a["id"] for a in activities_in_group]
+    await asyncio.gather(
+        db.grades.delete_many({"activity_id": {"$in": activity_ids}}),
+        db.submissions.delete_many({"activity_id": {"$in": activity_ids}}),
+        db.activities.delete_many({"activity_group_id": group_id}),
+    )
+    await log_audit("activity_group_deleted", user["id"], user["role"], {
+        "group_id": group_id, "deleted_count": len(activity_ids)
+    })
+    return {"message": f"Grupo eliminado: {len(activity_ids)} actividades y sus entregas"}
 
 
 async def _verify_professor_course_ownership(activity_id: str, user: dict):
@@ -168,9 +261,20 @@ async def update_activity(activity_id: str, req: ActivityUpdate, user=Depends(ge
     if user["role"] != "profesor":
         raise HTTPException(status_code=403, detail="Solo profesores")
 
-    await _verify_professor_course_ownership(activity_id, user)
+    activity = await _verify_professor_course_ownership(activity_id, user)
 
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+
+    # Validate start_date < due_date using the merged result (update may supply only one of them)
+    merged_start = update_data.get("start_date") or activity.get("start_date")
+    merged_due = update_data.get("due_date") or activity.get("due_date")
+    if merged_start and merged_due:
+        try:
+            if datetime.fromisoformat(merged_start.replace("Z", "+00:00")) >= \
+               datetime.fromisoformat(merged_due.replace("Z", "+00:00")):
+                raise HTTPException(status_code=400, detail="La fecha de inicio debe ser anterior a la fecha de entrega")
+        except ValueError:
+            pass
     result = await db.activities.update_one({"id": activity_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
