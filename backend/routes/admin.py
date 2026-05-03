@@ -795,6 +795,12 @@ async def check_and_close_modules():
         # Run auto-recovery check (overdue submissions) if the feature is enabled
         if AUTO_RECOVERY_ENABLED_AT:
             try:
+                reverted = await revert_stale_auto_recoveries()
+                if reverted:
+                    logger.info(f"Scheduler: reverted {reverted} stale auto-recovery records")
+            except Exception as rev_err:
+                logger.error(f"Scheduler: error reverting stale auto-recoveries: {rev_err}")
+            try:
                 created = await check_overdue_auto_recovery()
                 if created:
                     logger.info(f"Auto-recovery (overdue): {created} new failed_subjects records created")
@@ -872,11 +878,22 @@ async def check_overdue_auto_recovery(dry_run: bool = False) -> int:
             if sid:
                 acts_by_subject.setdefault(sid, []).append(a["id"])
 
+        # Bulk-load all enrolled students for this course (one query per course, not one per student)
+        enrolled_docs = await db.users.find(
+            {"id": {"$in": enrolled_ids}, "role": "estudiante"},
+            {"_id": 0, "id": 1, "estado": 1, "name": 1, "program_statuses": 1}
+        ).to_list(len(enrolled_ids) + 1)
+        enrolled_map = {s["id"]: s for s in enrolled_docs}
+
+        # Bulk-load existing open recovery records for this course to avoid find_one per student
+        existing_recoveries = await db.failed_subjects.find(
+            {"course_id": course_id, "recovery_processed": {"$ne": True}, "recovery_rejected": {"$ne": True}},
+            {"_id": 0, "student_id": 1, "subject_id": 1}
+        ).to_list(5000)
+        existing_recovery_set = {(r["student_id"], r.get("subject_id")) for r in existing_recoveries}
+
         for student_id in enrolled_ids:
-            # Fetch student estado (skip inactive)
-            student = await db.users.find_one(
-                {"id": student_id}, {"_id": 0, "estado": 1, "name": 1, "program_statuses": 1}
-            )
+            student = enrolled_map.get(student_id)
             if not student:
                 continue
             if student.get("estado") in ("retirado", "egresado"):
@@ -893,18 +910,12 @@ async def check_overdue_auto_recovery(dry_run: bool = False) -> int:
                 if missing < threshold:
                     continue
 
-                # Skip if recovery already exists for this student/course/subject (any state)
-                existing = await db.failed_subjects.find_one({
-                    "student_id": student_id,
-                    "course_id": course_id,
-                    "subject_id": subject_id,
-                    "recovery_processed": {"$ne": True},
-                    "recovery_rejected": {"$ne": True},
-                })
-                if existing:
+                # Skip if recovery already exists (use pre-loaded set, no extra query)
+                if (student_id, subject_id) in existing_recovery_set:
                     continue
 
                 subj_meta = subject_info.get(subject_id, {})
+                prev_status = (student.get("program_statuses") or {}).get(program_id, "activo")
                 record = {
                     "id": str(uuid.uuid4()),
                     "student_id": student_id,
@@ -921,6 +932,7 @@ async def check_overdue_auto_recovery(dry_run: bool = False) -> int:
                     "recovery_processed": False,
                     "recovery_reason": "overdue_submissions",
                     "overdue_count": missing,
+                    "previous_program_status": prev_status,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 }
 
@@ -952,6 +964,134 @@ async def check_overdue_auto_recovery(dry_run: bool = False) -> int:
     if dry_run:
         return candidates  # type: ignore[return-value]
     return created_count
+
+
+async def revert_stale_auto_recoveries() -> int:
+    """
+    Revert auto-recovery records that are no longer valid due to date changes.
+
+    Specifically handles two scenarios:
+    1. AUTO_RECOVERY_ENABLED_AT was moved to the future (feature not yet active).
+    2. The student no longer has >= threshold overdue submissions because activities
+       or dates changed since the record was created.
+
+    Only reverts records that are still pending admin approval (recovery_approved=False,
+    recovery_processed=False, recovery_rejected!=True). Approved or completed records
+    are never touched — the admin already acted on them.
+
+    Returns the count of reverted records.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    reverted = 0
+
+    # Find all pending auto-recovery records
+    pending = await db.failed_subjects.find(
+        {
+            "recovery_reason": "overdue_submissions",
+            "recovery_approved": False,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        },
+        {"_id": 0}
+    ).to_list(5000)
+
+    if not pending:
+        return 0
+
+    # If AUTO_RECOVERY_ENABLED_AT is not set or is in the future, revert ALL pending records
+    if not AUTO_RECOVERY_ENABLED_AT or AUTO_RECOVERY_ENABLED_AT > now_iso:
+        ids_to_revert = [r["id"] for r in pending]
+        for record in pending:
+            await _revert_single_auto_recovery(record)
+        logger.info(
+            f"revert_stale_auto_recoveries: AUTO_RECOVERY_ENABLED_AT is future/unset — "
+            f"reverted {len(ids_to_revert)} records"
+        )
+        return len(ids_to_revert)
+
+    # Otherwise check each record individually: does the student still qualify?
+    threshold = MAX_OVERDUE_BEFORE_RECOVERY
+
+    # Group by course to batch activity/submission queries
+    by_course: dict = {}
+    for r in pending:
+        by_course.setdefault(r["course_id"], []).append(r)
+
+    for course_id, records in by_course.items():
+        # Overdue non-recovery activities since feature was enabled
+        overdue_acts = await db.activities.find({
+            "course_id": course_id,
+            "is_recovery": {"$ne": True},
+            "due_date": {"$lt": now_iso, "$gte": AUTO_RECOVERY_ENABLED_AT},
+        }, {"_id": 0, "id": 1, "subject_id": 1}).to_list(2000)
+
+        if not overdue_acts:
+            # No overdue activities → all records for this course no longer valid
+            for record in records:
+                await _revert_single_auto_recovery(record)
+                reverted += 1
+            continue
+
+        activity_ids = [a["id"] for a in overdue_acts]
+        acts_by_subject = {}
+        for a in overdue_acts:
+            if a.get("subject_id"):
+                acts_by_subject.setdefault(a["subject_id"], []).append(a["id"])
+
+        student_ids = list({r["student_id"] for r in records})
+        subs = await db.submissions.find(
+            {"activity_id": {"$in": activity_ids}, "student_id": {"$in": student_ids}},
+            {"_id": 0, "activity_id": 1, "student_id": 1}
+        ).to_list(len(activity_ids) * len(student_ids) + 1)
+        submitted_pairs = {(s["student_id"], s["activity_id"]) for s in subs}
+
+        for record in records:
+            sid = record["student_id"]
+            subj_id = record["subject_id"]
+            act_ids_for_subject = acts_by_subject.get(subj_id, [])
+            missing = sum(
+                1 for aid in act_ids_for_subject
+                if (sid, aid) not in submitted_pairs
+            )
+            if missing < threshold:
+                await _revert_single_auto_recovery(record)
+                reverted += 1
+
+    if reverted:
+        logger.info(f"revert_stale_auto_recoveries: reverted {reverted} records that no longer qualify")
+    return reverted
+
+
+async def _revert_single_auto_recovery(record: dict):
+    """Remove a single pending auto-recovery record and restore the student's previous status."""
+    student_id = record["student_id"]
+    program_id = record.get("program_id")
+    prev_status = record.get("previous_program_status", "activo")
+
+    await db.failed_subjects.delete_one({"id": record["id"]})
+
+    if program_id:
+        # Only restore if the student is still in pendiente_recuperacion for this program
+        # (they might have other reasons to be in recovery — don't blindly overwrite)
+        other_open = await db.failed_subjects.find_one({
+            "student_id": student_id,
+            "program_id": program_id,
+            "recovery_approved": False,
+            "recovery_processed": {"$ne": True},
+            "recovery_rejected": {"$ne": True},
+        })
+        if not other_open:
+            await db.users.update_one(
+                {"id": student_id},
+                {"$set": {
+                    f"program_statuses.{program_id}": prev_status,
+                    "estado": prev_status,
+                }}
+            )
+    logger.info(
+        f"Reverted auto-recovery: student={student_id} subject={record.get('subject_id')} "
+        f"course={record.get('course_id')} restored_status={prev_status}"
+    )
 
 
 async def close_module_internal(module_number: int, program_id: Optional[str] = None):
@@ -1323,6 +1463,28 @@ async def get_auto_recovery_candidates(user=Depends(get_current_user)):
     }
 
 
+@router.post("/admin/revert-auto-recoveries")
+async def trigger_revert_auto_recoveries(user=Depends(get_current_user)):
+    """
+    Manually trigger the reversal of stale auto-recovery records.
+    Useful when module dates or AUTO_RECOVERY_ENABLED_AT are changed and the admin
+    wants to immediately restore affected students without waiting for the nightly scheduler.
+    Only pending (not yet approved) records are reverted.
+    """
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin")
+    reverted = await revert_stale_auto_recoveries()
+    return {
+        "reverted": reverted,
+        "message": (
+            f"Se revirtieron {reverted} recuperaciones automáticas que ya no aplican. "
+            "Los estudiantes fueron restaurados a su estado anterior."
+            if reverted > 0
+            else "No se encontraron recuperaciones automáticas para revertir."
+        ),
+    }
+
+
 @router.get("/admin/recovery-panel")
 async def get_recovery_panel(user=Depends(get_current_user)):
     """
@@ -1417,22 +1579,28 @@ async def get_recovery_panel(user=Depends(get_current_user)):
         ).to_list(5000)
         students_lookup = {s["id"]: s for s in student_docs}
     
-    # Pre-load grades for all relevant student/course pairs to compute per-subject averages
+    # Pre-load grades via aggregation (one query, not N docs) for per-subject averages
     course_ids_in_records = list({r["course_id"] for r in failed_records})
-    # Index: (student_id, course_id, subject_id) -> [grade values]
-    grades_index = {}
-    # Index: (student_id, course_id, subject_id) -> recovery_status (teacher's grading result)
-    teacher_graded_index = {}
+    grades_index: dict = {}
+    teacher_graded_index: dict = {}
     if student_ids_in_records and course_ids_in_records:
-        async for g in db.grades.find(
-            {"student_id": {"$in": student_ids_in_records}, "course_id": {"$in": course_ids_in_records}},
-            {"_id": 0, "student_id": 1, "course_id": 1, "subject_id": 1, "value": 1, "recovery_status": 1}
-        ):
-            key = (g["student_id"], g["course_id"], g.get("subject_id"))
-            if g.get("value") is not None:
-                grades_index.setdefault(key, []).append(g["value"])
-            if g.get("recovery_status"):
-                teacher_graded_index[(g["student_id"], g["course_id"], g.get("subject_id"))] = g["recovery_status"]
+        grade_agg = await db.grades.aggregate([
+            {"$match": {
+                "student_id": {"$in": student_ids_in_records},
+                "course_id": {"$in": course_ids_in_records},
+            }},
+            {"$group": {
+                "_id": {"student_id": "$student_id", "course_id": "$course_id", "subject_id": "$subject_id"},
+                "values": {"$push": {"$cond": [{"$ne": ["$value", None]}, "$value", "$$REMOVE"]}},
+                "last_recovery_status": {"$last": "$recovery_status"},
+            }}
+        ]).to_list(50000)
+        for _g in grade_agg:
+            key = (_g["_id"]["student_id"], _g["_id"]["course_id"], _g["_id"].get("subject_id"))
+            if _g["values"]:
+                grades_index[key] = _g["values"]
+            if _g.get("last_recovery_status"):
+                teacher_graded_index[key] = _g["last_recovery_status"]
 
     # Get all programs for reference
     programs = await db.programs.find({}, {"_id": 0}).to_list(100)

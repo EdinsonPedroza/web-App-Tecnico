@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, AlertCircle, Download, Zap } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Search, Filter, AlertCircle, Download, Zap, RotateCcw } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function RecoveriesPage() {
@@ -58,6 +58,27 @@ export default function RecoveriesPage() {
     }
   };
 
+  const [reverting, setReverting] = useState(false);
+
+  const handleRevertAutoRecoveries = async () => {
+    if (!window.confirm(
+      '¿Revertir recuperaciones automáticas que ya no aplican?\n\n' +
+      'Los estudiantes cuyas condiciones de recuperación hayan cambiado (por cambio de fechas) ' +
+      'serán restaurados a su estado anterior en el curso.\n\n' +
+      'Solo se revierten recuperaciones pendientes (no aprobadas).'
+    )) return;
+    setReverting(true);
+    try {
+      const res = await api.post('/admin/revert-auto-recoveries');
+      toast.success(res.data.message);
+      fetchRecoveryPanel();
+    } catch (err) {
+      toast.error('Error al revertir recuperaciones');
+    } finally {
+      setReverting(false);
+    }
+  };
+
   const handleDownloadRecoveryReport = async () => {
     try {
       const response = await api.get('/reports/recovery-results?format=xlsx', {
@@ -99,6 +120,11 @@ export default function RecoveriesPage() {
           <div className="flex gap-2">
             <Button onClick={fetchRecoveryPanel} variant="outline">
               <RefreshCw className="h-4 w-4" /> Actualizar
+            </Button>
+            <Button onClick={handleRevertAutoRecoveries} variant="outline" disabled={reverting}
+              title="Revierte recuperaciones automáticas que ya no aplican por cambio de fechas">
+              {reverting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              Revertir fechas
             </Button>
             <Button onClick={handleDownloadRecoveryReport} variant="outline">
               <Download className="h-4 w-4" /> Descargar Reporte
