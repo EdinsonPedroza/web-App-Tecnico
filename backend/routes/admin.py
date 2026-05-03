@@ -1249,6 +1249,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                             "average_grade": round(subject_avg, 2),
                             "recovery_approved": False,
                             "recovery_completed": False,
+                            "previous_program_status": (student.get("program_statuses") or {}).get(course["program_id"], "activo"),
                             "created_at": datetime.now(timezone.utc).isoformat()
                         })
             else:
@@ -1271,6 +1272,7 @@ async def close_module_internal(module_number: int, program_id: Optional[str] = 
                         "average_grade": round(average, 2),
                         "recovery_approved": False,
                         "recovery_completed": False,
+                        "previous_program_status": (student.get("program_statuses") or {}).get(course["program_id"], "activo"),
                         "created_at": datetime.now(timezone.utc).isoformat()
                     })
             
