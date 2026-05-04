@@ -30,6 +30,7 @@ export default function TeacherVideos() {
   // Multi-group state
   const [availableCourses, setAvailableCourses] = useState([]);
   const [selectedCourseIds, setSelectedCourseIds] = useState([]);
+  const [courseSearch, setCourseSearch] = useState('');
   const [groupConfirmDialog, setGroupConfirmDialog] = useState({ open: false, resolve: null, count: 0 });
   const groupConfirmResolveRef = useRef(null);
 
@@ -52,23 +53,15 @@ export default function TeacherVideos() {
     setEditing(null);
     setForm({ title: '', url: '', description: '', available_from: '' });
     setSelectedCourseIds([courseId]);
+    setCourseSearch('');
 
-    // Fetch sibling courses for same subject to enable multi-group
+    // Fetch teacher's sibling courses for the same subject
     try {
-      const coursesRes = await api.get('/courses?limit=200');
-      const allCourses = coursesRes.data || [];
-      const teacherId = user?.id;
-      const siblings = allCourses.filter((c) => {
-        const isTeacher =
-          c.teacher_id === teacherId ||
-          (Array.isArray(c.teacher_ids) && c.teacher_ids.includes(teacherId));
-        const sameSubject = subjectId
-          ? (c.subject_id === subjectId ||
-             (Array.isArray(c.subject_ids) && c.subject_ids.includes(subjectId)))
-          : true;
-        return isTeacher && sameSubject;
-      });
-      setAvailableCourses(siblings.length > 1 ? siblings : []);
+      const res = await api.get(`/courses?teacher_id=${user?.id}&fields=summary&limit=100`);
+      const courses = (res.data?.courses || res.data || []).filter(c =>
+        !subjectId || (c.subject_ids || []).includes(subjectId) || c.subject_id === subjectId
+      );
+      setAvailableCourses(courses.length > 0 ? courses : []);
     } catch {
       setAvailableCourses([]);
     }
@@ -304,26 +297,46 @@ export default function TeacherVideos() {
             </div>
 
             {/* Multi-group selector — only on create when there are sibling courses */}
-            {!editing && availableCourses.length > 1 && (
+            {!editing && availableCourses.length > 0 && (
               <div className="space-y-2 border rounded-md p-3 bg-muted/30">
                 <Label className="flex items-center gap-1 text-sm font-medium">
                   <Users className="h-4 w-4" /> Publicar en varios grupos
                 </Label>
                 <p className="text-xs text-muted-foreground">Selecciona los grupos donde se publicará este video.</p>
+                <Input
+                  placeholder="Buscar grupo..."
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  className="h-8 text-sm"
+                />
+                <div className="flex gap-2 text-xs">
+                  <button
+                    type="button"
+                    className="text-primary underline underline-offset-2"
+                    onClick={() => setSelectedCourseIds(availableCourses.map(c => c.id))}
+                  >Todos</button>
+                  <button
+                    type="button"
+                    className="text-muted-foreground underline underline-offset-2"
+                    onClick={() => setSelectedCourseIds([courseId])}
+                  >Solo este</button>
+                </div>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {availableCourses.map((c) => (
-                    <div key={c.id} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`vc-${c.id}`}
-                        checked={selectedCourseIds.includes(c.id)}
-                        onCheckedChange={() => toggleCourseSelection(c.id)}
-                      />
-                      <label htmlFor={`vc-${c.id}`} className="text-sm cursor-pointer">
-                        {c.name} {c.grupo ? `— ${c.grupo}` : ''}
-                        {c.id === courseId && <span className="text-xs text-muted-foreground ml-1">(este)</span>}
-                      </label>
-                    </div>
-                  ))}
+                  {availableCourses
+                    .filter(c => (c.name || c.id).toLowerCase().includes(courseSearch.toLowerCase()))
+                    .map((c) => (
+                      <div key={c.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`vc-${c.id}`}
+                          checked={selectedCourseIds.includes(c.id)}
+                          onCheckedChange={() => toggleCourseSelection(c.id)}
+                        />
+                        <label htmlFor={`vc-${c.id}`} className="text-sm cursor-pointer">
+                          {c.name} {c.grupo ? `— ${c.grupo}` : ''}
+                          {c.id === courseId && <span className="text-xs text-muted-foreground ml-1">(este)</span>}
+                        </label>
+                      </div>
+                    ))}
                 </div>
                 {selectedCourseIds.length > 1 && (
                   <p className="text-xs text-primary font-medium">

@@ -41,6 +41,7 @@ export default function TeacherActivities() {
   // Multi-group state
   const [availableCourses, setAvailableCourses] = useState([]);
   const [selectedCourseIds, setSelectedCourseIds] = useState([]);
+  const [courseSearch, setCourseSearch] = useState('');
   const [groupConfirmDialog, setGroupConfirmDialog] = useState(null); // { type: 'edit'|'delete', act, resolve }
 
   const fetchActivities = useCallback(async () => {
@@ -174,6 +175,7 @@ export default function TeacherActivities() {
       is_recovery: false
     });
     setSelectedCourseIds([courseId]);
+    setCourseSearch('');
     // Fetch teacher's other courses that share the same subject
     try {
       const res = await api.get(`/courses?teacher_id=${user.id}&fields=summary&limit=100`);
@@ -479,24 +481,44 @@ export default function TeacherActivities() {
                 <Label className="flex items-center gap-2 text-sm font-medium">
                   <Users className="h-4 w-4" /> Publicar en grupos
                 </Label>
-                <p className="text-xs text-muted-foreground mb-2">
+                <p className="text-xs text-muted-foreground">
                   Selecciona los grupos que recibirán esta actividad
                 </p>
-                <div className="space-y-1 max-h-36 overflow-y-auto">
-                  {availableCourses.map((c) => (
-                    <label key={c.id} className="flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-accent text-sm">
-                      <Checkbox
-                        checked={selectedCourseIds.includes(c.id)}
-                        onCheckedChange={(checked) =>
-                          setSelectedCourseIds(prev =>
-                            checked ? [...prev, c.id] : prev.filter(id => id !== c.id)
-                          )
-                        }
-                      />
-                      {c.name || c.id}
-                      {c.id === courseId && <span className="text-xs text-muted-foreground">(este grupo)</span>}
-                    </label>
-                  ))}
+                <Input
+                  placeholder="Buscar grupo..."
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  className="h-8 text-sm"
+                />
+                <div className="flex gap-2 text-xs">
+                  <button
+                    type="button"
+                    className="text-primary underline underline-offset-2"
+                    onClick={() => setSelectedCourseIds(availableCourses.map(c => c.id))}
+                  >Todos</button>
+                  <button
+                    type="button"
+                    className="text-muted-foreground underline underline-offset-2"
+                    onClick={() => setSelectedCourseIds([courseId])}
+                  >Solo este</button>
+                </div>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {availableCourses
+                    .filter(c => (c.name || c.id).toLowerCase().includes(courseSearch.toLowerCase()))
+                    .map((c) => (
+                      <label key={c.id} className="flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-accent text-sm">
+                        <Checkbox
+                          checked={selectedCourseIds.includes(c.id)}
+                          onCheckedChange={(checked) =>
+                            setSelectedCourseIds(prev =>
+                              checked ? [...prev, c.id] : prev.filter(id => id !== c.id)
+                            )
+                          }
+                        />
+                        {c.name || c.id}
+                        {c.id === courseId && <span className="text-xs text-muted-foreground ml-1">(este grupo)</span>}
+                      </label>
+                    ))}
                 </div>
                 {selectedCourseIds.length > 1 && (
                   <p className="text-xs text-primary font-medium">
