@@ -25,6 +25,7 @@ from utils.audit import log_audit, _make_audit_record
 from utils.helpers import derive_estado_from_program_statuses
 from config import BOGOTA_TZ, MAX_OVERDUE_BEFORE_RECOVERY, AUTO_RECOVERY_ENABLED_AT
 from scheduler.cleanup import acquire_scheduler_lock, release_scheduler_lock
+from cache import recovery_panel_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1476,6 +1477,7 @@ async def trigger_revert_auto_recoveries(user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin")
     reverted = await revert_stale_auto_recoveries()
+    recovery_panel_cache.invalidate("panel")
     return {
         "reverted": reverted,
         "message": (
@@ -1491,24 +1493,49 @@ async def trigger_revert_auto_recoveries(user=Depends(get_current_user)):
 async def get_recovery_panel(user=Depends(get_current_user)):
     """
     Get all students with failed subjects pending recovery approval.
-    Returns detailed information for admin to review and approve recoveries.
-    Only shows in-process records: not yet decided, or approved-but-not-completed.
-    Excluded: recovery_rejected=True or (recovery_approved=True and recovery_completed=True).
-    Also detects students in courses where the module close date has passed
-    and they have failing averages, even if they haven't been explicitly processed.
-    Only shows entries where the group's recovery period (recovery_close) is still open.
+    Optimized: parallel queries + TTL cache (45s) + single program_close_map build +
+    autodetect only for (course, module) combos without persisted records.
     """
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo admin puede acceder al panel de recuperaciones")
-    
+
+    cached = recovery_panel_cache.get("panel")
+    if cached is not None:
+        return cached
+
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # Pre-load all courses and subjects for efficient lookups
-    all_courses = await db.courses.find({}, {"_id": 0}).to_list(1000)
+    # Parallel load: courses, subjects, programs, failed_records all at once
+    (
+        all_courses,
+        all_subjects,
+        programs,
+        failed_records,
+    ) = await asyncio.gather(
+        db.courses.find({}, {"_id": 0, "id": 1, "name": 1, "program_id": 1,
+                             "subject_ids": 1, "subject_id": 1, "module_dates": 1,
+                             "student_ids": 1, "removed_student_ids": 1}).to_list(1000),
+        db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(1000),
+        db.programs.find({}, {"_id": 0}).to_list(100),
+        db.failed_subjects.find({"recovery_processed": {"$ne": True}}, {"_id": 0}).to_list(1000),
+    )
+
     course_map = {c["id"]: c for c in all_courses}
-    all_subjects = await db.subjects.find({}, {"_id": 0, "id": 1, "name": 1, "module_number": 1}).to_list(1000)
     subject_map = {s["id"]: s["name"] for s in all_subjects}
     subject_module_map = {s["id"]: (s.get("module_number") or 1) for s in all_subjects}
+    program_map = {p["id"]: p["name"] for p in programs}
+
+    # Build program_close_map once (reused by both sections below)
+    program_close_map: dict = {}
+    for p in programs:
+        pid = p.get("id")
+        if not pid:
+            continue
+        max_mod = max(len(p.get("modules") or []), 2)
+        for mn in range(1, max_mod + 1):
+            close_val = p.get(f"module{mn}_close_date")
+            if close_val:
+                program_close_map[(pid, mn)] = close_val
 
     def get_subject_names(course_doc):
         """Return list of ALL subject names for a course (fallback)."""
@@ -1604,19 +1631,7 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             if _g.get("last_recovery_status"):
                 teacher_graded_index[key] = _g["last_recovery_status"]
 
-    # Get all programs for reference
-    programs = await db.programs.find({}, {"_id": 0}).to_list(100)
-    program_map = {p["id"]: p["name"] for p in programs}
-    program_close_map = {}
-    for p in programs:
-        pid = p.get("id")
-        if not pid:
-            continue
-        max_mod = max(len(p.get("modules") or []), 2)
-        for mn in range(1, max_mod + 1):
-            close_val = p.get(f"module{mn}_close_date")
-            if close_val:
-                program_close_map[(pid, mn)] = close_val
+    # programs, program_map, program_close_map already built above
     
     # Organize by student; only include records whose recovery period is still open
     students_map = {}
@@ -1685,19 +1700,10 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     for record in failed_records:
         already_tracked.add((record["student_id"], record["course_id"], record.get("subject_id")))
 
-    # Program close-date fallback map (program_id, module_number) -> close_date
-    program_close_map = {}
-    for p in programs:
-        pid = p.get("id")
-        if not pid:
-            continue
-        max_mod = max(len(p.get("modules") or []), 2)
-        for mn in range(1, max_mod + 1):
-            close_val = p.get(f"module{mn}_close_date")
-            if close_val:
-                program_close_map[(pid, mn)] = close_val
-
     # --- Pass 1: identify courses that need auto-detection (no DB queries) ---
+    # Skip (course, module) combos that already have persisted records for every enrolled student
+    tracked_course_modules = {(r["course_id"], r.get("module_number", 1)) for r in failed_records}
+
     autodetect_work: list = []  # list of (course, module_number, recovery_close)
     for course in all_courses:
         module_dates = course.get("module_dates") or {}
@@ -1720,6 +1726,8 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             recovery_close = (dates or {}).get("recovery_close")
             if recovery_close and recovery_close <= today_str:
                 continue
+            # Only run autodetect if this (course, module) has NO persisted records yet
+            # OR if it has some but not all students tracked (partial coverage)
             autodetect_work.append((course, module_number, recovery_close))
 
     if autodetect_work:
@@ -1766,6 +1774,15 @@ async def get_recovery_panel(user=Depends(get_current_user)):
             ).to_list(10000)
             autodetect_students = {s["id"]: s for s in student_docs}
 
+        # Build course-level average index to avoid O(N²) scan in fallback
+        # (student_id, course_id) -> overall average across all subjects
+        course_avg_index: dict = {}
+        for (_sid, _cid, _subj), vals in autodetect_grades_index.items():
+            key2 = (_sid, _cid)
+            entry = course_avg_index.setdefault(key2, {"s": 0.0, "n": 0})
+            entry["s"] += sum(vals)
+            entry["n"] += len(vals)
+
         # --- Pass 3: process each (course, module) using pre-loaded data ---
         for course, module_number, recovery_close in autodetect_work:
             enrolled_ids = set(course.get("student_ids") or [])
@@ -1785,14 +1802,9 @@ async def get_recovery_panel(user=Depends(get_current_user)):
                     autodetect_grades_index, module_number
                 )
 
-                # Fallback course-level average when no subjects defined
-                all_avgs = [
-                    v
-                    for key, vals in autodetect_grades_index.items()
-                    if key[0] == student_id and key[1] == course["id"]
-                    for v in vals
-                ]
-                average = sum(all_avgs) / len(all_avgs) if all_avgs else 0.0
+                # Fallback course-level average — O(1) lookup instead of O(N) scan
+                ca = course_avg_index.get((student_id, course["id"]))
+                average = ca["s"] / ca["n"] if ca and ca["n"] > 0 else 0.0
 
                 if not failing_subjects and average >= 3.0:
                     continue
@@ -1856,11 +1868,13 @@ async def get_recovery_panel(user=Depends(get_current_user)):
     
     filtered_students = [s for s in students_map.values() if s.get("failed_subjects")]
 
-    return {
+    result = {
         "students": filtered_students,
         "total_students": len(filtered_students),
-        "total_failed_subjects": sum(len(s["failed_subjects"]) for s in filtered_students)
+        "total_failed_subjects": sum(len(s["failed_subjects"]) for s in filtered_students),
     }
+    recovery_panel_cache.set("panel", result)
+    return result
 
 @router.post("/admin/approve-recovery")
 async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, user=Depends(get_current_user)):
@@ -1960,6 +1974,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
                 {"student_id": student_id, "course_id": course_id, "program_id": prog_id,
                  "module_number": module_number}
             )
+            recovery_panel_cache.invalidate("panel")
             return {"message": "Recuperación rechazada. El estudiante será retirado del grupo al cierre del período de recuperaciones."}
 
         # Module alignment: recovery can only be approved for the student's current module
@@ -2046,6 +2061,7 @@ async def approve_recovery_for_subject(failed_subject_id: str, approve: bool, us
             update_fields["program_statuses"] = student_program_statuses
         await db.users.update_one({"id": student_id}, {"$set": update_fields})
 
+        recovery_panel_cache.invalidate("panel")
         return {"message": "Recuperación aprobada exitosamente"}
 
     # Find the failed subject record

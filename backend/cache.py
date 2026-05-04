@@ -29,5 +29,6 @@ class TTLCache:
             self._cache.clear()
 
 # Cache instances
-programs_cache = TTLCache(ttl_seconds=300)  # 5 minutes
-subjects_cache = TTLCache(ttl_seconds=300)  # 5 minutes
+programs_cache = TTLCache(ttl_seconds=300)   # 5 minutes
+subjects_cache = TTLCache(ttl_seconds=300)   # 5 minutes
+recovery_panel_cache = TTLCache(ttl_seconds=45)  # 45 seconds — invalidated on any approval/rejection
