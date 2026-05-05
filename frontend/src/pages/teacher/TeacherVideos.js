@@ -55,13 +55,15 @@ export default function TeacherVideos() {
     setSelectedCourseIds([courseId]);
     setCourseSearch('');
 
-    // Fetch teacher's sibling courses for the same subject
+    // Fetch all teacher courses for multi-group selector
     try {
-      const res = await api.get(`/courses?teacher_id=${user?.id}&fields=summary&limit=100`);
-      const courses = (res.data?.courses || res.data || []).filter(c =>
-        !subjectId || (c.subject_ids || []).includes(subjectId) || c.subject_id === subjectId
-      );
-      setAvailableCourses(courses.length > 0 ? courses : []);
+      const res = await api.get(`/courses?teacher_id=${user?.id}&fields=summary&limit=200`);
+      const all = res.data?.courses || res.data || [];
+      // Always include current course; show selector when >1 total
+      const others = all.filter(c => c.id !== courseId);
+      const currentFirst = all.find(c => c.id === courseId);
+      const ordered = currentFirst ? [currentFirst, ...others] : all;
+      setAvailableCourses(ordered.length > 1 ? ordered : []);
     } catch {
       setAvailableCourses([]);
     }
